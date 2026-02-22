@@ -116,3 +116,36 @@ pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; white-
   .grid { grid-template-columns: 1fr; }
   .user-strip { justify-content: flex-start; flex-wrap: wrap; }
 }
+
+.submenu {
+  margin-top: 12px;
+  border-top: 1px solid #d7e3ff;
+  padding-top: 10px;
+}
+.submenu summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: #1e3a8a;
+}
+.submenu-form {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid #dbe4ff;
+  border-radius: 10px;
+  background: #f7faff;
+}
+.run-block {
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px solid #dbe4ff;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+.run-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  color: #1f2937;
+}

@@ -4,7 +4,8 @@ from __future__ import annotations
 import json
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -39,10 +40,45 @@ def load_devices() -> list[dict[str, Any]]:
 
 def grouped_devices(devices: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     groups: dict[str, list[dict[str, Any]]] = {}
-    for d in devices:
-        for g in d.get("groups", []):
-            groups.setdefault(g, []).append(d)
+    for device in devices:
+        for group in device.get("groups", []):
+            groups.setdefault(group, []).append(device)
     return groups
+
+
+def default_buttons() -> list[dict[str, str]]:
+    return [
+        {"id": "show-version", "label": "Show Version", "command": "show version"},
+        {
+            "id": "show-ip-int-brief",
+            "label": "IP Interface Brief",
+            "command": "show ip interface brief",
+        },
+        {
+            "id": "show-int-status",
+            "label": "Interfaces Status",
+            "command": "show interfaces status",
+        },
+        {"id": "show-logging", "label": "Show Logging", "command": "show logging | tail 50"},
+        {
+            "id": "show-hostname",
+            "label": "Show Hostname",
+            "command": "show running-config | include hostname",
+        },
+        {"id": "show-arp", "label": "Show ARP", "command": "show arp"},
+        {"id": "show-cdp", "label": "CDP Neighbors", "command": "show cdp neighbors"},
+        {"id": "show-route", "label": "IP Route", "command": "show ip route"},
+    ]
+
+
+def get_buttons() -> list[dict[str, str]]:
+    buttons = session.get("buttons")
+    if isinstance(buttons, list) and buttons:
+        return buttons
+
+    buttons = default_buttons()
+    session["buttons"] = buttons
+    return buttons
 
 
 def run_ssh_command(host: str, port: int, username: str, password: str, command: str, timeout: int) -> tuple[str, str]:
@@ -83,19 +119,6 @@ def execute_for_device(device: dict[str, Any], creds: dict[str, Any], command: s
     return SSHResult(device=device["name"], host=device["host"], status=status, output=output)
 
 
-def get_predefined_commands() -> list[str]:
-    return [
-        "show version",
-        "show ip interface brief",
-        "show interfaces status",
-        "show logging | tail 50",
-        "show running-config | include hostname",
-        "show arp",
-        "show cdp neighbors",
-        "show ip route",
-    ]
-
-
 @app.route("/")
 def root() -> Any:
     if "auth_mode" in session:
@@ -117,6 +140,8 @@ def login() -> Any:
         else:
             session["auth_mode"] = auth_mode
             session["creds"] = {"username": username, "password": password, "timeout": timeout}
+            session.setdefault("buttons", default_buttons())
+            session.setdefault("run_history", [])
             return redirect(url_for("dashboard"))
 
     return render_template("login.html", error=error)
@@ -137,11 +162,42 @@ def dashboard() -> Any:
     groups = grouped_devices(devices)
     return render_template(
         "dashboard.html",
-        auth_mode=session.get("auth_mode", "local"),
-        commands=get_predefined_commands(),
         devices=devices,
         groups=groups,
+        buttons=get_buttons(),
     )
+
+
+@app.route("/buttons", methods=["POST"])
+def buttons_menu() -> Any:
+    if "creds" not in session:
+        return redirect(url_for("login"))
+
+    action = request.form.get("action", "")
+    buttons = get_buttons()
+
+    if action == "add":
+        label = request.form.get("new_label", "").strip()
+        command = request.form.get("new_command", "").strip()
+        if label and command:
+            button_id = f"custom-{int(datetime.now(timezone.utc).timestamp() * 1000)}"
+            buttons.append({"id": button_id, "label": label, "command": command})
+            session["buttons"] = buttons
+
+    elif action == "rename":
+        button_id = request.form.get("button_id", "").strip()
+        new_label = request.form.get("rename_label", "").strip()
+        if button_id and new_label:
+            for item in buttons:
+                if item.get("id") == button_id:
+                    item["label"] = new_label
+                    break
+            session["buttons"] = buttons
+
+    elif action == "clear_history":
+        session["run_history"] = []
+
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/run", methods=["POST"])
@@ -150,44 +206,49 @@ def run_commands() -> Any:
         return redirect(url_for("login"))
 
     devices = load_devices()
-    by_name = {d["name"]: d for d in devices}
+    by_name = {device["name"]: device for device in devices}
     selected_names = request.form.getlist("selected_devices")
     manual_command = request.form.get("manual_command", "").strip()
     selected_command = request.form.get("selected_command", "").strip()
 
-    custom_buttons = session.get("custom_buttons", [])
-
-    custom_button_cmd = request.form.get("custom_button_command", "").strip()
-    if custom_button_cmd:
-        if custom_button_cmd not in custom_buttons:
-            custom_buttons.append(custom_button_cmd)
-            session["custom_buttons"] = custom_buttons
-
     command = manual_command or selected_command
     if not command:
-        return render_template("output.html", command="", results=[], error="No command provided.", auth_mode=session.get("auth_mode", "local"), current_user=session.get("creds", {}).get("username", ""))
+        return render_template("output.html", run_history=session.get("run_history", []), error="No command provided.")
 
-    selected_devices = [by_name[n] for n in selected_names if n in by_name]
+    selected_devices = [by_name[name] for name in selected_names if name in by_name]
     if not selected_devices:
-        return render_template("output.html", command=command, results=[], error="No devices selected.", auth_mode=session.get("auth_mode", "local"), current_user=session.get("creds", {}).get("username", ""))
+        return render_template(
+            "output.html",
+            run_history=session.get("run_history", []),
+            error="No devices selected.",
+        )
 
     creds = session["creds"]
     results: list[SSHResult] = []
 
-    with ThreadPoolExecutor(max_workers=min(20, max(1, len(selected_devices)))) as ex:
-        futures = [ex.submit(execute_for_device, d, creds, command) for d in selected_devices]
+    with ThreadPoolExecutor(max_workers=min(20, max(1, len(selected_devices)))) as executor:
+        futures = [executor.submit(execute_for_device, device, creds, command) for device in selected_devices]
         for future in as_completed(futures):
             results.append(future.result())
 
-    results.sort(key=lambda r: r.device)
-    return render_template("output.html", command=command, results=results, error="", auth_mode=session.get("auth_mode", "local"), current_user=session.get("creds", {}).get("username", ""))
+    results.sort(key=lambda result: result.device)
+
+    run_entry = {
+        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        "command": command,
+        "results": [asdict(result) for result in results],
+    }
+    run_history = session.get("run_history", [])
+    run_history.append(run_entry)
+    session["run_history"] = run_history[-50:]
+
+    return render_template("output.html", run_history=session.get("run_history", []), error="")
 
 
 @app.context_processor
-def inject_custom_buttons() -> dict[str, Any]:
+def inject_common_context() -> dict[str, Any]:
     creds = session.get("creds", {})
     return {
-        "custom_buttons": session.get("custom_buttons", []),
         "current_user": creds.get("username", ""),
         "auth_mode": session.get("auth_mode", "local"),
     }

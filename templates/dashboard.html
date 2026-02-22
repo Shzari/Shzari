@@ -21,6 +21,17 @@
       document.getElementById('selected_command').value = cmd;
       document.getElementById('manual_command').value = '';
     }
+    function handleRunSubmit() {
+      const form = document.getElementById('runForm');
+      const key = 'output_window_opened';
+      const targetName = 'network_output_window';
+      if (!sessionStorage.getItem(key)) {
+        window.open('', targetName);
+        sessionStorage.setItem(key, '1');
+      }
+      form.target = targetName;
+      return true;
+    }
   </script>
 </head>
 <body>
@@ -34,7 +45,7 @@
 
   <div class="topbar glass">
     <h2>⚡ Network SSH Troubleshooting Dashboard</h2>
-    <p>Fast, smooth operations for routers and switches.</p>
+    <p>Fast operations for routers and switches.</p>
   </div>
 
   <div class="grid">
@@ -65,14 +76,11 @@
 
     <div class="card glass">
       <h3>Commands</h3>
-      <form method="post" action="{{ url_for('run_commands') }}" id="runForm" target="_blank">
-        <label>Quick command buttons</label>
+      <form method="post" action="{{ url_for('run_commands') }}" id="runForm" onsubmit="return handleRunSubmit()">
+        <label>Command buttons</label>
         <div class="buttons-wrap">
-          {% for c in commands %}
-            <button class="btn" type="button" onclick="setCommand('{{ c }}')">{{ c }}</button>
-          {% endfor %}
-          {% for c in custom_buttons %}
-            <button class="btn custom" type="button" onclick="setCommand('{{ c }}')">{{ c }}</button>
+          {% for b in buttons %}
+            <button class="btn {% if b.id.startswith('custom-') %}custom{% endif %}" type="button" onclick="setCommand('{{ b.command }}')">{{ b.label }}</button>
           {% endfor %}
         </div>
 
@@ -82,13 +90,41 @@
         <label>Manual command (overrides selected button command)</label>
         <input id="manual_command" name="manual_command" type="text" placeholder="Type any show/troubleshoot command">
 
-        <label>Add new command button</label>
-        <input name="custom_button_command" type="text" placeholder="e.g., show clock">
-
         <div class="action-row">
-          <button class="btn run" type="submit">Run Command (opens new window)</button>
+          <button class="btn run" type="submit">RUN</button>
         </div>
       </form>
+
+      <details class="submenu">
+        <summary>⚙️ Button Menu / Sub Menu</summary>
+
+        <form method="post" action="{{ url_for('buttons_menu') }}" class="submenu-form">
+          <input type="hidden" name="action" value="add">
+          <label>Add button label</label>
+          <input name="new_label" type="text" placeholder="e.g., Check CPU">
+          <label>Add button command</label>
+          <input name="new_command" type="text" placeholder="e.g., show processes cpu sorted">
+          <button class="btn" type="submit">Add Button</button>
+        </form>
+
+        <form method="post" action="{{ url_for('buttons_menu') }}" class="submenu-form">
+          <input type="hidden" name="action" value="rename">
+          <label>Choose button to rename</label>
+          <select name="button_id">
+            {% for b in buttons %}
+              <option value="{{ b.id }}">{{ b.label }} ({{ b.command }})</option>
+            {% endfor %}
+          </select>
+          <label>New button name</label>
+          <input name="rename_label" type="text" placeholder="New label">
+          <button class="btn" type="submit">Rename Button</button>
+        </form>
+
+        <form method="post" action="{{ url_for('buttons_menu') }}" class="submenu-form">
+          <input type="hidden" name="action" value="clear_history">
+          <button class="btn ghost" type="submit">Clear Output History</button>
+        </form>
+      </details>
     </div>
   </div>
 </body>
