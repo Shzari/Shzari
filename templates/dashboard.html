@@ -1,0 +1,87 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Network Tool - Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script>
+    function selectAllDevices() {
+      document.querySelectorAll('.device-box').forEach(cb => cb.checked = true);
+    }
+    function clearDevices() {
+      document.querySelectorAll('.device-box').forEach(cb => cb.checked = false);
+    }
+    function selectGroup() {
+      const grp = document.getElementById('groupSelect').value;
+      clearDevices();
+      if (!grp) return;
+      document.querySelectorAll(`.group-${grp}`).forEach(cb => cb.checked = true);
+    }
+    function setCommand(cmd) {
+      document.getElementById('selected_command').value = cmd;
+      document.getElementById('manual_command').value = '';
+    }
+  </script>
+</head>
+<body>
+  <div class="topbar">
+    <h2>Network SSH Troubleshooting Dashboard</h2>
+    <div>
+      Logged in via: <b>{{ auth_mode|upper }}</b> |
+      <a href="{{ url_for('logout') }}">Logout</a>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Device Selection</h3>
+      <button type="button" onclick="selectAllDevices()">Select All</button>
+      <button type="button" onclick="clearDevices()">Clear</button>
+      <div class="spacer"></div>
+      <label>Group</label>
+      <select id="groupSelect" onchange="selectGroup()">
+        <option value="">--Choose group--</option>
+        {% for grp in groups.keys() %}
+          <option value="{{ grp }}">{{ grp }}</option>
+        {% endfor %}
+      </select>
+
+      <div class="device-list">
+        {% for d in devices %}
+          <label class="device-item">
+            <input class="device-box {% for g in d.groups %}group-{{ g }} {% endfor %}" type="checkbox" name="selected_devices" value="{{ d.name }}" form="runForm">
+            {{ d.name }} ({{ d.host }})
+          </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Commands</h3>
+      <form method="post" action="{{ url_for('run_commands') }}" id="runForm" target="_blank">
+        <label>Predefined command buttons</label>
+        <div class="buttons-wrap">
+          {% for c in commands %}
+            <button type="button" onclick="setCommand('{{ c }}')">{{ c }}</button>
+          {% endfor %}
+          {% for c in custom_buttons %}
+            <button type="button" onclick="setCommand('{{ c }}')">{{ c }}</button>
+          {% endfor %}
+        </div>
+
+        <label>Selected button command</label>
+        <input id="selected_command" name="selected_command" type="text" placeholder="Click a button to load command">
+
+        <label>Manual command (overrides selected button command)</label>
+        <input id="manual_command" name="manual_command" type="text" placeholder="Type any show/troubleshoot command">
+
+        <label>Add new command button</label>
+        <input name="custom_button_command" type="text" placeholder="e.g., show clock">
+
+        <div class="spacer"></div>
+        <button type="submit">Run Command (opens new window)</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

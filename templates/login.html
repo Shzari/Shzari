@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Network Tool - Login</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="card narrow">
+    <h1>Network Automation Login</h1>
+    <p>Use local device credentials or your ISE account credentials.</p>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <form method="post">
+      <label>Auth Mode</label>
+      <select name="auth_mode">
+        <option value="local">Local Device Login</option>
+        <option value="ise">ISE Credentials</option>
+      </select>
+
+      <label>Username</label>
+      <input name="username" type="text" required>
+
+      <label>Password</label>
+      <input name="password" type="password" required>
+
+      <label>SSH Timeout (seconds)</label>
+      <input name="timeout" type="number" value="8" min="3" max="30">
+
+      <button type="submit">Login</button>
+    </form>
+  </div>
+</body>
+</html>

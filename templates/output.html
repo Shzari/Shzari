@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Command Output</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="card">
+    <h2>Command Output</h2>
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% else %}
+      <p><b>Command:</b> <code>{{ command }}</code></p>
+      {% for r in results %}
+        <div class="result {{ 'pass' if r.status == 'PASS' else 'fail' }}">
+          <h3>{{ r.device }} ({{ r.host }}) - {{ r.status }}</h3>
+          <pre>{{ r.output }}</pre>
+        </div>
+      {% endfor %}
+    {% endif %}
+  </div>
+</body>
+</html>

@@ -1,0 +1,18 @@
+body { font-family: Arial, sans-serif; margin: 20px; background: #f5f7fb; }
+.card { background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.08); margin-bottom: 16px; }
+.narrow { max-width: 520px; margin: 30px auto; }
+label { display:block; margin-top: 10px; font-weight: 600; }
+input, select { width: 100%; padding: 8px; margin-top: 6px; }
+button { margin: 4px 4px 4px 0; padding: 8px 10px; cursor:pointer; }
+.topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+.grid { display:grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.device-list { max-height: 400px; overflow:auto; border:1px solid #ddd; padding:8px; margin-top:8px; }
+.device-item { display:block; font-weight: 400; margin: 6px 0; }
+.device-item input { width:auto; margin-right:8px; }
+.error { color:#fff; background:#d9534f; padding:8px; border-radius:4px; margin:8px 0; }
+.result { border:1px solid #ddd; border-radius:6px; padding:10px; margin:10px 0; }
+.result.pass { border-left: 6px solid #2e7d32; }
+.result.fail { border-left: 6px solid #c62828; }
+pre { background:#111; color:#e8e8e8; padding:10px; border-radius:6px; white-space:pre-wrap; }
+.buttons-wrap { display:flex; flex-wrap:wrap; }
+.spacer { height: 10px; }
