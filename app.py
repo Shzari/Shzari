@@ -165,11 +165,11 @@ def run_commands() -> Any:
 
     command = manual_command or selected_command
     if not command:
-        return render_template("output.html", command="", results=[], error="No command provided.")
+        return render_template("output.html", command="", results=[], error="No command provided.", auth_mode=session.get("auth_mode", "local"), current_user=session.get("creds", {}).get("username", ""))
 
     selected_devices = [by_name[n] for n in selected_names if n in by_name]
     if not selected_devices:
-        return render_template("output.html", command=command, results=[], error="No devices selected.")
+        return render_template("output.html", command=command, results=[], error="No devices selected.", auth_mode=session.get("auth_mode", "local"), current_user=session.get("creds", {}).get("username", ""))
 
     creds = session["creds"]
     results: list[SSHResult] = []
@@ -180,12 +180,17 @@ def run_commands() -> Any:
             results.append(future.result())
 
     results.sort(key=lambda r: r.device)
-    return render_template("output.html", command=command, results=results, error="")
+    return render_template("output.html", command=command, results=results, error="", auth_mode=session.get("auth_mode", "local"), current_user=session.get("creds", {}).get("username", ""))
 
 
 @app.context_processor
 def inject_custom_buttons() -> dict[str, Any]:
-    return {"custom_buttons": session.get("custom_buttons", [])}
+    creds = session.get("creds", {})
+    return {
+        "custom_buttons": session.get("custom_buttons", []),
+        "current_user": creds.get("username", ""),
+        "auth_mode": session.get("auth_mode", "local"),
+    }
 
 
 if __name__ == "__main__":

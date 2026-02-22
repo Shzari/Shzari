@@ -24,20 +24,26 @@
   </script>
 </head>
 <body>
-  <div class="topbar">
-    <h2>Network SSH Troubleshooting Dashboard</h2>
-    <div>
-      Logged in via: <b>{{ auth_mode|upper }}</b> |
-      <a href="{{ url_for('logout') }}">Logout</a>
-    </div>
+  <div class="page-bg"></div>
+
+  <div class="user-strip">
+    <div class="chip">👤 User: <b>{{ current_user or 'Unknown' }}</b></div>
+    <div class="chip">🔐 Mode: <b>{{ auth_mode|upper }}</b></div>
+    <a class="logout-link" href="{{ url_for('logout') }}">Logout</a>
+  </div>
+
+  <div class="topbar glass">
+    <h2>⚡ Network SSH Troubleshooting Dashboard</h2>
+    <p>Fast, smooth operations for routers and switches.</p>
   </div>
 
   <div class="grid">
-    <div class="card">
+    <div class="card glass">
       <h3>Device Selection</h3>
-      <button type="button" onclick="selectAllDevices()">Select All</button>
-      <button type="button" onclick="clearDevices()">Clear</button>
-      <div class="spacer"></div>
+      <div class="action-row">
+        <button class="btn" type="button" onclick="selectAllDevices()">Select All</button>
+        <button class="btn ghost" type="button" onclick="clearDevices()">Clear</button>
+      </div>
       <label>Group</label>
       <select id="groupSelect" onchange="selectGroup()">
         <option value="">--Choose group--</option>
@@ -50,22 +56,23 @@
         {% for d in devices %}
           <label class="device-item">
             <input class="device-box {% for g in d.groups %}group-{{ g }} {% endfor %}" type="checkbox" name="selected_devices" value="{{ d.name }}" form="runForm">
-            {{ d.name }} ({{ d.host }})
+            <span>{{ d.name }}</span>
+            <small>{{ d.host }}</small>
           </label>
         {% endfor %}
       </div>
     </div>
 
-    <div class="card">
+    <div class="card glass">
       <h3>Commands</h3>
       <form method="post" action="{{ url_for('run_commands') }}" id="runForm" target="_blank">
-        <label>Predefined command buttons</label>
+        <label>Quick command buttons</label>
         <div class="buttons-wrap">
           {% for c in commands %}
-            <button type="button" onclick="setCommand('{{ c }}')">{{ c }}</button>
+            <button class="btn" type="button" onclick="setCommand('{{ c }}')">{{ c }}</button>
           {% endfor %}
           {% for c in custom_buttons %}
-            <button type="button" onclick="setCommand('{{ c }}')">{{ c }}</button>
+            <button class="btn custom" type="button" onclick="setCommand('{{ c }}')">{{ c }}</button>
           {% endfor %}
         </div>
 
@@ -78,8 +85,9 @@
         <label>Add new command button</label>
         <input name="custom_button_command" type="text" placeholder="e.g., show clock">
 
-        <div class="spacer"></div>
-        <button type="submit">Run Command (opens new window)</button>
+        <div class="action-row">
+          <button class="btn run" type="submit">Run Command (opens new window)</button>
+        </div>
       </form>
     </div>
   </div>
