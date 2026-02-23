@@ -111,7 +111,7 @@
         return;
       }
 
-      result.textContent = `Testing SSH connectivity to ${ipAddress}:22 ...`;
+      result.textContent = `Testing ICMP and SSH connectivity to ${ipAddress} ...`;
 
       try {
         const response = await fetch("{{ url_for('test_device_connectivity') }}", {

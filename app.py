@@ -9,6 +9,7 @@ import random
 import secrets
 import socket
 import struct
+import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -636,12 +637,31 @@ def test_device_connectivity() -> Any:
     if not ip_address:
         return jsonify({"ok": False, "message": "IP address is required."}), 400
 
+    icmp_ok = False
+    ssh_ok = False
+
+    ping_cmd = ["ping", "-c", "1", "-W", "2", ip_address]
+    ping_result = subprocess.run(ping_cmd, capture_output=True, text=True, check=False)
+    if ping_result.returncode == 0:
+        icmp_ok = True
+
     try:
         with socket.create_connection((ip_address, 22), timeout=4):
             pass
-        return jsonify({"ok": True, "message": f"Connectivity success to {ip_address}:22"})
-    except OSError as exc:
-        return jsonify({"ok": False, "message": f"Connectivity failed to {ip_address}:22 ({exc})"}), 200
+        ssh_ok = True
+    except OSError:
+        ssh_ok = False
+
+    status_lines = [
+        "ICMP successfully" if icmp_ok else "ICMP fail",
+        "SSH successfully" if ssh_ok else "SSH fail",
+    ]
+    return jsonify({
+        "ok": icmp_ok and ssh_ok,
+        "message": " | ".join(status_lines),
+        "icmp_ok": icmp_ok,
+        "ssh_ok": ssh_ok,
+    })
 
 
 @app.route("/run", methods=["POST"])
