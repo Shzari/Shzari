@@ -156,14 +156,54 @@
     }
 
     function requireSuperAdminPassword(event) {
+      event.preventDefault();
       const form = event.target;
       const actionInput = form.querySelector('input[name="action"]');
       const action = actionInput ? actionInput.value : 'save';
       const actionLabel = action === 'add' ? 'save this device' : (action === 'edit' ? 'edit this device' : 'delete this device');
-      const password = window.prompt(`Super Admin password is required to ${actionLabel}:`);
-      if (!password) {
-        event.preventDefault();
+
+      const modal = document.getElementById('superAdminPasswordModal');
+      const title = document.getElementById('superAdminPasswordTitle');
+      const input = document.getElementById('superAdminPasswordInput');
+      const error = document.getElementById('superAdminPasswordError');
+
+      if (!modal || !input) {
         return false;
+      }
+
+      form.dataset.awaitingAdminPassword = '1';
+      title.textContent = `Super Admin password required to ${actionLabel}`;
+      input.value = '';
+      if (error) error.textContent = '';
+
+      modal.showModal();
+      setTimeout(() => input.focus(), 0);
+      return false;
+    }
+
+    function closeSuperAdminPasswordModal() {
+      const modal = document.getElementById('superAdminPasswordModal');
+      const forms = document.querySelectorAll('form[data-awaiting-admin-password="1"]');
+      forms.forEach((form) => { delete form.dataset.awaitingAdminPassword; });
+      if (modal && modal.close) modal.close();
+    }
+
+    function submitWithSuperAdminPassword() {
+      const modal = document.getElementById('superAdminPasswordModal');
+      const input = document.getElementById('superAdminPasswordInput');
+      const error = document.getElementById('superAdminPasswordError');
+      const form = document.querySelector('form[data-awaiting-admin-password="1"]');
+
+      if (!form || !input) {
+        if (modal && modal.close) modal.close();
+        return;
+      }
+
+      const password = input.value || '';
+      if (!password.trim()) {
+        if (error) error.textContent = 'Super Admin password is required.';
+        input.focus();
+        return;
       }
 
       let hidden = form.querySelector('input[name="super_admin_password"]');
@@ -174,7 +214,10 @@
         form.appendChild(hidden);
       }
       hidden.value = password;
-      return true;
+      delete form.dataset.awaitingAdminPassword;
+
+      if (modal && modal.close) modal.close();
+      form.submit();
     }
 
     function populateEditDeviceForm() {
@@ -383,6 +426,19 @@
     </div>
   </div>
 
+
+  <dialog id="superAdminPasswordModal" class="device-modal">
+    <form method="dialog" onsubmit="event.preventDefault(); submitWithSuperAdminPassword();">
+      <h3 id="superAdminPasswordTitle">Super Admin password required</h3>
+      <label>Password</label>
+      <input id="superAdminPasswordInput" type="password" placeholder="Enter super admin password" autocomplete="current-password" required>
+      <div id="superAdminPasswordError" class="error"></div>
+      <div class="action-row">
+        <button class="btn" type="submit">Confirm</button>
+        <button class="btn ghost" type="button" onclick="closeSuperAdminPasswordModal()">Cancel</button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog id="deviceCredsModal" class="device-modal">
     <form method="post" action="{{ url_for('update_device_credentials') }}">
