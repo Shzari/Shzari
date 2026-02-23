@@ -640,10 +640,17 @@ def test_device_connectivity() -> Any:
     icmp_ok = False
     ssh_ok = False
 
-    ping_cmd = ["ping", "-c", "1", "-W", "2", ip_address]
-    ping_result = subprocess.run(ping_cmd, capture_output=True, text=True, check=False)
-    if ping_result.returncode == 0:
-        icmp_ok = True
+    if os.name == "nt":
+        ping_cmd = ["ping", "-n", "1", "-w", "2000", ip_address]
+    else:
+        ping_cmd = ["ping", "-c", "1", "-W", "2", ip_address]
+
+    try:
+        ping_result = subprocess.run(ping_cmd, capture_output=True, text=True, check=False)
+        if ping_result.returncode == 0:
+            icmp_ok = True
+    except OSError:
+        icmp_ok = False
 
     try:
         with socket.create_connection((ip_address, 22), timeout=4):
