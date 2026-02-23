@@ -653,6 +653,7 @@ def dashboard() -> Any:
         buttons=get_buttons(),
         info=info,
         error=error,
+        device_creds=session.get("device_creds", {}),
     )
 
 
@@ -812,6 +813,28 @@ def buttons_menu() -> Any:
     return redirect(url_for("dashboard"))
 
 
+@app.route("/device-credentials", methods=["POST"])
+def update_device_credentials() -> Any:
+    if "creds" not in session:
+        return redirect(url_for("login"))
+
+    ssh_username = request.form.get("device_ssh_username", "").strip()
+    ssh_password = request.form.get("device_ssh_password", "")
+    enable_password = request.form.get("device_enable_password", "")
+
+    if not ssh_username or not ssh_password:
+        session["dashboard_error"] = "Device SSH username and password are required."
+        return redirect(url_for("dashboard"))
+
+    session["device_creds"] = {
+        "username": ssh_username,
+        "password": ssh_password,
+        "enable_password": enable_password,
+    }
+    session["dashboard_info"] = "Device credentials updated. New RUN actions will use these credentials."
+    return redirect(url_for("dashboard"))
+
+
 @app.route("/devices/test-connectivity", methods=["POST"])
 def test_device_connectivity() -> Any:
     if "creds" not in session:
@@ -875,7 +898,22 @@ def run_commands() -> Any:
     if not selected_devices:
         return render_template("output.html", run_history=session.get("run_history", []), error="No devices selected.")
 
-    creds = session["creds"]
+    dashboard_creds = session.get("creds", {})
+    device_creds = session.get("device_creds", {})
+    creds = {
+        "username": str(device_creds.get("username", "")).strip() or str(dashboard_creds.get("username", "")).strip(),
+        "password": str(device_creds.get("password", "")) or str(dashboard_creds.get("password", "")),
+        "timeout": int(dashboard_creds.get("timeout", 8) or 8),
+        "enable_password": str(device_creds.get("enable_password", "")),
+    }
+
+    if not creds["username"] or not creds["password"]:
+        return render_template(
+            "output.html",
+            run_history=session.get("run_history", []),
+            error="Set device SSH credentials first from the dashboard user-strip button.",
+        )
+
     results: list[SSHResult] = []
 
     with ThreadPoolExecutor(max_workers=min(20, max(1, len(selected_devices)))) as executor:

@@ -128,6 +128,21 @@
       }
     }
 
+
+    function openDeviceCredsModal() {
+      const modal = document.getElementById('deviceCredsModal');
+      if (modal && modal.showModal) {
+        modal.showModal();
+      }
+    }
+
+    function closeDeviceCredsModal() {
+      const modal = document.getElementById('deviceCredsModal');
+      if (modal && modal.close) {
+        modal.close();
+      }
+    }
+
     function handleRunSubmit() {
       const form = document.getElementById('runForm');
       const key = 'output_window_opened';
@@ -158,6 +173,7 @@
   <div class="page-bg"></div>
 
   <div class="user-strip">
+    <button class="btn" type="button" onclick="openDeviceCredsModal()">Device Credentials</button>
     <div class="chip">👤 User: <b>{{ current_user or 'Unknown' }}</b></div>
     <div class="chip">🔐 Mode: <b>{{ auth_mode|upper }}</b></div>
     <a class="logout-link" href="{{ url_for('logout') }}">Logout</a>
@@ -319,6 +335,28 @@
       </details>
     </div>
   </div>
+
+
+  <dialog id="deviceCredsModal" class="device-modal">
+    <form method="post" action="{{ url_for('update_device_credentials') }}">
+      <h3>Device Connection Credentials</h3>
+      <p>These credentials are used by RUN actions to connect to routers/switches.</p>
+
+      <label>ISE Login / SSH Username</label>
+      <input name="device_ssh_username" type="text" value="{{ device_creds.get('username', '') }}" placeholder="e.g., ise-ops-user" required>
+
+      <label>ISE Login / SSH Password</label>
+      <input name="device_ssh_password" type="password" placeholder="Enter device login password" required>
+
+      <label>Enable Password</label>
+      <input name="device_enable_password" type="password" placeholder="Optional enable password">
+
+      <div class="action-row">
+        <button class="btn" type="submit">Save Credentials</button>
+        <button class="btn ghost" type="button" onclick="closeDeviceCredsModal()">Cancel</button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog id="addDeviceModal" class="device-modal">
     <form method="post" action="{{ url_for('manage_devices') }}">
