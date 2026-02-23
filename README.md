@@ -24,9 +24,11 @@ A web-based network engineering app to authenticate users, select routers/switch
   - drag-select one or more groups, then devices list updates
   - devices list shows 15 rows with scroll for larger inventories
   - create category from GUI
+  - Uncategorized category is protected and cannot be deleted (even by super admin)
   - add devices to category from GUI
   - delete category from GUI
   - Add Device popup (hostname + IP + category drag-list)
+  - new devices default to Uncategorized category
   - Add Device popup includes **Test** button for dual connectivity checks (ICMP ping + SSH TCP/22)
   - ICMP ping test supports both Linux/macOS and Windows hosts running the web app
   - duplicate hostname/IP validation when adding device

@@ -318,8 +318,8 @@
 
           <label>Select category to add device into</label>
           <select name="target_category">
-            {% for grp in groups.keys() %}
-              <option value="{{ grp }}">{{ grp }}</option>
+            {% for grp in categories %}
+              <option value="{{ grp }}" {% if grp == "Uncategorized" %}selected{% endif %}>{{ grp }}</option>
             {% endfor %}
           </select>
           <button class="btn" type="submit">Add Device To Category</button>
@@ -329,7 +329,7 @@
           <input type="hidden" name="action" value="delete_category">
           <label>Delete category</label>
           <select name="delete_category_name">
-            {% for grp in groups.keys() %}
+            {% for grp in categories %}
               <option value="{{ grp }}">{{ grp }}</option>
             {% endfor %}
           </select>
@@ -350,7 +350,7 @@
           <input id="editIpInput" name="edit_ip_address" type="text" placeholder="10.20.30.50">
           <label>Categories (drag-list)</label>
           <select id="editCategorySelect" class="drag-list" name="edit_device_categories" multiple size="6">
-            {% for grp in groups.keys() %}
+            {% for grp in categories %}
               <option value="{{ grp }}">{{ grp }}</option>
             {% endfor %}
           </select>
@@ -478,8 +478,8 @@
 
       <label>Select Categories (drag-list)</label>
       <select class="drag-list" name="new_device_categories" multiple size="6">
-        {% for grp in groups.keys() %}
-          <option value="{{ grp }}">{{ grp }}</option>
+        {% for grp in categories %}
+          <option value="{{ grp }}" {% if grp == "Uncategorized" %}selected{% endif %}>{{ grp }}</option>
         {% endfor %}
       </select>
 

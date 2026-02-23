@@ -38,6 +38,7 @@ ATTR_NAS_IP_ADDRESS = 4
 ATTR_NAS_PORT = 5
 ATTR_SERVICE_TYPE = 6
 SERVICE_TYPE_LOGIN = 1
+DEFAULT_CATEGORY = "Uncategorized"
 
 
 @dataclass
@@ -248,10 +249,12 @@ def grouped_devices(devices: list[dict[str, Any]]) -> dict[str, list[dict[str, A
 
 
 def all_categories(devices: list[dict[str, Any]]) -> list[str]:
-    categories: set[str] = set()
+    categories: set[str] = {DEFAULT_CATEGORY}
     for device in devices:
         for group in device.get("groups", []):
-            categories.add(str(group))
+            group_name = str(group).strip()
+            if group_name:
+                categories.add(group_name)
     return sorted(categories)
 
 
@@ -780,12 +783,14 @@ def dashboard() -> Any:
     auth_mode = str(session.get("auth_mode", "local"))
     devices = filter_devices_for_user(all_devices, current_username, auth_mode)
     groups = grouped_devices(devices)
+    categories = all_categories(devices)
     info = session.pop("dashboard_info", "")
     error = session.pop("dashboard_error", "")
     return render_template(
         "dashboard.html",
         devices=devices,
         groups=groups,
+        categories=categories,
         buttons=get_buttons(),
         info=info,
         error=error,
@@ -805,6 +810,8 @@ def manage_devices() -> Any:
         hostname = request.form.get("hostname", "").strip()
         ip_address = request.form.get("ip_address", "").strip()
         selected_categories = [c.strip() for c in request.form.getlist("new_device_categories") if c.strip()]
+        if not selected_categories:
+            selected_categories = [DEFAULT_CATEGORY]
         admin_password = request.form.get("super_admin_password", "")
 
         if not is_super_admin_password(admin_password):
@@ -935,6 +942,9 @@ def manage_categories() -> Any:
 
     elif action == "delete_category":
         category_name = request.form.get("delete_category_name", "").strip()
+        if category_name.strip().lower() == DEFAULT_CATEGORY.lower():
+            session["dashboard_error"] = f"'{DEFAULT_CATEGORY}' category cannot be deleted."
+            return redirect(url_for("dashboard"))
         if category_name:
             for device in devices:
                 groups = device.setdefault("groups", [])
