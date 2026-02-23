@@ -9,6 +9,7 @@ A web-based network engineering app to authenticate users, select routers/switch
 - Super Admin security workflow:
   - First run requires creating a super admin account
   - Settings page requires super admin verification
+- Super Admin Settings page now provides separate Users and ISE popup windows
 - ISE settings page supports:
   - Primary ISE server/port/shared-secret
   - Secondary ISE server/port/shared-secret

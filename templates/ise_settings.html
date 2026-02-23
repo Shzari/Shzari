@@ -10,6 +10,26 @@
       return acc;
     }, {});
 
+    function openIseModal() {
+      const modal = document.getElementById('iseConfigModal');
+      if (modal && modal.showModal) modal.showModal();
+    }
+
+    function closeIseModal() {
+      const modal = document.getElementById('iseConfigModal');
+      if (modal && modal.close) modal.close();
+    }
+
+    function openUsersModal() {
+      const modal = document.getElementById('usersManageModal');
+      if (modal && modal.showModal) modal.showModal();
+    }
+
+    function closeUsersModal() {
+      const modal = document.getElementById('usersManageModal');
+      if (modal && modal.close) modal.close();
+    }
+
     function openUserEditModal() {
       const modal = document.getElementById('userEditModal');
       if (modal && modal.showModal) modal.showModal();
@@ -71,6 +91,13 @@
     window.addEventListener('DOMContentLoaded', () => {
       updateEditActionLabel();
       syncUserCategoriesSelection();
+
+      const selectedModal = {{ selected_modal|tojson }};
+      if (selectedModal === 'users') {
+        openUsersModal();
+      } else if (selectedModal === 'ise') {
+        openIseModal();
+      }
     });
   </script>
 </head>
@@ -80,13 +107,21 @@
     <a class="logout-link" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
   </div>
   <div class="card narrow glass">
-    <h1>ISE Settings</h1>
-    <p>Edit primary and secondary ISE servers.</p>
+    <h1>Super Admin Settings</h1>
+    <p>Choose which settings window to open.</p>
     {% if info %}<div class="info">{{ info }}</div>{% endif %}
     {% if error %}<div class="error">{{ error }}</div>{% endif %}
 
-    <form method="post">
-      <h3>Primary ISE</h3>
+    <div class="action-row">
+      <button class="btn run" type="button" onclick="openUsersModal()">Users</button>
+      <button class="btn" type="button" onclick="openIseModal()">ISE</button>
+    </div>
+  </div>
+
+  <dialog id="iseConfigModal" class="device-modal">
+    <form method="post" action="{{ url_for('ise_settings_page', modal='ise') }}">
+      <h3>ISE Configuration</h3>
+      <h4>Primary ISE</h4>
       <label>Primary Server</label>
       <input name="primary_server" type="text" value="{{ ise.primary_server }}" placeholder="10.1.1.20">
       <label>Primary Port</label>
@@ -94,7 +129,7 @@
       <label>Primary Shared Secret</label>
       <input name="primary_shared_secret" type="password" value="{{ ise.primary_shared_secret }}">
 
-      <h3>Secondary ISE</h3>
+      <h4>Secondary ISE</h4>
       <label>Secondary Server</label>
       <input name="secondary_server" type="text" value="{{ ise.secondary_server }}" placeholder="10.1.1.21">
       <label>Secondary Port</label>
@@ -102,60 +137,67 @@
       <label>Secondary Shared Secret</label>
       <input name="secondary_shared_secret" type="password" value="{{ ise.secondary_shared_secret }}">
 
-      <h3>General</h3>
+      <h4>General</h4>
       <label>Timeout (seconds)</label>
       <input name="timeout" type="number" value="{{ ise.timeout }}" min="1" max="20">
       <label>NAS-IP-Address</label>
       <input name="nas_ip" type="text" value="{{ ise.nas_ip }}" placeholder="127.0.0.1">
 
-      <button class="btn run" type="submit">Save ISE Settings</button>
+      <div class="action-row">
+        <button class="btn run" type="submit">Save ISE Settings</button>
+        <button class="btn ghost" type="button" onclick="closeIseModal()">Close</button>
+      </div>
     </form>
+  </dialog>
 
-    <hr>
-    <h2>Local User Management (Super Admin Only)</h2>
-    <p>Create, delete, reset password, and force password change for local dashboard users.</p>
+  <dialog id="usersManageModal" class="device-modal">
+    <div>
+      <h3>Local User Management (Super Admin Only)</h3>
+      <p>Create, delete, reset password, and force password change for local dashboard users.</p>
 
-    <form method="post" action="{{ url_for('manage_users') }}" class="submenu-form">
-      <input type="hidden" name="action" value="create">
-      <label>New Username</label>
-      <input name="new_username" type="text" placeholder="e.g., noc-operator-1">
-      <button class="btn" type="submit">Add User</button>
-    </form>
+      <form method="post" action="{{ url_for('manage_users') }}" class="submenu-form">
+        <input type="hidden" name="action" value="create">
+        <label>New Username</label>
+        <input name="new_username" type="text" placeholder="e.g., noc-operator-1">
+        <button class="btn" type="submit">Add User</button>
+      </form>
 
-    <h3>Created Users</h3>
-    <div class="device-list">
-      {% if users %}
-        {% for user in users %}
-          <div class="device-item">
-            <span>{{ user.username }}</span>
-            <small>
-              {% if user.password_hash %}
-                password set
-              {% else %}
-                password not set
-              {% endif %}
-              {% if user.must_change_password %}
-                | must change next login
-              {% endif %}
-              {% if user.allowed_categories is none %}
-                | category access: all
-              {% elif user.allowed_categories %}
-                | category access: {{ user.allowed_categories|join(", ") }}
-              {% else %}
-                | category access: none
-              {% endif %}
-            </small>
-          </div>
-        {% endfor %}
-      {% else %}
-        <div class="device-item"><span>No users created yet.</span></div>
-      {% endif %}
+      <h4>Created Users</h4>
+      <div class="device-list">
+        {% if users %}
+          {% for user in users %}
+            <div class="device-item">
+              <span>{{ user.username }}</span>
+              <small>
+                {% if user.password_hash %}
+                  password set
+                {% else %}
+                  password not set
+                {% endif %}
+                {% if user.must_change_password %}
+                  | must change next login
+                {% endif %}
+                {% if user.allowed_categories is none %}
+                  | category access: all
+                {% elif user.allowed_categories %}
+                  | category access: {{ user.allowed_categories|join(", ") }}
+                {% else %}
+                  | category access: none
+                {% endif %}
+              </small>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="device-item"><span>No users created yet.</span></div>
+        {% endif %}
+      </div>
+
+      <div class="action-row">
+        <button class="btn" type="button" onclick="openUserEditModal()">Edit User</button>
+        <button class="btn ghost" type="button" onclick="closeUsersModal()">Close</button>
+      </div>
     </div>
-
-    <div class="action-row">
-      <button class="btn" type="button" onclick="openUserEditModal()">Edit User</button>
-    </div>
-  </div>
+  </dialog>
 
   <dialog id="userEditModal" class="device-modal">
     <form method="post" action="{{ url_for('manage_users') }}">

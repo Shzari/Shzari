@@ -621,6 +621,7 @@ def ise_settings_page() -> Any:
         error=error,
         users=load_users(),
         available_categories=all_categories(devices),
+        selected_modal=request.args.get("modal", ""),
     )
 
 
@@ -784,7 +785,7 @@ def manage_users() -> Any:
             else:
                 session["settings_info"] = f"'{username}' now has no category access."
 
-    return redirect(url_for("ise_settings_page"))
+    return redirect(url_for("ise_settings_page", modal="users"))
 
 
 @app.route("/logout")
