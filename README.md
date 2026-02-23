@@ -1,47 +1,35 @@
 # Network Web SSH Automation App
 
-A web-based network engineering app to authenticate users, select routers/switches (all/some/by group), and run troubleshooting commands over SSH.
+A web-based network engineering app to authenticate users, select routers/switches, run troubleshooting commands over SSH, and manage Cisco ISE auth settings with super-admin protection.
 
 ## Key Features
 - Login supports:
-  - **Local login**
-  - **Cisco ISE (RADIUS) authentication**
-- Built-in **ISE network settings** page section in login UI:
-  - ISE server
-  - RADIUS auth port
-  - shared secret (key)
-  - timeout
-  - NAS-IP-Address
-- Device controls:
-  - select all / clear
+  - Local login
+  - Cisco ISE (RADIUS) login
+- Super Admin security workflow:
+  - First run requires creating a super admin account
+  - Settings page requires super admin verification
+- ISE settings page supports:
+  - Primary ISE server/port/shared-secret
+  - Secondary ISE server/port/shared-secret
+  - Timeout and NAS-IP
+- Category/group workflow:
   - select by group/category
-  - drag-list view for devices inside selected category
-  - select specific devices
-  - create new categories from GUI
-  - add any device into selected category from GUI
-- Command controls:
-  - predefined buttons
-  - add custom command buttons
-  - rename existing button names from GUI
+  - drag-list devices in selected group
+  - create category from GUI
+  - add devices to category from GUI
+- Command workflow:
+  - command buttons and custom buttons
   - RUN button
-- Output behavior:
-  - output window opens first run
-  - next runs reuse same window
-  - cumulative outputs append down the page
+  - output window opens first run, then reuses
+  - output history appends down page
 
-## Configure devices
-Edit `devices_web.json`.
-
-## Configure ISE auth
-Open login page and use **ISE Network Settings** submenu.
-Set:
-- ISE server address
-- RADIUS port (default 1812)
-- shared secret key
-- timeout
-- NAS-IP
-
-Then select **ISE Credentials (RADIUS)** in Auth Mode and login with username/password.
+## First-Time Setup
+1. Start app.
+2. Open web UI.
+3. Create Super Admin account.
+4. Login and click **Settings**.
+5. Verify Super Admin and configure primary/secondary ISE.
 
 ## Run
 ```bash
@@ -52,7 +40,6 @@ python3 app.py
 ```
 
 ## Security Notes
-- Set `APP_SECRET_KEY` in environment.
-- Put app behind HTTPS reverse proxy for production.
-- Prefer least-privilege and read-only command profiles.
-- `ise_settings.json` contains secret material; secure file permissions and storage.
+- Set `APP_SECRET_KEY`.
+- Protect `super_admin.json` and `ise_settings.json` permissions.
+- Use HTTPS/reverse-proxy in production.

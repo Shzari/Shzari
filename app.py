@@ -6,6 +6,7 @@ import hmac
 import json
 import os
 import random
+import secrets
 import socket
 import struct
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -19,6 +20,7 @@ from flask import Flask, redirect, render_template, request, session, url_for
 BASE_DIR = Path(__file__).resolve().parent
 DEVICES_FILE = BASE_DIR / "devices_web.json"
 ISE_SETTINGS_FILE = BASE_DIR / "ise_settings.json"
+SUPER_ADMIN_FILE = BASE_DIR / "super_admin.json"
 SECRET_KEY = os.environ.get("APP_SECRET_KEY", "dev-secret-change-me")
 
 app = Flask(__name__)
@@ -41,6 +43,48 @@ class SSHResult:
     host: str
     status: str
     output: str
+
+
+def _hash_password(password: str, salt_hex: str) -> str:
+    return hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), bytes.fromhex(salt_hex), 200000
+    ).hex()
+
+
+def super_admin_exists() -> bool:
+    return SUPER_ADMIN_FILE.exists()
+
+
+def load_super_admin() -> dict[str, Any]:
+    if not SUPER_ADMIN_FILE.exists():
+        return {}
+    with SUPER_ADMIN_FILE.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_super_admin(username: str, password: str) -> None:
+    salt = secrets.token_hex(16)
+    payload = {
+        "username": username.strip(),
+        "salt": salt,
+        "password_hash": _hash_password(password, salt),
+    }
+    with SUPER_ADMIN_FILE.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+
+
+def verify_super_admin(username: str, password: str) -> bool:
+    data = load_super_admin()
+    if not data:
+        return False
+    if username.strip() != str(data.get("username", "")):
+        return False
+    salt = str(data.get("salt", ""))
+    expected = str(data.get("password_hash", ""))
+    if not salt or not expected:
+        return False
+    actual = _hash_password(password, salt)
+    return hmac.compare_digest(actual, expected)
 
 
 def load_devices() -> list[dict[str, Any]]:
@@ -90,9 +134,12 @@ def get_buttons() -> list[dict[str, str]]:
 
 def default_ise_settings() -> dict[str, Any]:
     return {
-        "server": "",
-        "port": 1812,
-        "shared_secret": "",
+        "primary_server": "",
+        "primary_port": 1812,
+        "primary_shared_secret": "",
+        "secondary_server": "",
+        "secondary_port": 1812,
+        "secondary_shared_secret": "",
         "timeout": 5,
         "nas_ip": "127.0.0.1",
     }
@@ -110,9 +157,12 @@ def load_ise_settings() -> dict[str, Any]:
 
 def save_ise_settings(settings: dict[str, Any]) -> None:
     payload = {
-        "server": str(settings.get("server", "")).strip(),
-        "port": int(settings.get("port", 1812) or 1812),
-        "shared_secret": str(settings.get("shared_secret", "")),
+        "primary_server": str(settings.get("primary_server", "")).strip(),
+        "primary_port": int(settings.get("primary_port", 1812) or 1812),
+        "primary_shared_secret": str(settings.get("primary_shared_secret", "")),
+        "secondary_server": str(settings.get("secondary_server", "")).strip(),
+        "secondary_port": int(settings.get("secondary_port", 1812) or 1812),
+        "secondary_shared_secret": str(settings.get("secondary_shared_secret", "")),
         "timeout": int(settings.get("timeout", 5) or 5),
         "nas_ip": str(settings.get("nas_ip", "127.0.0.1")).strip(),
     }
@@ -142,17 +192,19 @@ def _radius_encrypt_user_password(password: str, secret: bytes, request_authenti
     return encrypted
 
 
-def authenticate_with_ise(username: str, password: str, settings: dict[str, Any]) -> tuple[bool, str]:
-    server = str(settings.get("server", "")).strip()
-    secret_text = str(settings.get("shared_secret", ""))
-    if not server or not secret_text:
-        return False, "ISE settings missing: server and shared secret are required."
+def _authenticate_radius_server(
+    username: str,
+    password: str,
+    server: str,
+    port: int,
+    shared_secret: str,
+    timeout: int,
+    nas_ip: str,
+) -> tuple[bool, str]:
+    if not server or not shared_secret:
+        return False, "Server/secret missing"
 
-    port = int(settings.get("port", 1812) or 1812)
-    timeout = int(settings.get("timeout", 5) or 5)
-    nas_ip = str(settings.get("nas_ip", "127.0.0.1")).strip()
-
-    secret = secret_text.encode("utf-8")
+    secret = shared_secret.encode("utf-8")
     identifier = random.randint(0, 255)
     request_authenticator = os.urandom(16)
 
@@ -177,31 +229,69 @@ def authenticate_with_ise(username: str, password: str, settings: dict[str, Any]
         sock.sendto(packet, (server, port))
         response, _ = sock.recvfrom(4096)
     except socket.timeout:
-        return False, "ISE authentication timeout."
+        return False, f"Timeout from ISE {server}:{port}"
     except OSError as exc:
-        return False, f"ISE connection error: {exc}"
+        return False, f"Connection error to ISE {server}:{port}: {exc}"
     finally:
         sock.close()
 
     if len(response) < 20:
-        return False, "Invalid response from ISE server."
+        return False, f"Invalid response from ISE {server}:{port}"
 
     code, recv_identifier, recv_length = struct.unpack("!BBH", response[:4])
     recv_authenticator = response[4:20]
     response_attrs = response[20:recv_length]
 
     if recv_identifier != identifier:
-        return False, "ISE response identifier mismatch."
+        return False, f"Identifier mismatch from ISE {server}:{port}"
 
     expected_auth = hmac.new(secret, response[:4] + request_authenticator + response_attrs, hashlib.md5).digest()
     if expected_auth != recv_authenticator:
-        return False, "ISE response authenticator verification failed."
+        return False, f"Authenticator check failed from ISE {server}:{port}"
 
     if code == ACCESS_ACCEPT:
-        return True, "Authenticated by ISE."
+        return True, f"Authenticated by ISE {server}:{port}"
     if code == ACCESS_REJECT:
-        return False, "ISE rejected username/password."
-    return False, f"ISE returned unsupported code {code}."
+        return False, f"Rejected by ISE {server}:{port}"
+    return False, f"Unsupported response code {code} from ISE {server}:{port}"
+
+
+def authenticate_with_ise(username: str, password: str, settings: dict[str, Any]) -> tuple[bool, str]:
+    timeout = int(settings.get("timeout", 5) or 5)
+    nas_ip = str(settings.get("nas_ip", "127.0.0.1")).strip()
+
+    primary_server = str(settings.get("primary_server", "")).strip()
+    primary_port = int(settings.get("primary_port", 1812) or 1812)
+    primary_secret = str(settings.get("primary_shared_secret", ""))
+
+    secondary_server = str(settings.get("secondary_server", "")).strip()
+    secondary_port = int(settings.get("secondary_port", 1812) or 1812)
+    secondary_secret = str(settings.get("secondary_shared_secret", ""))
+
+    if not primary_server or not primary_secret:
+        return False, "Primary ISE server and primary secret are required."
+
+    ok, message = _authenticate_radius_server(
+        username, password, primary_server, primary_port, primary_secret, timeout, nas_ip
+    )
+    if ok:
+        return True, message
+
+    if secondary_server and secondary_secret:
+        ok2, msg2 = _authenticate_radius_server(
+            username,
+            password,
+            secondary_server,
+            secondary_port,
+            secondary_secret,
+            timeout,
+            nas_ip,
+        )
+        if ok2:
+            return True, msg2
+        return False, f"Primary failed: {message}. Secondary failed: {msg2}."
+
+    return False, message
 
 
 def run_ssh_command(host: str, port: int, username: str, password: str, command: str, timeout: int) -> tuple[str, str]:
@@ -246,32 +336,90 @@ def execute_for_device(device: dict[str, Any], creds: dict[str, Any], command: s
 
 @app.route("/")
 def root() -> Any:
+    if not super_admin_exists():
+        return redirect(url_for("setup_super_admin"))
     if "auth_mode" in session:
         return redirect(url_for("dashboard"))
     return redirect(url_for("login"))
 
 
-@app.route("/ise-settings", methods=["POST"])
-def ise_settings() -> Any:
-    settings = {
-        "server": request.form.get("ise_server", "").strip(),
-        "port": request.form.get("ise_port", "1812").strip(),
-        "shared_secret": request.form.get("ise_secret", ""),
-        "timeout": request.form.get("ise_timeout", "5").strip(),
-        "nas_ip": request.form.get("ise_nas_ip", "127.0.0.1").strip(),
-    }
-    try:
-        save_ise_settings(settings)
-        session["ise_message"] = "ISE settings saved."
-    except Exception as exc:
-        session["ise_message"] = f"Failed to save ISE settings: {exc}"
-    return redirect(url_for("login"))
+@app.route("/super-admin/setup", methods=["GET", "POST"])
+def setup_super_admin() -> Any:
+    if super_admin_exists():
+        return redirect(url_for("login"))
+
+    error = ""
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        confirm = request.form.get("confirm_password", "")
+
+        if not username or not password:
+            error = "Username and password are required."
+        elif password != confirm:
+            error = "Passwords do not match."
+        else:
+            save_super_admin(username, password)
+            return redirect(url_for("login"))
+
+    return render_template("super_admin_setup.html", error=error)
+
+
+@app.route("/super-admin/verify", methods=["GET", "POST"])
+def verify_super_admin_route() -> Any:
+    if not super_admin_exists():
+        return redirect(url_for("setup_super_admin"))
+
+    error = ""
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        if verify_super_admin(username, password):
+            session["super_admin_verified"] = True
+            return redirect(url_for("ise_settings_page"))
+        error = "Invalid super admin credentials."
+
+    return render_template("super_admin_verify.html", error=error)
+
+
+@app.route("/settings/ise", methods=["GET", "POST"])
+def ise_settings_page() -> Any:
+    if not super_admin_exists():
+        return redirect(url_for("setup_super_admin"))
+    if not session.get("super_admin_verified"):
+        return redirect(url_for("verify_super_admin_route"))
+
+    info = ""
+    error = ""
+    settings = load_ise_settings()
+
+    if request.method == "POST":
+        data = {
+            "primary_server": request.form.get("primary_server", "").strip(),
+            "primary_port": request.form.get("primary_port", "1812").strip(),
+            "primary_shared_secret": request.form.get("primary_shared_secret", ""),
+            "secondary_server": request.form.get("secondary_server", "").strip(),
+            "secondary_port": request.form.get("secondary_port", "1812").strip(),
+            "secondary_shared_secret": request.form.get("secondary_shared_secret", ""),
+            "timeout": request.form.get("timeout", "5").strip(),
+            "nas_ip": request.form.get("nas_ip", "127.0.0.1").strip(),
+        }
+        try:
+            save_ise_settings(data)
+            settings = load_ise_settings()
+            info = "ISE settings updated."
+        except Exception as exc:
+            error = f"Failed to save settings: {exc}"
+
+    return render_template("ise_settings.html", ise=settings, info=info, error=error)
 
 
 @app.route("/login", methods=["GET", "POST"])
 def login() -> Any:
+    if not super_admin_exists():
+        return redirect(url_for("setup_super_admin"))
+
     error = ""
-    info = session.pop("ise_message", "")
     settings = load_ise_settings()
 
     if request.method == "POST":
@@ -286,8 +434,6 @@ def login() -> Any:
             ok, message = authenticate_with_ise(username, password, settings)
             if not ok:
                 error = message
-            else:
-                info = message
 
         if not error:
             session["auth_mode"] = auth_mode
@@ -296,7 +442,7 @@ def login() -> Any:
             session.setdefault("run_history", [])
             return redirect(url_for("dashboard"))
 
-    return render_template("login.html", error=error, info=info, ise=settings)
+    return render_template("login.html", error=error)
 
 
 @app.route("/logout")
@@ -326,14 +472,10 @@ def manage_categories() -> Any:
     if action == "create_category":
         category_name = request.form.get("category_name", "").strip()
         if category_name:
-            for device in devices:
-                groups = device.setdefault("groups", [])
-                if category_name in groups:
-                    break
-            else:
-                if devices:
-                    devices[0].setdefault("groups", []).append(category_name)
-        save_devices(devices)
+            found = any(category_name in d.get("groups", []) for d in devices)
+            if not found and devices:
+                devices[0].setdefault("groups", []).append(category_name)
+            save_devices(devices)
 
     elif action == "assign_device":
         device_name = request.form.get("device_name", "").strip()

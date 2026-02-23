@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>ISE Settings</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="page-bg"></div>
+  <div class="user-strip">
+    <a class="logout-link" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+  </div>
+  <div class="card narrow glass">
+    <h1>ISE Settings</h1>
+    <p>Edit primary and secondary ISE servers.</p>
+    {% if info %}<div class="info">{{ info }}</div>{% endif %}
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+    <form method="post">
+      <h3>Primary ISE</h3>
+      <label>Primary Server</label>
+      <input name="primary_server" type="text" value="{{ ise.primary_server }}" placeholder="10.1.1.20">
+      <label>Primary Port</label>
+      <input name="primary_port" type="number" value="{{ ise.primary_port }}" min="1" max="65535">
+      <label>Primary Shared Secret</label>
+      <input name="primary_shared_secret" type="password" value="{{ ise.primary_shared_secret }}">
+
+      <h3>Secondary ISE</h3>
+      <label>Secondary Server</label>
+      <input name="secondary_server" type="text" value="{{ ise.secondary_server }}" placeholder="10.1.1.21">
+      <label>Secondary Port</label>
+      <input name="secondary_port" type="number" value="{{ ise.secondary_port }}" min="1" max="65535">
+      <label>Secondary Shared Secret</label>
+      <input name="secondary_shared_secret" type="password" value="{{ ise.secondary_shared_secret }}">
+
+      <h3>General</h3>
+      <label>Timeout (seconds)</label>
+      <input name="timeout" type="number" value="{{ ise.timeout }}" min="1" max="20">
+      <label>NAS-IP-Address</label>
+      <input name="nas_ip" type="text" value="{{ ise.nas_ip }}" placeholder="127.0.0.1">
+
+      <button class="btn run" type="submit">Save ISE Settings</button>
+    </form>
+  </div>
+</body>
+</html>
