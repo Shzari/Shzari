@@ -24,7 +24,9 @@
       const action = document.getElementById('userEditAction').value;
       const note = document.getElementById('userEditActionNote');
       if (!note) return;
-      if (action === 'delete') {
+      if (!action) {
+        note.textContent = 'Select an action first.';
+      } else if (action === 'delete') {
         note.textContent = 'Delete selected user permanently.';
       } else if (action === 'reset_password') {
         note.textContent = 'Reset selected user password to blank and force set on next login.';
@@ -35,30 +37,33 @@
       }
     }
 
+    function setAllCategoryCheckboxes(isChecked) {
+      document.querySelectorAll('.category-access-checkbox').forEach((item) => {
+        item.checked = isChecked;
+      });
+    }
+
     function syncUserCategoriesSelection() {
       const userSelect = document.getElementById('userEditUsername');
-      const categoriesSelect = document.getElementById('userCategoryAccess');
-      if (!userSelect || !categoriesSelect) return;
+      const checkboxes = Array.from(document.querySelectorAll('.category-access-checkbox'));
+      if (!userSelect || !checkboxes.length) return;
 
       const username = userSelect.value;
       const allowedCategories = USER_CATEGORY_MAP[username];
-      const allOptions = Array.from(categoriesSelect.options);
 
-      allOptions.forEach(option => {
-        option.selected = false;
+      checkboxes.forEach((item) => {
+        item.checked = false;
       });
 
       if (allowedCategories === null) {
-        allOptions.forEach(option => {
-          option.selected = true;
-        });
+        setAllCategoryCheckboxes(true);
         return;
       }
 
       const allowedSet = new Set(allowedCategories || []);
-      allOptions.forEach(option => {
-        if (allowedSet.has(option.value)) {
-          option.selected = true;
+      checkboxes.forEach((item) => {
+        if (allowedSet.has(item.value)) {
+          item.checked = true;
         }
       });
     }
@@ -164,6 +169,7 @@
 
       <label>Action</label>
       <select id="userEditAction" name="action" onchange="updateEditActionLabel()" required>
+        <option value="" selected disabled>-- Select Action --</option>
         <option value="reset_password">Reset Password (blank + force set next login)</option>
         <option value="force_change">Force Change Password on Next Login</option>
         <option value="delete">Delete User</option>
@@ -171,11 +177,21 @@
       </select>
 
       <label>Allowed Categories for Selected User</label>
-      <select id="userCategoryAccess" class="drag-list" name="allowed_categories" multiple size="8">
+      <div class="action-row">
+        <button class="btn" type="button" onclick="setAllCategoryCheckboxes(true)">Select All</button>
+        <button class="btn ghost" type="button" onclick="setAllCategoryCheckboxes(false)">Deselect All</button>
+      </div>
+      <div class="category-access-list">
         {% for category in available_categories %}
-          <option value="{{ category }}">{{ category }}</option>
+          <label class="category-access-row">
+            <span>{{ category }}</span>
+            <input class="category-access-checkbox" type="checkbox" name="allowed_categories" value="{{ category }}">
+          </label>
         {% endfor %}
-      </select>
+        {% if not available_categories %}
+          <div class="category-access-empty">No categories found yet.</div>
+        {% endif %}
+      </div>
 
       <div id="userEditActionNote" class="command-preview"></div>
 

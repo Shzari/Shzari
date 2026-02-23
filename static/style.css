@@ -235,3 +235,30 @@ pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; white-
     grid-template-columns: 1fr;
   }
 }
+
+.category-access-list {
+  margin-top: 8px;
+  border: 1px solid #dbe4ff;
+  border-radius: 10px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: #f8fbff;
+}
+
+.category-access-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px dashed #dbe4ff;
+}
+
+.category-access-row input {
+  width: auto;
+  margin: 0;
+}
+
+.category-access-empty {
+  padding: 10px;
+  color: #64748b;
+}
