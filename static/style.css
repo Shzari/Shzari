@@ -149,3 +149,5 @@ pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; white-
   margin-bottom: 8px;
   color: #1f2937;
 }
+
+.info { color:#0b3a25; background:#c9f7dd; padding:10px; border-radius:8px; margin:8px 0; border:1px solid #8ee4b0; }

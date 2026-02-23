@@ -1,58 +1,55 @@
 # Network Web SSH Automation App
 
-A web-based network engineering app that lets you log in, select routers/switches (all/some/by group), and run troubleshooting commands over SSH. Output opens in a new window.
+A web-based network engineering app to authenticate users, select routers/switches (all/some/by group), and run troubleshooting commands over SSH.
 
-## Features implemented
-- Login page with auth mode selection:
-  - **ISE credentials** (UI mode selector)
-  - **Local device login**
-- Device inventory with group tags (routers, switches, branches, ATM, etc.)
-- Selection controls:
-  - Select all
-  - Clear
-  - Select by group
-  - Choose specific devices
-- Command execution panel:
-  - Built-in troubleshooting/show command buttons
-  - Add your own command button dynamically
-  - Manual command box for any typed command
-- Output page opens in a **new window/tab** and shows per-device execution results
+## Key Features
+- Login supports:
+  - **Local login**
+  - **Cisco ISE (RADIUS) authentication**
+- Built-in **ISE network settings** page section in login UI:
+  - ISE server
+  - RADIUS auth port
+  - shared secret (key)
+  - timeout
+  - NAS-IP-Address
+- Device controls:
+  - select all / clear
+  - select by group
+  - select specific devices
+- Command controls:
+  - predefined buttons
+  - add custom command buttons
+  - rename existing button names from GUI
+  - RUN button
+- Output behavior:
+  - output window opens first run
+  - next runs reuse same window
+  - cumulative outputs append down the page
 
-## Important note about PuTTY
-Web apps cannot directly automate PuTTY GUI sessions in-browser. This app uses backend **SSH** (Paramiko), which is the correct approach for browser-based automation.
+## Configure devices
+Edit `devices_web.json`.
 
-## Quick start
+## Configure ISE auth
+Open login page and use **ISE Network Settings** submenu.
+Set:
+- ISE server address
+- RADIUS port (default 1812)
+- shared secret key
+- timeout
+- NAS-IP
+
+Then select **ISE Credentials (RADIUS)** in Auth Mode and login with username/password.
+
+## Run
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 python3 app.py
 ```
-Open:
-- http://localhost:8080
 
-## Configure your devices
-Edit `devices_web.json`:
-```json
-[
-  {
-    "name": "branch-rtr-01",
-    "host": "10.10.10.1",
-    "port": 22,
-    "groups": ["branches", "routers"]
-  }
-]
-```
-
-## How to use
-1. Login with your local or ISE credentials.
-2. Select one/many devices or a group.
-3. Click a predefined button OR type a manual command.
-4. Submit to run command via SSH on selected devices.
-5. Output opens in a new window.
-
-## Security recommendations
-- Replace default Flask secret via `APP_SECRET_KEY` environment variable.
-- Use HTTPS/reverse proxy in production.
-- Prefer read-only show commands for troubleshooting profiles.
-- Integrate real ISE/AAA verification if needed (current ISE option is UI-mode selection).
+## Security Notes
+- Set `APP_SECRET_KEY` in environment.
+- Put app behind HTTPS reverse proxy for production.
+- Prefer least-privilege and read-only command profiles.
+- `ise_settings.json` contains secret material; secure file permissions and storage.

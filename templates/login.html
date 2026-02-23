@@ -6,15 +6,19 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-  <div class="card narrow">
+  <div class="page-bg"></div>
+  <div class="card narrow glass">
     <h1>Network Automation Login</h1>
-    <p>Use local device credentials or your ISE account credentials.</p>
+    <p>Authenticate with local credentials or Cisco ISE (RADIUS).</p>
+
+    {% if info %}<div class="info">{{ info }}</div>{% endif %}
     {% if error %}<div class="error">{{ error }}</div>{% endif %}
+
     <form method="post">
       <label>Auth Mode</label>
       <select name="auth_mode">
         <option value="local">Local Device Login</option>
-        <option value="ise">ISE Credentials</option>
+        <option value="ise">ISE Credentials (RADIUS)</option>
       </select>
 
       <label>Username</label>
@@ -26,8 +30,30 @@
       <label>SSH Timeout (seconds)</label>
       <input name="timeout" type="number" value="8" min="3" max="30">
 
-      <button type="submit">Login</button>
+      <button class="btn run" type="submit">Login</button>
     </form>
+
+    <details class="submenu" open>
+      <summary>🔐 ISE Network Settings</summary>
+      <form method="post" action="{{ url_for('ise_settings') }}" class="submenu-form">
+        <label>ISE Server IP / Hostname</label>
+        <input name="ise_server" type="text" value="{{ ise.server }}" placeholder="10.1.1.20">
+
+        <label>RADIUS Auth Port</label>
+        <input name="ise_port" type="number" value="{{ ise.port }}" min="1" max="65535">
+
+        <label>Shared Secret / Key</label>
+        <input name="ise_secret" type="password" value="{{ ise.shared_secret }}" placeholder="shared key">
+
+        <label>Timeout (seconds)</label>
+        <input name="ise_timeout" type="number" value="{{ ise.timeout }}" min="1" max="20">
+
+        <label>NAS-IP-Address</label>
+        <input name="ise_nas_ip" type="text" value="{{ ise.nas_ip }}" placeholder="127.0.0.1">
+
+        <button class="btn" type="submit">Save ISE Settings</button>
+      </form>
+    </details>
   </div>
 </body>
 </html>
