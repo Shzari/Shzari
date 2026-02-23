@@ -23,6 +23,7 @@ DEVICES_FILE = BASE_DIR / "devices_web.json"
 ISE_SETTINGS_FILE = BASE_DIR / "ise_settings.json"
 SUPER_ADMIN_FILE = BASE_DIR / "super_admin.json"
 USERS_FILE = BASE_DIR / "users.json"
+DEVICE_CREDS_FILE = BASE_DIR / "device_credentials.json"
 SECRET_KEY = os.environ.get("APP_SECRET_KEY", "dev-secret-change-me")
 
 app = Flask(__name__)
@@ -114,6 +115,49 @@ def load_users() -> list[dict[str, Any]]:
 def save_users(users: list[dict[str, Any]]) -> None:
     with USERS_FILE.open("w", encoding="utf-8") as f:
         json.dump(users, f, indent=2)
+
+
+def load_device_creds_store() -> dict[str, dict[str, str]]:
+    if not DEVICE_CREDS_FILE.exists():
+        return {}
+    with DEVICE_CREDS_FILE.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        return {}
+    normalized: dict[str, dict[str, str]] = {}
+    for key, value in data.items():
+        if not isinstance(value, dict):
+            continue
+        normalized[str(key)] = {
+            "username": str(value.get("username", "")).strip(),
+            "password": str(value.get("password", "")),
+            "enable_password": str(value.get("enable_password", "")),
+        }
+    return normalized
+
+
+def save_device_creds_store(store: dict[str, dict[str, str]]) -> None:
+    with DEVICE_CREDS_FILE.open("w", encoding="utf-8") as f:
+        json.dump(store, f, indent=2)
+
+
+def device_creds_key(account_username: str, auth_mode: str) -> str:
+    return f"{auth_mode.strip().lower()}::{account_username.strip().lower()}"
+
+
+def load_user_device_creds(account_username: str, auth_mode: str) -> dict[str, str]:
+    store = load_device_creds_store()
+    return dict(store.get(device_creds_key(account_username, auth_mode), {}))
+
+
+def save_user_device_creds(account_username: str, auth_mode: str, creds: dict[str, str]) -> None:
+    store = load_device_creds_store()
+    store[device_creds_key(account_username, auth_mode)] = {
+        "username": str(creds.get("username", "")).strip(),
+        "password": str(creds.get("password", "")),
+        "enable_password": str(creds.get("enable_password", "")),
+    }
+    save_device_creds_store(store)
 
 
 def find_user(users: list[dict[str, Any]], username: str) -> dict[str, Any] | None:
@@ -592,6 +636,7 @@ def login() -> Any:
         if not error:
             session["auth_mode"] = auth_mode
             session["creds"] = {"username": username, "password": password, "timeout": timeout}
+            session["device_creds"] = load_user_device_creds(username, auth_mode)
             session.setdefault("buttons", default_buttons())
             session.setdefault("run_history", [])
             return redirect(url_for("dashboard"))
@@ -622,6 +667,7 @@ def change_password() -> Any:
                 session.pop("pending_password_role", None)
                 session["auth_mode"] = "local"
                 session["creds"] = {"username": username, "password": new_password, "timeout": timeout}
+                session["device_creds"] = load_user_device_creds(username, "local")
                 session.setdefault("buttons", default_buttons())
                 session.setdefault("run_history", [])
                 return redirect(url_for("dashboard"))
@@ -638,6 +684,7 @@ def change_password() -> Any:
                 session.pop("pending_password_role", None)
                 session["auth_mode"] = "local"
                 session["creds"] = {"username": username, "password": new_password, "timeout": timeout}
+                session["device_creds"] = load_user_device_creds(username, "local")
                 session.setdefault("buttons", default_buttons())
                 session.setdefault("run_history", [])
                 return redirect(url_for("dashboard"))
@@ -940,11 +987,18 @@ def update_device_credentials() -> Any:
         session["dashboard_error"] = "Device SSH username and password are required."
         return redirect(url_for("dashboard"))
 
-    session["device_creds"] = {
+    updated_creds = {
         "username": ssh_username,
         "password": ssh_password,
         "enable_password": enable_password,
     }
+    session["device_creds"] = updated_creds
+
+    account = session.get("creds", {})
+    account_username = str(account.get("username", "")).strip()
+    auth_mode = str(session.get("auth_mode", "local"))
+    if account_username:
+        save_user_device_creds(account_username, auth_mode, updated_creds)
     session["dashboard_info"] = "Device credentials updated. New RUN actions will use these credentials."
     return redirect(url_for("dashboard"))
 

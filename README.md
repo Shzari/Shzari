@@ -37,6 +37,7 @@ A web-based network engineering app to authenticate users, select routers/switch
 - Dashboard device credential popup:
   - button in user strip (left of User) to open credential popup
   - set ISE login/SSH username + password + enable password used by RUN device connections
+  - device credentials are stored per logged-in account (each user must set their own)
 - Command workflow:
   - command buttons and custom buttons
   - command preview before RUN
