@@ -6,6 +6,7 @@ import hmac
 import json
 import os
 import random
+import re
 import secrets
 import socket
 import struct
@@ -249,6 +250,48 @@ def sync_ntp_time(server: str, port: int, timeout: int) -> tuple[bool, str, str]
         return False, f"NTP sync failed: {exc}", ""
     finally:
         sock.close()
+
+
+def run_ping_for_host(host: str, count: int = 5) -> str:
+    if os.name == "nt":
+        cmd = ["ping", "-n", str(count), "-w", "1000", host]
+    else:
+        cmd = ["ping", "-c", str(count), "-W", "1", host]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    except OSError as exc:
+        return f"PING {host}\n.....\nPing command error: {exc}\n"
+
+    output = result.stdout or ""
+    lines = output.splitlines()
+    rendered: list[str] = [f"PING {host}"]
+    marks: list[str] = []
+
+    for line in lines:
+        lower = line.lower()
+        if "ttl=" in lower and ("time=" in lower or "time<" in lower):
+            marks.append("!")
+            bytes_match = re.search(r"bytes[=< ](\d+)", lower)
+            time_match = re.search(r"time[=<]\s*([0-9.]+)\s*ms", lower)
+            ttl_match = re.search(r"ttl[=< ](\d+)", lower)
+            bytes_val = bytes_match.group(1) if bytes_match else "32"
+            ttl_val = ttl_match.group(1) if ttl_match else "64"
+            if time_match:
+                time_fragment = f"time={time_match.group(1)}ms"
+            elif "time<" in lower:
+                time_fragment = "time<1ms"
+            else:
+                time_fragment = "time<1ms"
+            rendered.append(f"Reply from {host}: bytes={bytes_val} {time_fragment} TTL={ttl_val}")
+
+    if not marks:
+        marks = ["."] * count
+    elif len(marks) < count:
+        marks.extend(["."] * (count - len(marks)))
+
+    rendered.insert(1, "".join(marks[:count]))
+    return "\n".join(rendered) + "\n"
 
 
 def find_user(users: list[dict[str, Any]], username: str) -> dict[str, Any] | None:
@@ -801,42 +844,7 @@ def ntp_settings_page() -> Any:
     return redirect(url_for("ise_settings_page", modal="ntp"))
 
 
-@app.route("/dashboard/ntp", methods=["POST"])
-def dashboard_ntp() -> Any:
-    if "creds" not in session:
-        return redirect(url_for("login"))
 
-    settings = load_ntp_settings()
-    server = request.form.get("ntp_server", settings.get("server", "")).strip()
-    port_raw = request.form.get("ntp_port", str(settings.get("port", 123))).strip()
-    timeout_raw = request.form.get("ntp_timeout", str(settings.get("sync_timeout", 3))).strip()
-
-    try:
-        port = int(port_raw or 123)
-        timeout = int(timeout_raw or 3)
-    except ValueError:
-        session["dashboard_error"] = "NTP port/timeout must be numbers."
-        return redirect(url_for("dashboard"))
-
-    settings["server"] = server
-    settings["port"] = port
-    settings["sync_timeout"] = timeout
-
-    action = request.form.get("action", "save").strip()
-    if action == "sync":
-        ok, message, ntp_time = sync_ntp_time(server, port, timeout)
-        if ok:
-            settings["last_sync"] = ntp_time
-            settings["last_status"] = message
-            session["dashboard_info"] = message
-        else:
-            settings["last_status"] = message
-            session["dashboard_error"] = message
-    else:
-        session["dashboard_info"] = "NTP settings saved."
-
-    save_ntp_settings(settings)
-    return redirect(url_for("dashboard"))
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -1344,6 +1352,42 @@ def test_device_connectivity() -> Any:
         "icmp_ok": icmp_ok,
         "ssh_ok": ssh_ok,
     })
+
+
+@app.route("/ping-selected", methods=["POST"])
+def ping_selected_devices() -> Any:
+    if "creds" not in session:
+        return jsonify({"ok": False, "message": "Not authenticated."}), 401
+
+    payload = request.get_json(silent=True) or {}
+    selected_names = payload.get("selected_devices", [])
+    if not isinstance(selected_names, list):
+        selected_names = []
+
+    all_devices = load_devices()
+    current_username = str(session.get("creds", {}).get("username", ""))
+    auth_mode = str(session.get("auth_mode", "local"))
+    devices = filter_devices_for_user(all_devices, current_username, auth_mode)
+    by_name = {str(device.get("name", "")): device for device in devices}
+
+    chosen = [by_name[name] for name in selected_names if name in by_name]
+    if not chosen:
+        return jsonify({"ok": False, "message": "Select at least one device to ping."}), 400
+
+    sections: list[str] = []
+    any_success = False
+    for device in chosen:
+        host = str(device.get("host", "")).strip()
+        name = str(device.get("name", "")).strip()
+        if not host:
+            sections.append(f"{name}: .....\nNo host configured.\n")
+            continue
+        ping_text = run_ping_for_host(host, count=5)
+        if "!" in ping_text.splitlines()[1] if len(ping_text.splitlines()) > 1 else False:
+            any_success = True
+        sections.append(f"Device: {name} ({host})\n{ping_text}")
+
+    return jsonify({"ok": any_success, "output": "\n".join(sections)})
 
 
 @app.route("/run", methods=["POST"])

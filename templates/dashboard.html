@@ -207,19 +207,6 @@
         modal.close();
       }
     }
-
-    function openNtpModal() {
-      const modal = document.getElementById('ntpModal');
-      if (modal && modal.showModal) {
-        modal.showModal();
-      }
-    }
-
-    function closeNtpModal() {
-      const modal = document.getElementById('ntpModal');
-      if (modal && modal.close) {
-        modal.close();
-      }
     }
 
     function updateClock() {
@@ -262,6 +249,41 @@
       }
       form.target = targetName;
       return true;
+    }
+
+    async function pingSelectedDevices() {
+      const selected = Array.from(document.querySelectorAll('#deviceDragList option:checked')).map((item) => item.value);
+      if (!selected.length) {
+        return;
+      }
+
+      const pre = document.getElementById('pingOutputText');
+      const modal = document.getElementById('pingOutputModal');
+      if (!pre || !modal) return;
+
+      pre.textContent = 'Running ping test...';
+      if (modal.showModal) {
+        modal.showModal();
+      }
+
+      try {
+        const response = await fetch("{{ url_for('ping_selected_devices') }}", {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ selected_devices: selected })
+        });
+        const payload = await response.json();
+        pre.textContent = payload.output || payload.message || 'No ping output.';
+      } catch (error) {
+        pre.textContent = `Ping request failed: ${error}`;
+      }
+    }
+
+    function closePingOutputModal() {
+      const modal = document.getElementById('pingOutputModal');
+      if (modal && modal.close) {
+        modal.close();
+      }
     }
 
     function requireSuperAdminPassword(event) {
@@ -381,9 +403,7 @@
 
   <div class="user-strip">
     <button class="btn" type="button" onclick="openDeviceCredsModal()">Device Credentials</button>
-    <button class="btn" type="button" onclick="openNtpModal()">NTP</button>
-    <div class="chip">🕒 <span id="dashboardClock">--</span></div>
-    <div class="chip">🧭 NTP: <b>{{ ntp.last_sync or 'Not synced' }}</b></div>
+    <div class="chip center-chip">NTP output: <b>{{ ntp.last_status }}</b> | 🕒 <span id="dashboardClock">--</span></div>
     <div class="chip">👤 User: <b>{{ current_user or 'Unknown' }}</b></div>
     <div class="chip">🔐 Mode: <b>{{ auth_mode|upper }}</b></div>
     <a class="logout-link" href="{{ url_for('logout') }}">Logout</a>
@@ -444,6 +464,7 @@
         <div class="command-preview" id="commandPreview">No command selected yet.</div>
 
         <div class="action-row">
+          <button class="btn" type="button" onclick="pingSelectedDevices()">Ping</button>
           <button class="btn run" type="submit">RUN</button>
         </div>
       </form>
@@ -451,23 +472,7 @@
   </div>
 
 
-  <dialog id="ntpModal" class="device-modal">
-    <form method="post" action="{{ url_for('dashboard_ntp') }}">
-      <h3>NTP Panel</h3>
-      <label>NTP Server IP / Hostname</label>
-      <input name="ntp_server" type="text" value="{{ ntp.server }}" placeholder="e.g., 10.10.10.100">
-      <label>NTP Port</label>
-      <input name="ntp_port" type="number" value="{{ ntp.port }}" min="1" max="65535">
-      <label>Timeout (seconds)</label>
-      <input name="ntp_timeout" type="number" value="{{ ntp.sync_timeout }}" min="1" max="10">
-      <div class="info">Last Sync: {{ ntp.last_sync or 'Never' }}<br>Status: {{ ntp.last_status }}</div>
-      <div class="action-row">
-        <button class="btn" type="submit" name="action" value="save">Save</button>
-        <button class="btn run" type="submit" name="action" value="sync">Synchronize</button>
-        <button class="btn ghost" type="button" onclick="closeNtpModal()">Close</button>
-      </div>
-    </form>
-  </dialog>
+
 
   <dialog id="deviceSettingsModal" class="device-modal">
     <div class="command-settings-body">
@@ -578,6 +583,16 @@
     </form>
   </dialog>
 
+
+  <dialog id="pingOutputModal" class="device-modal ping-output-modal">
+    <div class="command-settings-body">
+      <h3>Ping Output</h3>
+      <pre id="pingOutputText" class="ping-output-screen"></pre>
+      <div class="action-row">
+        <button class="btn ghost" type="button" onclick="closePingOutputModal()">Close</button>
+      </div>
+    </div>
+  </dialog>
 
   <dialog id="commandSettingsModal" class="device-modal">
     <div class="command-settings-body">
