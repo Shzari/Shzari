@@ -155,6 +155,26 @@
       return true;
     }
 
+    function populateEditDeviceForm() {
+      const selector = document.getElementById('editDeviceSelect');
+      const hostnameInput = document.getElementById('editHostnameInput');
+      const ipInput = document.getElementById('editIpInput');
+      const categorySelect = document.getElementById('editCategorySelect');
+      if (!selector || !hostnameInput || !ipInput || !categorySelect) return;
+
+      const selectedName = selector.value;
+      const selected = DEVICE_DATA.find((device) => device.name === selectedName);
+      if (!selected) return;
+
+      hostnameInput.value = selected.name || '';
+      ipInput.value = selected.host || '';
+
+      const groupSet = new Set(selected.groups || []);
+      Array.from(categorySelect.options).forEach((option) => {
+        option.selected = groupSet.has(option.value);
+      });
+    }
+
     window.addEventListener('DOMContentLoaded', () => {
       renderGroups();
       renderDevices(DEVICE_DATA);
@@ -165,6 +185,11 @@
       const manualInput = document.getElementById('manual_command');
       if (selectedInput) selectedInput.addEventListener('input', updateCommandPreview);
       if (manualInput) manualInput.addEventListener('input', updateCommandPreview);
+      const editSelect = document.getElementById('editDeviceSelect');
+      if (editSelect) {
+        editSelect.addEventListener('change', populateEditDeviceForm);
+        populateEditDeviceForm();
+      }
       updateCommandPreview();
     });
   </script>
@@ -249,17 +274,17 @@
         <form method="post" action="{{ url_for('manage_devices') }}" class="submenu-form">
           <input type="hidden" name="action" value="edit">
           <label>Edit device (select existing)</label>
-          <select name="original_device_name">
+          <select id="editDeviceSelect" name="original_device_name">
             {% for d in devices %}
               <option value="{{ d.name }}">{{ d.name }} ({{ d.host }})</option>
             {% endfor %}
           </select>
           <label>New Hostname</label>
-          <input name="edit_hostname" type="text" placeholder="updated-hostname">
+          <input id="editHostnameInput" name="edit_hostname" type="text" placeholder="updated-hostname">
           <label>New IP Address</label>
-          <input name="edit_ip_address" type="text" placeholder="10.20.30.50">
+          <input id="editIpInput" name="edit_ip_address" type="text" placeholder="10.20.30.50">
           <label>Categories (drag-list)</label>
-          <select class="drag-list" name="edit_device_categories" multiple size="6">
+          <select id="editCategorySelect" class="drag-list" name="edit_device_categories" multiple size="6">
             {% for grp in groups.keys() %}
               <option value="{{ grp }}">{{ grp }}</option>
             {% endfor %}

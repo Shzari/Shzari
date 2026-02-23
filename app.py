@@ -771,12 +771,12 @@ def manage_devices() -> Any:
 
     if action == "edit":
         original_name = request.form.get("original_device_name", "").strip()
-        new_name = request.form.get("edit_hostname", "").strip()
-        new_ip = request.form.get("edit_ip_address", "").strip()
+        requested_name = request.form.get("edit_hostname", "").strip()
+        requested_ip = request.form.get("edit_ip_address", "").strip()
         new_categories = [c.strip() for c in request.form.getlist("edit_device_categories") if c.strip()]
 
-        if not original_name or not new_name or not new_ip:
-            session["dashboard_error"] = "Device edit requires original name, new hostname, and new IP."
+        if not original_name:
+            session["dashboard_error"] = "Select a device to edit."
             return redirect(url_for("dashboard"))
 
         target = None
@@ -788,6 +788,15 @@ def manage_devices() -> Any:
         if target is None:
             session["dashboard_error"] = "Device to edit not found."
             return redirect(url_for("dashboard"))
+
+        new_name = requested_name or str(target.get("name", "")).strip()
+        new_ip = requested_ip or str(target.get("host", "")).strip()
+        if not new_name or not new_ip:
+            session["dashboard_error"] = "Edited device must keep hostname and IP."
+            return redirect(url_for("dashboard"))
+
+        if not new_categories:
+            new_categories = [str(g).strip() for g in target.get("groups", []) if str(g).strip()]
 
         for device in devices:
             if device is target:
