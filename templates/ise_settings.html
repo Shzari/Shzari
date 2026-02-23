@@ -166,16 +166,28 @@
   <dialog id="ntpConfigModal" class="device-modal">
     <form method="post" action="{{ url_for('ntp_settings_page') }}">
       <h3>NTP Configuration</h3>
+
+      <label>Time Source Mode</label>
+      <select name="ntp_mode">
+        <option value="ntp" {% if ntp.mode == 'ntp' %}selected{% endif %}>Use NTP Server</option>
+        <option value="manual" {% if ntp.mode == 'manual' %}selected{% endif %}>Set Manual Time</option>
+      </select>
+
       <label>NTP Server IP / Hostname</label>
       <input name="ntp_server" type="text" value="{{ ntp.server }}" placeholder="10.10.10.100">
       <label>NTP Port</label>
       <input name="ntp_port" type="number" value="{{ ntp.port }}" min="1" max="65535">
       <label>Timeout (seconds)</label>
       <input name="ntp_timeout" type="number" value="{{ ntp.sync_timeout }}" min="1" max="10">
+
+      <label>Manual Time</label>
+      <input name="manual_time" type="datetime-local" value="{{ (ntp.manual_time or '')[:16] }}">
+
       <div class="info">Last Sync: {{ ntp.last_sync or 'Never' }}<br>Status: {{ ntp.last_status }}</div>
       <div class="action-row">
         <button class="btn" type="submit" name="action" value="save">Save NTP Settings</button>
-        <button class="btn run" type="submit" name="action" value="sync">Synchronize</button>
+        <button class="btn run" type="submit" name="action" value="sync">Synchronize via NTP</button>
+        <button class="btn" type="submit" name="action" value="set_manual">Set Manual Time</button>
         <button class="btn ghost" type="button" onclick="closeNtpModal()">Close</button>
       </div>
     </form>

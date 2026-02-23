@@ -198,9 +198,11 @@ def save_user_buttons(account_username: str, auth_mode: str, buttons: list[dict[
 
 def default_ntp_settings() -> dict[str, Any]:
     return {
+        "mode": "ntp",
         "server": "",
         "port": 123,
         "sync_timeout": 3,
+        "manual_time": "",
         "last_sync": "",
         "last_status": "Not synchronized yet.",
     }
@@ -219,9 +221,11 @@ def load_ntp_settings() -> dict[str, Any]:
 
 def save_ntp_settings(settings: dict[str, Any]) -> None:
     payload = {
+        "mode": str(settings.get("mode", "ntp")).strip().lower() or "ntp",
         "server": str(settings.get("server", "")).strip(),
         "port": int(settings.get("port", 123) or 123),
         "sync_timeout": int(settings.get("sync_timeout", 3) or 3),
+        "manual_time": str(settings.get("manual_time", "")),
         "last_sync": str(settings.get("last_sync", "")),
         "last_status": str(settings.get("last_status", "")),
     }
@@ -812,9 +816,14 @@ def ntp_settings_page() -> Any:
         return redirect(url_for("verify_super_admin_route"))
 
     settings = load_ntp_settings()
+    mode = request.form.get("ntp_mode", "ntp").strip().lower()
+    if mode not in {"ntp", "manual"}:
+        mode = "ntp"
+
     server = request.form.get("ntp_server", "").strip()
     port_raw = request.form.get("ntp_port", "123").strip()
     timeout_raw = request.form.get("ntp_timeout", "3").strip()
+    manual_time_raw = request.form.get("manual_time", "").strip()
 
     try:
         port = int(port_raw or 123)
@@ -823,20 +832,37 @@ def ntp_settings_page() -> Any:
         session["settings_error"] = "NTP port/timeout must be numbers."
         return redirect(url_for("ise_settings_page", modal="ntp"))
 
+    settings["mode"] = mode
     settings["server"] = server
     settings["port"] = port
     settings["sync_timeout"] = timeout
+    settings["manual_time"] = manual_time_raw
 
     action = request.form.get("action", "save").strip()
     if action == "sync":
         ok, message, ntp_time = sync_ntp_time(server, port, timeout)
         if ok:
+            settings["mode"] = "ntp"
             settings["last_sync"] = ntp_time
             settings["last_status"] = message
             session["settings_info"] = message
         else:
             settings["last_status"] = message
             session["settings_error"] = message
+    elif action == "set_manual":
+        if not manual_time_raw:
+            session["settings_error"] = "Manual time is required."
+        else:
+            try:
+                parsed = datetime.fromisoformat(manual_time_raw)
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                settings["mode"] = "manual"
+                settings["last_sync"] = parsed.isoformat()
+                settings["last_status"] = "Manual time saved by super admin."
+                session["settings_info"] = "Manual time saved."
+            except ValueError:
+                session["settings_error"] = "Invalid manual time format."
     else:
         session["settings_info"] = "NTP settings saved."
 

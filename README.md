@@ -22,7 +22,7 @@ A web-based network engineering app to authenticate users, select routers/switch
   - users with blank/reset password are forced to set password at next login
 - NTP workflow:
   - dashboard top row shows centered live numeric clock
-  - NTP configuration/synchronize is available only in Super Admin settings
+  - NTP configuration is available only in Super Admin settings (choose NTP server sync or set manual time)
   - super admin settings has Users / ISE / NTP buttons in one equal row
 - Devices workflow:
   - top-right settings icon on Devices panel opens popup for add/edit/delete devices and category actions
