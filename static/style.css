@@ -182,6 +182,26 @@ pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; white-
   background: #ffffff;
 }
 
+
+.mode-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.mode-tabs .btn.active {
+  background: linear-gradient(135deg, #1d4ed8, #3730a3);
+  color: #fff;
+}
+
+.muted-note {
+  padding: 10px;
+  border-radius: 8px;
+  background: #f3f4f6;
+  color: #4b5563;
+  width: 100%;
+}
+
 .command-preview {
   margin-top: 10px;
   padding: 10px 12px;

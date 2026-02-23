@@ -7,6 +7,8 @@
   <script>
     const DEVICE_DATA = {{ devices|tojson }};
     const GROUP_NAMES = {{ categories|tojson }};
+    const BUTTON_DATA = {{ buttons|tojson }};
+    let activeCommandMode = 'show';
 
     function renderGroups() {
       const groupList = document.getElementById('groupDragList');
@@ -38,6 +40,7 @@
       const selectedGroups = getSelectedGroups();
       if (!selectedGroups.length) {
         renderDevices(DEVICE_DATA);
+        renderCommandButtons();
         return;
       }
 
@@ -47,6 +50,7 @@
         return selectedGroups.some(group => deviceGroups.includes(group));
       });
       renderDevices(filtered);
+      renderCommandButtons();
     }
 
     function selectAllDevices() {
@@ -63,6 +67,67 @@
       document.getElementById('selected_command').value = cmd;
       document.getElementById('manual_command').value = '';
       updateCommandPreview();
+    }
+
+    function buttonAllowedForGroups(button, selectedGroups) {
+      const commandCategories = Array.isArray(button.categories) ? button.categories : [];
+      if (!commandCategories.length || !selectedGroups.length) {
+        return true;
+      }
+      return selectedGroups.some((group) => commandCategories.includes(group));
+    }
+
+    function renderCommandButtons() {
+      const wrap = document.getElementById('commandButtonsWrap');
+      if (!wrap) return;
+
+      const selectedGroups = getSelectedGroups();
+      const selectedCommandInput = document.getElementById('selected_command');
+      const currentSelected = selectedCommandInput ? selectedCommandInput.value.trim() : '';
+      let selectedStillVisible = false;
+
+      wrap.innerHTML = '';
+      BUTTON_DATA
+        .filter((button) => {
+          const mode = (button.mode || 'show').toLowerCase();
+          if (mode !== activeCommandMode) return false;
+          return buttonAllowedForGroups(button, selectedGroups);
+        })
+        .forEach((button) => {
+          const element = document.createElement('button');
+          element.type = 'button';
+          element.className = `btn ${String(button.id || '').startsWith('custom-') ? 'custom' : ''}`;
+          element.textContent = button.label;
+          element.onclick = () => setCommand(button.command);
+          wrap.appendChild(element);
+
+          if (button.command === currentSelected) {
+            selectedStillVisible = true;
+          }
+        });
+
+      if (!wrap.children.length) {
+        const empty = document.createElement('div');
+        empty.className = 'muted-note';
+        empty.textContent = 'No command buttons in this mode/category yet.';
+        wrap.appendChild(empty);
+      }
+
+      if (selectedCommandInput && currentSelected && !selectedStillVisible) {
+        selectedCommandInput.value = '';
+      }
+      updateCommandPreview();
+    }
+
+    function setCommandMode(mode) {
+      activeCommandMode = mode === 'config' ? 'config' : 'show';
+      const modeInput = document.getElementById('command_mode');
+      if (modeInput) modeInput.value = activeCommandMode;
+
+      document.querySelectorAll('[data-command-mode-tab]').forEach((button) => {
+        button.classList.toggle('active', button.dataset.commandModeTab === activeCommandMode);
+      });
+      renderCommandButtons();
     }
 
     function updateCommandPreview() {
@@ -256,6 +321,7 @@
         editSelect.addEventListener('change', populateEditDeviceForm);
         populateEditDeviceForm();
       }
+      setCommandMode('show');
       updateCommandPreview();
     });
   </script>
@@ -374,18 +440,20 @@
     <div class="card glass">
       <h3>Commands</h3>
       <form method="post" action="{{ url_for('run_commands') }}" id="runForm" onsubmit="return handleRunSubmit()">
-        <label>Command buttons</label>
-        <div class="buttons-wrap">
-          {% for b in buttons %}
-            <button class="btn {% if b.id.startswith('custom-') %}custom{% endif %}" type="button" onclick="setCommand('{{ b.command }}')">{{ b.label }}</button>
-          {% endfor %}
+        <div class="mode-tabs">
+          <button class="btn" type="button" data-command-mode-tab="show" onclick="setCommandMode('show')">Show Commands</button>
+          <button class="btn" type="button" data-command-mode-tab="config" onclick="setCommandMode('config')">Config Commands</button>
         </div>
 
-        <label>Selected button command</label>
+        <label>Command buttons</label>
+        <div id="commandButtonsWrap" class="buttons-wrap"></div>
+        <input type="hidden" id="command_mode" name="command_mode" value="show">
+
+        <label>Selected command</label>
         <input id="selected_command" name="selected_command" type="text" placeholder="Click a button to load command">
 
-        <label>Manual command (overrides selected button command)</label>
-        <input id="manual_command" name="manual_command" type="text" placeholder="Type any show/troubleshoot command">
+        <label>Manual command (overrides selected command)</label>
+        <input id="manual_command" name="manual_command" type="text" placeholder="Type any show/config command">
 
         <div class="command-preview" id="commandPreview">No command selected yet.</div>
 
@@ -403,6 +471,17 @@
           <input name="new_label" type="text" placeholder="e.g., Check CPU">
           <label>Add button command</label>
           <input name="new_command" type="text" placeholder="e.g., show processes cpu sorted">
+          <label>Command mode</label>
+          <select name="new_mode">
+            <option value="show" selected>Show</option>
+            <option value="config">Config</option>
+          </select>
+          <label>Select categories where this command will appear (optional)</label>
+          <select class="drag-list" name="new_command_categories" multiple size="5">
+            {% for grp in categories %}
+              <option value="{{ grp }}">{{ grp }}</option>
+            {% endfor %}
+          </select>
           <button class="btn" type="submit">Add Button</button>
         </form>
 

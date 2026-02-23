@@ -44,7 +44,9 @@ A web-based network engineering app to authenticate users, select routers/switch
   - set ISE login/SSH username + password + enable password used by RUN device connections
   - device credentials are stored per logged-in account (each user must set their own)
 - Command workflow:
-  - command buttons and custom buttons
+  - two in-panel modes: Show Commands and Config Commands (no popup)
+  - command buttons are filtered by selected mode and selected Groups
+  - custom button creation supports mode + optional categories where command should appear
   - command preview before RUN
   - RUN button
   - output window opens first run, then reuses

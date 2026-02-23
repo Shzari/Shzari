@@ -312,22 +312,59 @@ def user_can_assign_categories(categories: list[str], username: str, auth_mode: 
     allowed_set = set(allowed)
     return all(category in allowed_set for category in categories)
 
-def default_buttons() -> list[dict[str, str]]:
+def default_buttons() -> list[dict[str, Any]]:
     return [
-        {"id": "show-version", "label": "Show Version", "command": "show version"},
-        {"id": "show-ip-int-brief", "label": "IP Interface Brief", "command": "show ip interface brief"},
-        {"id": "show-int-status", "label": "Interfaces Status", "command": "show interfaces status"},
-        {"id": "show-logging", "label": "Show Logging", "command": "show logging | tail 50"},
-        {"id": "show-hostname", "label": "Show Hostname", "command": "show running-config | include hostname"},
-        {"id": "show-arp", "label": "Show ARP", "command": "show arp"},
-        {"id": "show-cdp", "label": "CDP Neighbors", "command": "show cdp neighbors"},
-        {"id": "show-route", "label": "IP Route", "command": "show ip route"},
+        {"id": "show-version", "label": "Show Version", "command": "show version", "mode": "show", "categories": []},
+        {"id": "show-ip-int-brief", "label": "IP Interface Brief", "command": "show ip interface brief", "mode": "show", "categories": []},
+        {"id": "show-int-status", "label": "Interfaces Status", "command": "show interfaces status", "mode": "show", "categories": []},
+        {"id": "show-logging", "label": "Show Logging", "command": "show logging | tail 50", "mode": "show", "categories": []},
+        {"id": "show-hostname", "label": "Show Hostname", "command": "show running-config | include hostname", "mode": "show", "categories": []},
+        {"id": "show-arp", "label": "Show ARP", "command": "show arp", "mode": "show", "categories": []},
+        {"id": "show-cdp", "label": "CDP Neighbors", "command": "show cdp neighbors", "mode": "show", "categories": []},
+        {"id": "show-route", "label": "IP Route", "command": "show ip route", "mode": "show", "categories": []},
+        {"id": "config-hostname", "label": "Set Hostname", "command": "configure terminal ; hostname NEW-HOSTNAME", "mode": "config", "categories": []},
+        {"id": "config-int-desc", "label": "Interface Description", "command": "configure terminal ; interface Gi0/1 ; description UPDATED_BY_TOOL", "mode": "config", "categories": []},
+        {"id": "config-save", "label": "Save Config", "command": "write memory", "mode": "config", "categories": []},
     ]
 
 
-def get_buttons() -> list[dict[str, str]]:
-    buttons = session.get("buttons")
-    if isinstance(buttons, list) and buttons:
+def normalize_buttons(raw_buttons: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw_buttons, list):
+        return []
+
+    normalized: list[dict[str, Any]] = []
+    for item in raw_buttons:
+        if not isinstance(item, dict):
+            continue
+        button_id = str(item.get("id", "")).strip()
+        label = str(item.get("label", "")).strip()
+        command = str(item.get("command", "")).strip()
+        if not button_id or not label or not command:
+            continue
+
+        mode = str(item.get("mode", "show")).strip().lower()
+        if mode not in {"show", "config"}:
+            mode = "show"
+
+        categories_raw = item.get("categories", [])
+        categories: list[str] = []
+        if isinstance(categories_raw, list):
+            categories = [str(cat).strip() for cat in categories_raw if str(cat).strip()]
+
+        normalized.append({
+            "id": button_id,
+            "label": label,
+            "command": command,
+            "mode": mode,
+            "categories": categories,
+        })
+    return normalized
+
+
+def get_buttons() -> list[dict[str, Any]]:
+    buttons = normalize_buttons(session.get("buttons"))
+    if buttons:
+        session["buttons"] = buttons
         return buttons
     buttons = default_buttons()
     session["buttons"] = buttons
@@ -1010,9 +1047,19 @@ def buttons_menu() -> Any:
     if action == "add":
         label = request.form.get("new_label", "").strip()
         command = request.form.get("new_command", "").strip()
+        mode = request.form.get("new_mode", "show").strip().lower()
+        selected_categories = [c.strip() for c in request.form.getlist("new_command_categories") if c.strip()]
+        if mode not in {"show", "config"}:
+            mode = "show"
         if label and command:
             button_id = f"custom-{int(datetime.now(timezone.utc).timestamp() * 1000)}"
-            buttons.append({"id": button_id, "label": label, "command": command})
+            buttons.append({
+                "id": button_id,
+                "label": label,
+                "command": command,
+                "mode": mode,
+                "categories": selected_categories,
+            })
             session["buttons"] = buttons
     elif action == "rename":
         button_id = request.form.get("button_id", "").strip()
