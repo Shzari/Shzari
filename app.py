@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, redirect, render_template, request, session, url_for
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 
 BASE_DIR = Path(__file__).resolve().parent
 DEVICES_FILE = BASE_DIR / "devices_web.json"
@@ -624,6 +624,24 @@ def buttons_menu() -> Any:
         session["run_history"] = []
 
     return redirect(url_for("dashboard"))
+
+
+@app.route("/devices/test-connectivity", methods=["POST"])
+def test_device_connectivity() -> Any:
+    if "creds" not in session:
+        return jsonify({"ok": False, "message": "Not authenticated."}), 401
+
+    payload = request.get_json(silent=True) or {}
+    ip_address = str(payload.get("ip_address", "")).strip()
+    if not ip_address:
+        return jsonify({"ok": False, "message": "IP address is required."}), 400
+
+    try:
+        with socket.create_connection((ip_address, 22), timeout=4):
+            pass
+        return jsonify({"ok": True, "message": f"Connectivity success to {ip_address}:22"})
+    except OSError as exc:
+        return jsonify({"ok": False, "message": f"Connectivity failed to {ip_address}:22 ({exc})"}), 200
 
 
 @app.route("/run", methods=["POST"])

@@ -6,58 +6,56 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <script>
     const DEVICE_DATA = {{ devices|tojson }};
+    const GROUP_NAMES = {{ groups.keys()|list|tojson }};
 
-    function selectAllDevices() {
-      document.querySelectorAll('.device-box').forEach(cb => cb.checked = true);
-      refreshDragList();
+    function renderGroups() {
+      const groupList = document.getElementById('groupDragList');
+      groupList.innerHTML = '';
+      GROUP_NAMES.forEach(group => {
+        const option = document.createElement('option');
+        option.value = group;
+        option.textContent = group;
+        groupList.appendChild(option);
+      });
     }
 
-    function clearDevices() {
-      document.querySelectorAll('.device-box').forEach(cb => cb.checked = false);
-      refreshDragList();
+    function getSelectedGroups() {
+      return Array.from(document.getElementById('groupDragList').selectedOptions).map(option => option.value);
+    }
+
+    function renderDevices(items) {
+      const list = document.getElementById('deviceDragList');
+      list.innerHTML = '';
+      items.forEach(device => {
+        const option = document.createElement('option');
+        option.value = device.name;
+        option.textContent = `${device.name} (${device.host})`;
+        list.appendChild(option);
+      });
     }
 
     function selectGroup() {
-      const grp = document.getElementById('groupSelect').value;
-      clearDevices();
-      if (!grp) {
-        renderDragList(DEVICE_DATA);
+      const selectedGroups = getSelectedGroups();
+      if (!selectedGroups.length) {
+        renderDevices(DEVICE_DATA);
         return;
       }
-      document.querySelectorAll(`.group-${grp}`).forEach(cb => cb.checked = true);
-      const filtered = DEVICE_DATA.filter(d => (d.groups || []).includes(grp));
-      renderDragList(filtered);
-    }
 
-    function renderDragList(items) {
-      const list = document.getElementById('groupDragList');
-      list.innerHTML = '';
-      items.forEach(d => {
-        const opt = document.createElement('option');
-        opt.value = d.name;
-        opt.textContent = `${d.name} (${d.host})`;
-        list.appendChild(opt);
+      const filtered = DEVICE_DATA.filter(device => {
+        const deviceGroups = device.groups || [];
+        return selectedGroups.some(group => deviceGroups.includes(group));
       });
+      renderDevices(filtered);
     }
 
-    function refreshDragList() {
-      const selected = Array.from(document.querySelectorAll('.device-box:checked')).map(cb => cb.value);
-      if (!selected.length) {
-        renderDragList(DEVICE_DATA);
-        return;
-      }
-      const filtered = DEVICE_DATA.filter(d => selected.includes(d.name));
-      renderDragList(filtered);
+    function selectAllDevices() {
+      const options = document.querySelectorAll('#deviceDragList option');
+      options.forEach(option => { option.selected = true; });
     }
 
-    function syncCheckboxesFromDragList() {
-      const selectedNames = Array.from(document.getElementById('groupDragList').selectedOptions).map(o => o.value);
-      if (!selectedNames.length) return;
-      clearDevices();
-      selectedNames.forEach(name => {
-        const cb = document.querySelector(`.device-box[value="${name}"]`);
-        if (cb) cb.checked = true;
-      });
+    function clearDevices() {
+      const options = document.querySelectorAll('#deviceDragList option');
+      options.forEach(option => { option.selected = false; });
     }
 
     function setCommand(cmd) {
@@ -85,6 +83,11 @@
 
     function openAddDeviceModal() {
       const modal = document.getElementById('addDeviceModal');
+      const testResult = document.getElementById('deviceTestResult');
+      if (testResult) {
+        testResult.textContent = '';
+        testResult.className = 'test-result';
+      }
       if (modal && modal.showModal) {
         modal.showModal();
       }
@@ -97,8 +100,35 @@
       }
     }
 
+    async function testNewDeviceConnectivity() {
+      const ipAddress = document.getElementById('newDeviceIpAddress').value.trim();
+      const result = document.getElementById('deviceTestResult');
+      result.className = 'test-result';
+
+      if (!ipAddress) {
+        result.textContent = 'Enter an IP address first.';
+        result.classList.add('fail');
+        return;
+      }
+
+      result.textContent = `Testing SSH connectivity to ${ipAddress}:22 ...`;
+
+      try {
+        const response = await fetch("{{ url_for('test_device_connectivity') }}", {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ip_address: ipAddress })
+        });
+        const payload = await response.json();
+        result.textContent = payload.message || 'No response message.';
+        result.classList.add(payload.ok ? 'pass' : 'fail');
+      } catch (error) {
+        result.textContent = `Connectivity test failed: ${error}`;
+        result.classList.add('fail');
+      }
+    }
+
     function handleRunSubmit() {
-      syncCheckboxesFromDragList();
       const form = document.getElementById('runForm');
       const key = 'output_window_opened';
       const targetName = 'network_output_window';
@@ -111,8 +141,11 @@
     }
 
     window.addEventListener('DOMContentLoaded', () => {
-      renderDragList(DEVICE_DATA);
-      document.querySelectorAll('.device-box').forEach(cb => cb.addEventListener('change', refreshDragList));
+      renderGroups();
+      renderDevices(DEVICE_DATA);
+      const groupList = document.getElementById('groupDragList');
+      if (groupList) groupList.addEventListener('change', selectGroup);
+
       const selectedInput = document.getElementById('selected_command');
       const manualInput = document.getElementById('manual_command');
       if (selectedInput) selectedInput.addEventListener('input', updateCommandPreview);
@@ -140,31 +173,22 @@
 
   <div class="grid">
     <div class="card glass">
-      <h3>Device Selection</h3>
+      <h3>Devices</h3>
       <div class="action-row">
         <button class="btn" type="button" onclick="selectAllDevices()">Select All</button>
         <button class="btn ghost" type="button" onclick="clearDevices()">Clear</button>
         <button class="btn" type="button" onclick="openAddDeviceModal()">Add Device</button>
       </div>
-      <label>Group / Category</label>
-      <select id="groupSelect" onchange="selectGroup()">
-        <option value="">--Choose group--</option>
-        {% for grp in groups.keys() %}
-          <option value="{{ grp }}">{{ grp }}</option>
-        {% endfor %}
-      </select>
 
-      <label>Devices in selected category (drag list style)</label>
-      <select id="groupDragList" class="drag-list" multiple size="8" onchange="syncCheckboxesFromDragList()"></select>
-
-      <div class="device-list">
-        {% for d in devices %}
-          <label class="device-item">
-            <input class="device-box {% for g in d.groups %}group-{{ g }} {% endfor %}" type="checkbox" name="selected_devices" value="{{ d.name }}" form="runForm">
-            <span>{{ d.name }}</span>
-            <small>{{ d.host }}</small>
-          </label>
-        {% endfor %}
+      <div class="split-panel">
+        <div>
+          <label>Groups</label>
+          <select id="groupDragList" class="drag-list groups-list" multiple size="8"></select>
+        </div>
+        <div>
+          <label>Devices</label>
+          <select id="deviceDragList" class="drag-list devices-list" name="selected_devices" multiple size="15" form="runForm"></select>
+        </div>
       </div>
 
       <details class="submenu">
@@ -304,7 +328,12 @@
       <input name="hostname" type="text" required placeholder="e.g., branch-rtr-02">
 
       <label>IP Address</label>
-      <input name="ip_address" type="text" required placeholder="e.g., 10.20.30.40">
+      <input id="newDeviceIpAddress" name="ip_address" type="text" required placeholder="e.g., 10.20.30.40">
+
+      <div class="action-row">
+        <button class="btn" type="button" onclick="testNewDeviceConnectivity()">Test</button>
+      </div>
+      <div id="deviceTestResult" class="test-result"></div>
 
       <label>Select Categories (drag-list)</label>
       <select class="drag-list" name="new_device_categories" multiple size="6">

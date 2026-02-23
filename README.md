@@ -14,12 +14,14 @@ A web-based network engineering app to authenticate users, select routers/switch
   - Secondary ISE server/port/shared-secret
   - Timeout and NAS-IP
 - Category/group workflow:
-  - select by group/category
-  - drag-list devices in selected group
+  - split view: Groups list on left and Devices list on right
+  - drag-select one or more groups, then devices list updates
+  - devices list shows 15 rows with scroll for larger inventories
   - create category from GUI
   - add devices to category from GUI
   - delete category from GUI
   - Add Device popup (hostname + IP + category drag-list)
+  - Add Device popup includes **Test** button for TCP connectivity check to SSH port 22
   - duplicate hostname/IP validation when adding device
   - edit and delete devices from GUI
 - Command workflow:

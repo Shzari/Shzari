@@ -192,3 +192,46 @@ pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; white-
   font-weight: 600;
   word-break: break-word;
 }
+
+.split-panel {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.groups-list {
+  min-height: 280px;
+}
+
+.devices-list {
+  min-height: 420px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.test-result {
+  margin-top: 4px;
+  min-height: 22px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-weight: 600;
+  background: #eef4ff;
+  color: #1e3a8a;
+}
+
+.test-result.pass {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.test-result.fail {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+@media (max-width: 980px) {
+  .split-panel {
+    grid-template-columns: 1fr;
+  }
+}
