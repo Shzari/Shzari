@@ -9,6 +9,7 @@
     const GROUP_NAMES = {{ categories|tojson }};
     const BUTTON_DATA = {{ buttons|tojson }};
     let activeCommandMode = 'show';
+    const IS_SUPER_ADMIN_SESSION = {{ is_super_admin_session|tojson }};
 
     function renderGroups() {
       const groupList = document.getElementById('groupDragList');
@@ -286,6 +287,10 @@
     }
 
     function requireSuperAdminPassword(event) {
+      if (IS_SUPER_ADMIN_SESSION) {
+        return true;
+      }
+
       event.preventDefault();
       const form = event.target;
       const actionInput = form.querySelector('input[name="action"]');

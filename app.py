@@ -319,6 +319,13 @@ def is_super_admin_password(password: str) -> bool:
     return verify_super_admin(username, password)
 
 
+def is_current_session_super_admin() -> bool:
+    creds = session.get("creds", {})
+    current_username = str(creds.get("username", "")).strip().lower()
+    super_username = str(load_super_admin().get("username", "")).strip().lower()
+    return bool(current_username and super_username and current_username == super_username)
+
+
 def validate_local_user(username: str, password: str) -> tuple[bool, str, str]:
     if verify_super_admin(username, password):
         return True, "", "super_admin"
@@ -1086,7 +1093,7 @@ def manage_devices() -> Any:
             selected_categories = [DEFAULT_CATEGORY]
         admin_password = request.form.get("super_admin_password", "")
 
-        if not is_super_admin_password(admin_password):
+        if not is_current_session_super_admin() and not is_super_admin_password(admin_password):
             session["dashboard_error"] = "Saving devices requires valid super admin password."
             return redirect(url_for("dashboard"))
 
@@ -1118,7 +1125,7 @@ def manage_devices() -> Any:
         new_categories = [c.strip() for c in request.form.getlist("edit_device_categories") if c.strip()]
         admin_password = request.form.get("super_admin_password", "")
 
-        if not is_super_admin_password(admin_password):
+        if not is_current_session_super_admin() and not is_super_admin_password(admin_password):
             session["dashboard_error"] = "Editing devices requires valid super admin password."
             return redirect(url_for("dashboard"))
 
@@ -1174,7 +1181,7 @@ def manage_devices() -> Any:
         delete_name = request.form.get("delete_device_name", "").strip()
         admin_password = request.form.get("super_admin_password", "")
 
-        if not is_super_admin_password(admin_password):
+        if not is_current_session_super_admin() and not is_super_admin_password(admin_password):
             session["dashboard_error"] = "Deleting devices requires valid super admin password."
             return redirect(url_for("dashboard"))
 
@@ -1480,6 +1487,7 @@ def inject_common_context() -> dict[str, Any]:
     return {
         "current_user": creds.get("username", ""),
         "auth_mode": session.get("auth_mode", "local"),
+        "is_super_admin_session": is_current_session_super_admin(),
     }
 
 
