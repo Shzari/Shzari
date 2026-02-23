@@ -292,6 +292,26 @@ def filter_devices_for_user(devices: list[dict[str, Any]], username: str, auth_m
             filtered.append(device)
     return filtered
 
+
+def user_can_access_device(device: dict[str, Any], username: str, auth_mode: str) -> bool:
+    allowed = user_allowed_categories(username, auth_mode)
+    if allowed is None:
+        return True
+
+    allowed_set = set(allowed)
+    groups = {str(g).strip() for g in device.get("groups", []) if str(g).strip()}
+    if not groups:
+        return DEFAULT_CATEGORY in allowed_set
+    return bool(groups & allowed_set)
+
+
+def user_can_assign_categories(categories: list[str], username: str, auth_mode: str) -> bool:
+    allowed = user_allowed_categories(username, auth_mode)
+    if allowed is None:
+        return True
+    allowed_set = set(allowed)
+    return all(category in allowed_set for category in categories)
+
 def default_buttons() -> list[dict[str, str]]:
     return [
         {"id": "show-version", "label": "Show Version", "command": "show version"},
@@ -805,6 +825,8 @@ def manage_devices() -> Any:
 
     action = request.form.get("action", "add").strip()
     devices = load_devices()
+    current_username = str(session.get("creds", {}).get("username", "")).strip()
+    auth_mode = str(session.get("auth_mode", "local"))
 
     if action == "add":
         hostname = request.form.get("hostname", "").strip()
@@ -816,6 +838,10 @@ def manage_devices() -> Any:
 
         if not is_super_admin_password(admin_password):
             session["dashboard_error"] = "Saving devices requires valid super admin password."
+            return redirect(url_for("dashboard"))
+
+        if not user_can_assign_categories(selected_categories, current_username, auth_mode):
+            session["dashboard_error"] = "You can only add devices to categories you are allowed to access."
             return redirect(url_for("dashboard"))
 
         if not hostname or not ip_address:
@@ -860,6 +886,10 @@ def manage_devices() -> Any:
             session["dashboard_error"] = "Device to edit not found."
             return redirect(url_for("dashboard"))
 
+        if not user_can_access_device(target, current_username, auth_mode):
+            session["dashboard_error"] = "You can only edit devices in categories you are allowed to access."
+            return redirect(url_for("dashboard"))
+
         new_name = requested_name or str(target.get("name", "")).strip()
         new_ip = requested_ip or str(target.get("host", "")).strip()
         if not new_name or not new_ip:
@@ -868,6 +898,10 @@ def manage_devices() -> Any:
 
         if not new_categories:
             new_categories = [str(g).strip() for g in target.get("groups", []) if str(g).strip()]
+
+        if not user_can_assign_categories(new_categories, current_username, auth_mode):
+            session["dashboard_error"] = "You can only assign categories you are allowed to access."
+            return redirect(url_for("dashboard"))
 
         for device in devices:
             if device is target:
@@ -896,6 +930,16 @@ def manage_devices() -> Any:
 
         if not delete_name:
             session["dashboard_error"] = "Select a device to delete."
+            return redirect(url_for("dashboard"))
+
+        delete_target = None
+        for device in devices:
+            if str(device.get("name", "")).strip() == delete_name:
+                delete_target = device
+                break
+
+        if delete_target is not None and not user_can_access_device(delete_target, current_username, auth_mode):
+            session["dashboard_error"] = "You can only delete devices in categories you are allowed to access."
             return redirect(url_for("dashboard"))
 
         before = len(devices)
