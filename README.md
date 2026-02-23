@@ -20,6 +20,13 @@ A web-based network engineering app to authenticate users, select routers/switch
   - edit popup default action is blank (must choose action), supports reset password, force-change next login, delete user, and set allowed categories per user
   - per-user category access control (all categories / selected categories / no categories) with Select All / Deselect All and per-category checkbox rows
   - users with blank/reset password are forced to set password at next login
+- NTP workflow:
+  - dashboard top row includes NTP button + live clock + NTP status chip
+  - NTP popup lets you set server/port/timeout and run synchronize
+  - super admin settings has Users / ISE / NTP buttons in one equal row
+- Devices workflow:
+  - top-right settings icon on Devices panel opens popup for add/edit/delete devices and category actions
+  - bottom inline devices/category management section removed from devices panel
 - Category/group workflow:
   - split view: Groups list on left and Devices list on right
   - drag-select one or more groups, then devices list updates
@@ -46,8 +53,9 @@ A web-based network engineering app to authenticate users, select routers/switch
 - Command workflow:
   - two in-panel modes: Show Commands and Config Commands (no popup)
   - settings icon on top-right of Commands panel opens popup to add/rename/delete buttons
-  - button settings popup includes mode + optional categories where command should appear
-  - command buttons are filtered by selected mode and selected Groups
+  - edit button command text directly from settings popup
+  - button selectors in settings popup default to blank (`-- Select Button --`)
+  - command buttons appear for all devices/users based on each user's personal saved dashboard button set
   - command preview before RUN
   - RUN button
   - output window opens first run, then reuses

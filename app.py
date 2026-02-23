@@ -24,6 +24,8 @@ ISE_SETTINGS_FILE = BASE_DIR / "ise_settings.json"
 SUPER_ADMIN_FILE = BASE_DIR / "super_admin.json"
 USERS_FILE = BASE_DIR / "users.json"
 DEVICE_CREDS_FILE = BASE_DIR / "device_credentials.json"
+USER_BUTTONS_FILE = BASE_DIR / "user_buttons.json"
+NTP_SETTINGS_FILE = BASE_DIR / "ntp_settings.json"
 SECRET_KEY = os.environ.get("APP_SECRET_KEY", "dev-secret-change-me")
 
 app = Flask(__name__)
@@ -159,6 +161,94 @@ def save_user_device_creds(account_username: str, auth_mode: str, creds: dict[st
         "enable_password": str(creds.get("enable_password", "")),
     }
     save_device_creds_store(store)
+
+
+def load_user_buttons_store() -> dict[str, list[dict[str, Any]]]:
+    if not USER_BUTTONS_FILE.exists():
+        return {}
+    with USER_BUTTONS_FILE.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        return {}
+
+    normalized: dict[str, list[dict[str, Any]]] = {}
+    for key, value in data.items():
+        normalized[str(key)] = normalize_buttons(value)
+    return normalized
+
+
+def save_user_buttons_store(store: dict[str, list[dict[str, Any]]]) -> None:
+    with USER_BUTTONS_FILE.open("w", encoding="utf-8") as f:
+        json.dump(store, f, indent=2)
+
+
+def load_user_buttons(account_username: str, auth_mode: str) -> list[dict[str, Any]]:
+    key = device_creds_key(account_username, auth_mode)
+    store = load_user_buttons_store()
+    return normalize_buttons(store.get(key, []))
+
+
+def save_user_buttons(account_username: str, auth_mode: str, buttons: list[dict[str, Any]]) -> None:
+    key = device_creds_key(account_username, auth_mode)
+    store = load_user_buttons_store()
+    store[key] = normalize_buttons(buttons)
+    save_user_buttons_store(store)
+
+
+def default_ntp_settings() -> dict[str, Any]:
+    return {
+        "server": "",
+        "port": 123,
+        "sync_timeout": 3,
+        "last_sync": "",
+        "last_status": "Not synchronized yet.",
+    }
+
+
+def load_ntp_settings() -> dict[str, Any]:
+    if not NTP_SETTINGS_FILE.exists():
+        return default_ntp_settings()
+    with NTP_SETTINGS_FILE.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+    defaults = default_ntp_settings()
+    if isinstance(data, dict):
+        defaults.update(data)
+    return defaults
+
+
+def save_ntp_settings(settings: dict[str, Any]) -> None:
+    payload = {
+        "server": str(settings.get("server", "")).strip(),
+        "port": int(settings.get("port", 123) or 123),
+        "sync_timeout": int(settings.get("sync_timeout", 3) or 3),
+        "last_sync": str(settings.get("last_sync", "")),
+        "last_status": str(settings.get("last_status", "")),
+    }
+    with NTP_SETTINGS_FILE.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+
+
+def sync_ntp_time(server: str, port: int, timeout: int) -> tuple[bool, str, str]:
+    if not server:
+        return False, "NTP server is required.", ""
+
+    packet = b"\x1b" + 47 * b"\0"
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(timeout)
+    try:
+        sock.sendto(packet, (server, port))
+        data, _ = sock.recvfrom(48)
+        if len(data) < 48:
+            return False, "Invalid NTP response.", ""
+
+        ntp_seconds = struct.unpack("!I", data[40:44])[0]
+        unix_seconds = ntp_seconds - 2208988800
+        dt = datetime.fromtimestamp(unix_seconds, timezone.utc)
+        return True, f"NTP synchronized with {server}:{port}.", dt.isoformat()
+    except OSError as exc:
+        return False, f"NTP sync failed: {exc}", ""
+    finally:
+        sock.close()
 
 
 def find_user(users: list[dict[str, Any]], username: str) -> dict[str, Any] | None:
@@ -369,6 +459,14 @@ def get_buttons() -> list[dict[str, Any]]:
     buttons = default_buttons()
     session["buttons"] = buttons
     return buttons
+
+
+def persist_current_user_buttons(buttons: list[dict[str, Any]]) -> None:
+    account = session.get("creds", {})
+    account_username = str(account.get("username", "")).strip()
+    auth_mode = str(session.get("auth_mode", "local"))
+    if account_username:
+        save_user_buttons(account_username, auth_mode, buttons)
 
 
 def default_ise_settings() -> dict[str, Any]:
@@ -659,7 +757,86 @@ def ise_settings_page() -> Any:
         users=load_users(),
         available_categories=all_categories(devices),
         selected_modal=request.args.get("modal", ""),
+        ntp=load_ntp_settings(),
     )
+
+
+@app.route("/settings/ntp", methods=["POST"])
+def ntp_settings_page() -> Any:
+    if not super_admin_exists():
+        return redirect(url_for("setup_super_admin"))
+    if not session.get("super_admin_verified"):
+        return redirect(url_for("verify_super_admin_route"))
+
+    settings = load_ntp_settings()
+    server = request.form.get("ntp_server", "").strip()
+    port_raw = request.form.get("ntp_port", "123").strip()
+    timeout_raw = request.form.get("ntp_timeout", "3").strip()
+
+    try:
+        port = int(port_raw or 123)
+        timeout = int(timeout_raw or 3)
+    except ValueError:
+        session["settings_error"] = "NTP port/timeout must be numbers."
+        return redirect(url_for("ise_settings_page", modal="ntp"))
+
+    settings["server"] = server
+    settings["port"] = port
+    settings["sync_timeout"] = timeout
+
+    action = request.form.get("action", "save").strip()
+    if action == "sync":
+        ok, message, ntp_time = sync_ntp_time(server, port, timeout)
+        if ok:
+            settings["last_sync"] = ntp_time
+            settings["last_status"] = message
+            session["settings_info"] = message
+        else:
+            settings["last_status"] = message
+            session["settings_error"] = message
+    else:
+        session["settings_info"] = "NTP settings saved."
+
+    save_ntp_settings(settings)
+    return redirect(url_for("ise_settings_page", modal="ntp"))
+
+
+@app.route("/dashboard/ntp", methods=["POST"])
+def dashboard_ntp() -> Any:
+    if "creds" not in session:
+        return redirect(url_for("login"))
+
+    settings = load_ntp_settings()
+    server = request.form.get("ntp_server", settings.get("server", "")).strip()
+    port_raw = request.form.get("ntp_port", str(settings.get("port", 123))).strip()
+    timeout_raw = request.form.get("ntp_timeout", str(settings.get("sync_timeout", 3))).strip()
+
+    try:
+        port = int(port_raw or 123)
+        timeout = int(timeout_raw or 3)
+    except ValueError:
+        session["dashboard_error"] = "NTP port/timeout must be numbers."
+        return redirect(url_for("dashboard"))
+
+    settings["server"] = server
+    settings["port"] = port
+    settings["sync_timeout"] = timeout
+
+    action = request.form.get("action", "save").strip()
+    if action == "sync":
+        ok, message, ntp_time = sync_ntp_time(server, port, timeout)
+        if ok:
+            settings["last_sync"] = ntp_time
+            settings["last_status"] = message
+            session["dashboard_info"] = message
+        else:
+            settings["last_status"] = message
+            session["dashboard_error"] = message
+    else:
+        session["dashboard_info"] = "NTP settings saved."
+
+    save_ntp_settings(settings)
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -698,7 +875,7 @@ def login() -> Any:
             session["auth_mode"] = auth_mode
             session["creds"] = {"username": username, "password": password, "timeout": timeout}
             session["device_creds"] = load_user_device_creds(username, auth_mode)
-            session.setdefault("buttons", default_buttons())
+            session["buttons"] = load_user_buttons(username, auth_mode) or default_buttons()
             session.setdefault("run_history", [])
             return redirect(url_for("dashboard"))
 
@@ -729,7 +906,7 @@ def change_password() -> Any:
                 session["auth_mode"] = "local"
                 session["creds"] = {"username": username, "password": new_password, "timeout": timeout}
                 session["device_creds"] = load_user_device_creds(username, "local")
-                session.setdefault("buttons", default_buttons())
+                session["buttons"] = load_user_buttons(username, "local") or default_buttons()
                 session.setdefault("run_history", [])
                 return redirect(url_for("dashboard"))
 
@@ -746,7 +923,7 @@ def change_password() -> Any:
                 session["auth_mode"] = "local"
                 session["creds"] = {"username": username, "password": new_password, "timeout": timeout}
                 session["device_creds"] = load_user_device_creds(username, "local")
-                session.setdefault("buttons", default_buttons())
+                session["buttons"] = load_user_buttons(username, "local") or default_buttons()
                 session.setdefault("run_history", [])
                 return redirect(url_for("dashboard"))
 
@@ -853,6 +1030,7 @@ def dashboard() -> Any:
         info=info,
         error=error,
         device_creds=session.get("device_creds", {}),
+        ntp=load_ntp_settings(),
     )
 
 
@@ -1048,7 +1226,7 @@ def buttons_menu() -> Any:
         label = request.form.get("new_label", "").strip()
         command = request.form.get("new_command", "").strip()
         mode = request.form.get("new_mode", "show").strip().lower()
-        selected_categories = [c.strip() for c in request.form.getlist("new_command_categories") if c.strip()]
+        selected_categories: list[str] = []
         if mode not in {"show", "config"}:
             mode = "show"
         if label and command:
@@ -1075,8 +1253,22 @@ def buttons_menu() -> Any:
         if button_id:
             buttons = [item for item in buttons if str(item.get("id", "")).strip() != button_id]
             session["buttons"] = buttons
+            persist_current_user_buttons(buttons)
+    elif action == "edit_command":
+        button_id = request.form.get("button_id", "").strip()
+        new_command_text = request.form.get("edit_command_text", "").strip()
+        if button_id and new_command_text:
+            for item in buttons:
+                if str(item.get("id", "")).strip() == button_id:
+                    item["command"] = new_command_text
+                    break
+            session["buttons"] = buttons
+            persist_current_user_buttons(buttons)
     elif action == "clear_history":
         session["run_history"] = []
+
+    if action in {"add", "rename"}:
+        persist_current_user_buttons(session.get("buttons", buttons))
 
     return redirect(url_for("dashboard"))
 

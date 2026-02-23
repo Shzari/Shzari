@@ -69,19 +69,10 @@
       updateCommandPreview();
     }
 
-    function buttonAllowedForGroups(button, selectedGroups) {
-      const commandCategories = Array.isArray(button.categories) ? button.categories : [];
-      if (!commandCategories.length || !selectedGroups.length) {
-        return true;
-      }
-      return selectedGroups.some((group) => commandCategories.includes(group));
-    }
-
     function renderCommandButtons() {
       const wrap = document.getElementById('commandButtonsWrap');
       if (!wrap) return;
 
-      const selectedGroups = getSelectedGroups();
       const selectedCommandInput = document.getElementById('selected_command');
       const currentSelected = selectedCommandInput ? selectedCommandInput.value.trim() : '';
       let selectedStillVisible = false;
@@ -90,8 +81,7 @@
       BUTTON_DATA
         .filter((button) => {
           const mode = (button.mode || 'show').toLowerCase();
-          if (mode !== activeCommandMode) return false;
-          return buttonAllowedForGroups(button, selectedGroups);
+          return mode === activeCommandMode;
         })
         .forEach((button) => {
           const element = document.createElement('button');
@@ -145,25 +135,6 @@
         return;
       }
       preview.textContent = 'No command selected yet.';
-    }
-
-    function openAddDeviceModal() {
-      const modal = document.getElementById('addDeviceModal');
-      const testResult = document.getElementById('deviceTestResult');
-      if (testResult) {
-        testResult.textContent = '';
-        testResult.className = 'test-result';
-      }
-      if (modal && modal.showModal) {
-        modal.showModal();
-      }
-    }
-
-    function closeAddDeviceModal() {
-      const modal = document.getElementById('addDeviceModal');
-      if (modal && modal.close) {
-        modal.close();
-      }
     }
 
     async function testNewDeviceConnectivity() {
@@ -223,9 +194,57 @@
       }
     }
 
+    function openDeviceSettingsModal() {
+      const modal = document.getElementById('deviceSettingsModal');
+      if (modal && modal.showModal) {
+        modal.showModal();
+      }
+    }
+
+    function closeDeviceSettingsModal() {
+      const modal = document.getElementById('deviceSettingsModal');
+      if (modal && modal.close) {
+        modal.close();
+      }
+    }
+
+    function openNtpModal() {
+      const modal = document.getElementById('ntpModal');
+      if (modal && modal.showModal) {
+        modal.showModal();
+      }
+    }
+
+    function closeNtpModal() {
+      const modal = document.getElementById('ntpModal');
+      if (modal && modal.close) {
+        modal.close();
+      }
+    }
+
+    function updateClock() {
+      const clock = document.getElementById('dashboardClock');
+      if (!clock) return;
+      const now = new Date();
+      clock.textContent = now.toLocaleString();
+    }
+
+    function syncEditCommandField() {
+      const selector = document.getElementById('editCommandButtonId');
+      const input = document.getElementById('editCommandText');
+      if (!selector || !input) return;
+      const button = BUTTON_DATA.find((item) => String(item.id) === selector.value);
+      input.value = button ? (button.command || '') : '';
+    }
+
     function handleDeleteButtonSubmit(event) {
       const selector = document.getElementById('deleteButtonId');
+      const selectedValue = selector ? selector.value.trim() : '';
       const selectedText = selector && selector.selectedOptions.length ? selector.selectedOptions[0].textContent : 'this button';
+      if (!selectedValue) {
+        event.preventDefault();
+        return false;
+      }
       if (!confirm(`Delete ${selectedText}?`)) {
         event.preventDefault();
         return false;
@@ -347,6 +366,13 @@
       }
       setCommandMode('show');
       updateCommandPreview();
+      updateClock();
+      setInterval(updateClock, 1000);
+      syncEditCommandField();
+      const editCommandSelector = document.getElementById('editCommandButtonId');
+      if (editCommandSelector) {
+        editCommandSelector.addEventListener('change', syncEditCommandField);
+      }
     });
   </script>
 </head>
@@ -355,6 +381,9 @@
 
   <div class="user-strip">
     <button class="btn" type="button" onclick="openDeviceCredsModal()">Device Credentials</button>
+    <button class="btn" type="button" onclick="openNtpModal()">NTP</button>
+    <div class="chip">🕒 <span id="dashboardClock">--</span></div>
+    <div class="chip">🧭 NTP: <b>{{ ntp.last_sync or 'Not synced' }}</b></div>
     <div class="chip">👤 User: <b>{{ current_user or 'Unknown' }}</b></div>
     <div class="chip">🔐 Mode: <b>{{ auth_mode|upper }}</b></div>
     <a class="logout-link" href="{{ url_for('logout') }}">Logout</a>
@@ -370,11 +399,13 @@
 
   <div class="grid">
     <div class="card glass">
-      <h3>Devices</h3>
+      <div class="card-head">
+        <h3>Devices</h3>
+        <button class="icon-btn" type="button" onclick="openDeviceSettingsModal()" title="Device and Category Settings" aria-label="Device and Category Settings">⚙️</button>
+      </div>
       <div class="action-row">
         <button class="btn" type="button" onclick="selectAllDevices()">Select All</button>
         <button class="btn ghost" type="button" onclick="clearDevices()">Clear</button>
-        <button class="btn" type="button" onclick="openAddDeviceModal()">Add Device</button>
       </div>
 
       <div class="split-panel">
@@ -387,78 +418,6 @@
           <select id="deviceDragList" class="drag-list devices-list" name="selected_devices" multiple size="15" form="runForm"></select>
         </div>
       </div>
-
-      <details class="submenu">
-        <summary>🧩 Category Menu / Sub Menu</summary>
-
-        <form method="post" action="{{ url_for('manage_categories') }}" class="submenu-form">
-          <input type="hidden" name="action" value="create_category">
-          <label>Create new category</label>
-          <input name="category_name" type="text" placeholder="e.g., datacenter-switches">
-          <button class="btn" type="submit">Create Category</button>
-        </form>
-
-        <form method="post" action="{{ url_for('manage_categories') }}" class="submenu-form">
-          <input type="hidden" name="action" value="assign_device">
-          <label>Select device</label>
-          <select name="device_name">
-            {% for d in devices %}
-              <option value="{{ d.name }}">{{ d.name }} ({{ d.host }})</option>
-            {% endfor %}
-          </select>
-
-          <label>Select category to add device into</label>
-          <select name="target_category">
-            {% for grp in categories %}
-              <option value="{{ grp }}" {% if grp == "Uncategorized" %}selected{% endif %}>{{ grp }}</option>
-            {% endfor %}
-          </select>
-          <button class="btn" type="submit">Add Device To Category</button>
-        </form>
-
-        <form method="post" action="{{ url_for('manage_categories') }}" class="submenu-form">
-          <input type="hidden" name="action" value="delete_category">
-          <label>Delete category</label>
-          <select name="delete_category_name">
-            {% for grp in categories %}
-              <option value="{{ grp }}">{{ grp }}</option>
-            {% endfor %}
-          </select>
-          <button class="btn ghost" type="submit">Delete Category</button>
-        </form>
-
-        <form method="post" action="{{ url_for('manage_devices') }}" class="submenu-form" onsubmit="return requireSuperAdminPassword(event)">
-          <input type="hidden" name="action" value="edit">
-          <label>Edit device (select existing)</label>
-          <select id="editDeviceSelect" name="original_device_name">
-            {% for d in devices %}
-              <option value="{{ d.name }}">{{ d.name }} ({{ d.host }})</option>
-            {% endfor %}
-          </select>
-          <label>New Hostname</label>
-          <input id="editHostnameInput" name="edit_hostname" type="text" placeholder="updated-hostname">
-          <label>New IP Address</label>
-          <input id="editIpInput" name="edit_ip_address" type="text" placeholder="10.20.30.50">
-          <label>Categories (drag-list)</label>
-          <select id="editCategorySelect" class="drag-list" name="edit_device_categories" multiple size="6">
-            {% for grp in categories %}
-              <option value="{{ grp }}">{{ grp }}</option>
-            {% endfor %}
-          </select>
-          <button class="btn" type="submit">Save Device Changes</button>
-        </form>
-
-        <form method="post" action="{{ url_for('manage_devices') }}" class="submenu-form" onsubmit="return requireSuperAdminPassword(event)">
-          <input type="hidden" name="action" value="delete">
-          <label>Delete device</label>
-          <select name="delete_device_name">
-            {% for d in devices %}
-              <option value="{{ d.name }}">{{ d.name }} ({{ d.host }})</option>
-            {% endfor %}
-          </select>
-          <button class="btn ghost" type="submit">Delete Device</button>
-        </form>
-      </details>
     </div>
 
     <div class="card glass">
@@ -492,6 +451,120 @@
   </div>
 
 
+  <dialog id="ntpModal" class="device-modal">
+    <form method="post" action="{{ url_for('dashboard_ntp') }}">
+      <h3>NTP Panel</h3>
+      <label>NTP Server IP / Hostname</label>
+      <input name="ntp_server" type="text" value="{{ ntp.server }}" placeholder="e.g., 10.10.10.100">
+      <label>NTP Port</label>
+      <input name="ntp_port" type="number" value="{{ ntp.port }}" min="1" max="65535">
+      <label>Timeout (seconds)</label>
+      <input name="ntp_timeout" type="number" value="{{ ntp.sync_timeout }}" min="1" max="10">
+      <div class="info">Last Sync: {{ ntp.last_sync or 'Never' }}<br>Status: {{ ntp.last_status }}</div>
+      <div class="action-row">
+        <button class="btn" type="submit" name="action" value="save">Save</button>
+        <button class="btn run" type="submit" name="action" value="sync">Synchronize</button>
+        <button class="btn ghost" type="button" onclick="closeNtpModal()">Close</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="deviceSettingsModal" class="device-modal">
+    <div class="command-settings-body">
+      <h3>Device & Category Settings</h3>
+
+      <form method="post" action="{{ url_for('manage_devices') }}" class="submenu-form" onsubmit="return requireSuperAdminPassword(event)">
+        <input type="hidden" name="action" value="add">
+        <label>Hostname</label>
+        <input name="hostname" type="text" placeholder="e.g., branch-rtr-02">
+        <label>IP Address</label>
+        <input id="newDeviceIpAddress" name="ip_address" type="text" placeholder="e.g., 10.20.30.40">
+        <div class="action-row">
+          <button class="btn" type="button" onclick="testNewDeviceConnectivity()">Test</button>
+        </div>
+        <div id="deviceTestResult" class="test-result"></div>
+        <label>Select Categories (drag-list)</label>
+        <select class="drag-list" name="new_device_categories" multiple size="6">
+          {% for grp in categories %}
+            <option value="{{ grp }}" {% if grp == "Uncategorized" %}selected{% endif %}>{{ grp }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn" type="submit">Save Device</button>
+      </form>
+
+      <form method="post" action="{{ url_for('manage_categories') }}" class="submenu-form">
+        <input type="hidden" name="action" value="create_category">
+        <label>Create new category</label>
+        <input name="category_name" type="text" placeholder="e.g., datacenter-switches">
+        <button class="btn" type="submit">Create Category</button>
+      </form>
+
+      <form method="post" action="{{ url_for('manage_categories') }}" class="submenu-form">
+        <input type="hidden" name="action" value="assign_device">
+        <label>Select device</label>
+        <select name="device_name">
+          {% for d in devices %}
+            <option value="{{ d.name }}">{{ d.name }} ({{ d.host }})</option>
+          {% endfor %}
+        </select>
+        <label>Select category to add device into</label>
+        <select name="target_category">
+          {% for grp in categories %}
+            <option value="{{ grp }}" {% if grp == "Uncategorized" %}selected{% endif %}>{{ grp }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn" type="submit">Add Device To Category</button>
+      </form>
+
+      <form method="post" action="{{ url_for('manage_categories') }}" class="submenu-form">
+        <input type="hidden" name="action" value="delete_category">
+        <label>Delete category</label>
+        <select name="delete_category_name">
+          {% for grp in categories %}
+            <option value="{{ grp }}">{{ grp }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn ghost" type="submit">Delete Category</button>
+      </form>
+
+      <form method="post" action="{{ url_for('manage_devices') }}" class="submenu-form" onsubmit="return requireSuperAdminPassword(event)">
+        <input type="hidden" name="action" value="edit">
+        <label>Edit device (select existing)</label>
+        <select id="editDeviceSelect" name="original_device_name">
+          {% for d in devices %}
+            <option value="{{ d.name }}">{{ d.name }} ({{ d.host }})</option>
+          {% endfor %}
+        </select>
+        <label>New Hostname</label>
+        <input id="editHostnameInput" name="edit_hostname" type="text" placeholder="updated-hostname">
+        <label>New IP Address</label>
+        <input id="editIpInput" name="edit_ip_address" type="text" placeholder="10.20.30.50">
+        <label>Categories (drag-list)</label>
+        <select id="editCategorySelect" class="drag-list" name="edit_device_categories" multiple size="6">
+          {% for grp in categories %}
+            <option value="{{ grp }}">{{ grp }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn" type="submit">Save Device Changes</button>
+      </form>
+
+      <form method="post" action="{{ url_for('manage_devices') }}" class="submenu-form" onsubmit="return requireSuperAdminPassword(event)">
+        <input type="hidden" name="action" value="delete">
+        <label>Delete device</label>
+        <select name="delete_device_name">
+          {% for d in devices %}
+            <option value="{{ d.name }}">{{ d.name }} ({{ d.host }})</option>
+          {% endfor %}
+        </select>
+        <button class="btn ghost" type="submit">Delete Device</button>
+      </form>
+
+      <div class="action-row">
+        <button class="btn ghost" type="button" onclick="closeDeviceSettingsModal()">Close</button>
+      </div>
+    </div>
+  </dialog>
+
   <dialog id="superAdminPasswordModal" class="device-modal">
     <form method="dialog" onsubmit="event.preventDefault(); submitWithSuperAdminPassword();">
       <h3 id="superAdminPasswordTitle">Super Admin password required</h3>
@@ -509,7 +582,7 @@
   <dialog id="commandSettingsModal" class="device-modal">
     <div class="command-settings-body">
       <h3>Command Button Settings</h3>
-      <p>Add, rename, delete, and scope command buttons by mode and categories.</p>
+      <p>Add, rename, delete, and edit command buttons by mode.</p>
 
       <form method="post" action="{{ url_for('buttons_menu') }}" class="submenu-form">
         <input type="hidden" name="action" value="add">
@@ -522,12 +595,6 @@
           <option value="show" selected>Show</option>
           <option value="config">Config</option>
         </select>
-        <label>Select categories where this command will appear (optional)</label>
-        <select class="drag-list" name="new_command_categories" multiple size="5">
-          {% for grp in categories %}
-            <option value="{{ grp }}">{{ grp }}</option>
-          {% endfor %}
-        </select>
         <button class="btn" type="submit">Add Button</button>
       </form>
 
@@ -535,6 +602,7 @@
         <input type="hidden" name="action" value="rename">
         <label>Choose button to rename</label>
         <select name="button_id">
+          <option value="" selected>-- Select Button --</option>
           {% for b in buttons %}
             <option value="{{ b.id }}">{{ b.label }} ({{ b.command }})</option>
           {% endfor %}
@@ -544,10 +612,25 @@
         <button class="btn" type="submit">Rename Button</button>
       </form>
 
+      <form method="post" action="{{ url_for('buttons_menu') }}" class="submenu-form">
+        <input type="hidden" name="action" value="edit_command">
+        <label>Select button to edit command</label>
+        <select id="editCommandButtonId" name="button_id">
+          <option value="" selected>-- Select Button --</option>
+          {% for b in buttons %}
+            <option value="{{ b.id }}">{{ b.label }} ({{ b.command }})</option>
+          {% endfor %}
+        </select>
+        <label>Command text</label>
+        <input id="editCommandText" name="edit_command_text" type="text" placeholder="Edit command text here">
+        <button class="btn" type="submit">Save Command</button>
+      </form>
+
       <form method="post" action="{{ url_for('buttons_menu') }}" class="submenu-form" onsubmit="return handleDeleteButtonSubmit(event)">
         <input type="hidden" name="action" value="delete">
         <label>Choose button to delete</label>
         <select id="deleteButtonId" name="button_id">
+          <option value="" selected>-- Select Button --</option>
           {% for b in buttons %}
             <option value="{{ b.id }}">{{ b.label }} ({{ b.command }})</option>
           {% endfor %}
@@ -587,33 +670,6 @@
     </form>
   </dialog>
 
-  <dialog id="addDeviceModal" class="device-modal">
-    <form method="post" action="{{ url_for('manage_devices') }}" onsubmit="return requireSuperAdminPassword(event)">
-      <input type="hidden" name="action" value="add">
-      <h3>Add Device</h3>
-      <label>Hostname</label>
-      <input name="hostname" type="text" required placeholder="e.g., branch-rtr-02">
 
-      <label>IP Address</label>
-      <input id="newDeviceIpAddress" name="ip_address" type="text" required placeholder="e.g., 10.20.30.40">
-
-      <div class="action-row">
-        <button class="btn" type="button" onclick="testNewDeviceConnectivity()">Test</button>
-      </div>
-      <div id="deviceTestResult" class="test-result"></div>
-
-      <label>Select Categories (drag-list)</label>
-      <select class="drag-list" name="new_device_categories" multiple size="6">
-        {% for grp in categories %}
-          <option value="{{ grp }}" {% if grp == "Uncategorized" %}selected{% endif %}>{{ grp }}</option>
-        {% endfor %}
-      </select>
-
-      <div class="action-row">
-        <button class="btn" type="submit">Save Device</button>
-        <button class="btn ghost" type="button" onclick="closeAddDeviceModal()">Cancel</button>
-      </div>
-    </form>
-  </dialog>
 </body>
 </html>

@@ -25,6 +25,16 @@
       if (modal && modal.showModal) modal.showModal();
     }
 
+    function openNtpModal() {
+      const modal = document.getElementById('ntpConfigModal');
+      if (modal && modal.showModal) modal.showModal();
+    }
+
+    function closeNtpModal() {
+      const modal = document.getElementById('ntpConfigModal');
+      if (modal && modal.close) modal.close();
+    }
+
     function closeUsersModal() {
       const modal = document.getElementById('usersManageModal');
       if (modal && modal.close) modal.close();
@@ -97,6 +107,8 @@
         openUsersModal();
       } else if (selectedModal === 'ise') {
         openIseModal();
+      } else if (selectedModal === 'ntp') {
+        openNtpModal();
       }
     });
   </script>
@@ -112,9 +124,10 @@
     {% if info %}<div class="info">{{ info }}</div>{% endif %}
     {% if error %}<div class="error">{{ error }}</div>{% endif %}
 
-    <div class="action-row">
+    <div class="action-row equal-buttons">
       <button class="btn run" type="button" onclick="openUsersModal()">Users</button>
       <button class="btn" type="button" onclick="openIseModal()">ISE</button>
+      <button class="btn" type="button" onclick="openNtpModal()">NTP</button>
     </div>
   </div>
 
@@ -146,6 +159,24 @@
       <div class="action-row">
         <button class="btn run" type="submit">Save ISE Settings</button>
         <button class="btn ghost" type="button" onclick="closeIseModal()">Close</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="ntpConfigModal" class="device-modal">
+    <form method="post" action="{{ url_for('ntp_settings_page') }}">
+      <h3>NTP Configuration</h3>
+      <label>NTP Server IP / Hostname</label>
+      <input name="ntp_server" type="text" value="{{ ntp.server }}" placeholder="10.10.10.100">
+      <label>NTP Port</label>
+      <input name="ntp_port" type="number" value="{{ ntp.port }}" min="1" max="65535">
+      <label>Timeout (seconds)</label>
+      <input name="ntp_timeout" type="number" value="{{ ntp.sync_timeout }}" min="1" max="10">
+      <div class="info">Last Sync: {{ ntp.last_sync or 'Never' }}<br>Status: {{ ntp.last_status }}</div>
+      <div class="action-row">
+        <button class="btn" type="submit" name="action" value="save">Save NTP Settings</button>
+        <button class="btn run" type="submit" name="action" value="sync">Synchronize</button>
+        <button class="btn ghost" type="button" onclick="closeNtpModal()">Close</button>
       </div>
     </form>
   </dialog>
@@ -204,6 +235,7 @@
       <h3>Edit User</h3>
       <label>Select User</label>
       <select id="userEditUsername" name="selected_username" onchange="syncUserCategoriesSelection()" required>
+        <option value="" selected>-- Select User --</option>
         {% for user in users %}
           <option value="{{ user.username }}">{{ user.username }}</option>
         {% endfor %}
