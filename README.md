@@ -25,6 +25,7 @@ A web-based network engineering app to authenticate users, select routers/switch
   - devices list shows 15 rows with scroll for larger inventories
   - create category from GUI
   - Uncategorized category is protected and cannot be deleted (even by super admin)
+  - Uncategorized always appears in the Groups list
   - add devices to category from GUI
   - delete category from GUI
   - Add Device popup (hostname + IP + category drag-list)

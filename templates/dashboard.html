@@ -6,7 +6,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <script>
     const DEVICE_DATA = {{ devices|tojson }};
-    const GROUP_NAMES = {{ groups.keys()|list|tojson }};
+    const GROUP_NAMES = {{ categories|tojson }};
 
     function renderGroups() {
       const groupList = document.getElementById('groupDragList');
@@ -42,7 +42,8 @@
       }
 
       const filtered = DEVICE_DATA.filter(device => {
-        const deviceGroups = device.groups || [];
+        const rawGroups = Array.isArray(device.groups) ? device.groups : [];
+        const deviceGroups = rawGroups.length ? rawGroups : ['Uncategorized'];
         return selectedGroups.some(group => deviceGroups.includes(group));
       });
       renderDevices(filtered);
