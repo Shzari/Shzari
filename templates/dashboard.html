@@ -463,8 +463,8 @@
         <label>Selected command</label>
         <input id="selected_command" name="selected_command" type="text" placeholder="Click a button to load command">
 
-        <label>Manual command (overrides selected command)</label>
-        <input id="manual_command" name="manual_command" type="text" placeholder="Type any show/config command">
+        <label>Manual command</label>
+        <textarea id="manual_command" name="manual_command" rows="4" placeholder="Type one or multiple lines of show/config commands"></textarea>
 
         <div class="command-preview" id="commandPreview">No command selected yet.</div>
 
@@ -608,7 +608,9 @@
         <label>Add button label</label>
         <input name="new_label" type="text" placeholder="e.g., Check CPU">
         <label>Add button command</label>
-        <input name="new_command" type="text" placeholder="e.g., show processes cpu sorted">
+        <textarea name="new_command" rows="4" placeholder="e.g.
+show processes cpu sorted
+show ip interface brief"></textarea>
         <label>Command mode</label>
         <select name="new_mode">
           <option value="show" selected>Show</option>
@@ -641,7 +643,7 @@
           {% endfor %}
         </select>
         <label>Command text</label>
-        <input id="editCommandText" name="edit_command_text" type="text" placeholder="Edit command text here">
+        <textarea id="editCommandText" name="edit_command_text" rows="4" placeholder="Edit command text here (single or multiple lines)"></textarea>
         <button class="btn" type="submit">Save Command</button>
       </form>
 

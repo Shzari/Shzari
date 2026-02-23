@@ -57,6 +57,7 @@ A web-based network engineering app to authenticate users, select routers/switch
   - button selectors in settings popup default to blank (`-- Select Button --`)
   - command buttons appear for all devices/users based on each user's personal saved dashboard button set
   - command preview before RUN
+  - add-button command and manual command support multiple lines
   - Ping button (in Devices panel) runs 5 ICMP probes for selected devices and shows CMD-style popup output (`!` success, `.` loss)
   - RUN button
   - output window opens first run, then reuses
