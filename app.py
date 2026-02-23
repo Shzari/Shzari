@@ -22,6 +22,7 @@ BASE_DIR = Path(__file__).resolve().parent
 DEVICES_FILE = BASE_DIR / "devices_web.json"
 ISE_SETTINGS_FILE = BASE_DIR / "ise_settings.json"
 SUPER_ADMIN_FILE = BASE_DIR / "super_admin.json"
+USERS_FILE = BASE_DIR / "users.json"
 SECRET_KEY = os.environ.get("APP_SECRET_KEY", "dev-secret-change-me")
 
 app = Flask(__name__)
@@ -87,6 +88,75 @@ def verify_super_admin(username: str, password: str) -> bool:
     actual = _hash_password(password, salt)
     return hmac.compare_digest(actual, expected)
 
+
+def load_users() -> list[dict[str, Any]]:
+    if not USERS_FILE.exists():
+        return []
+    with USERS_FILE.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, list):
+        return []
+    return data
+
+
+def save_users(users: list[dict[str, Any]]) -> None:
+    with USERS_FILE.open("w", encoding="utf-8") as f:
+        json.dump(users, f, indent=2)
+
+
+def find_user(users: list[dict[str, Any]], username: str) -> dict[str, Any] | None:
+    normalized = username.strip().lower()
+    for user in users:
+        if str(user.get("username", "")).strip().lower() == normalized:
+            return user
+    return None
+
+
+def set_user_password(user: dict[str, Any], password: str) -> None:
+    salt = secrets.token_hex(16)
+    user["salt"] = salt
+    user["password_hash"] = _hash_password(password, salt)
+
+
+def validate_local_user(username: str, password: str) -> tuple[bool, str, str]:
+    if verify_super_admin(username, password):
+        return True, "", "super_admin"
+
+    users = load_users()
+    user = find_user(users, username)
+    if user is None:
+        return False, "Local user not found.", ""
+
+    user_role = str(user.get("role", "operator"))
+    password_hash = str(user.get("password_hash", ""))
+    salt = str(user.get("salt", ""))
+
+    if not password_hash or not salt:
+        return False, "PASSWORD_SETUP_REQUIRED", user_role
+
+    actual = _hash_password(password, salt)
+    if not hmac.compare_digest(actual, password_hash):
+        return False, "Invalid local username or password.", ""
+
+    if bool(user.get("must_change_password", False)):
+        return False, "PASSWORD_SETUP_REQUIRED", user_role
+
+    return True, "", user_role
+
+
+def upsert_user(username: str) -> tuple[bool, str]:
+    users = load_users()
+    if find_user(users, username) is not None:
+        return False, "User already exists."
+    users.append({
+        "username": username.strip(),
+        "role": "operator",
+        "salt": "",
+        "password_hash": "",
+        "must_change_password": True,
+    })
+    save_users(users)
+    return True, f"User '{username}' created. Password will be set on first login."
 
 def load_devices() -> list[dict[str, Any]]:
     if not DEVICES_FILE.exists():
@@ -390,8 +460,8 @@ def ise_settings_page() -> Any:
     if not session.get("super_admin_verified"):
         return redirect(url_for("verify_super_admin_route"))
 
-    info = ""
-    error = ""
+    info = session.pop("settings_info", "")
+    error = session.pop("settings_error", "")
     settings = load_ise_settings()
 
     if request.method == "POST":
@@ -412,7 +482,7 @@ def ise_settings_page() -> Any:
         except Exception as exc:
             error = f"Failed to save settings: {exc}"
 
-    return render_template("ise_settings.html", ise=settings, info=info, error=error)
+    return render_template("ise_settings.html", ise=settings, info=info, error=error, users=load_users())
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -429,12 +499,23 @@ def login() -> Any:
         password = request.form.get("password", "")
         timeout = int(request.form.get("timeout", "8") or 8)
 
-        if not username or not password:
-            error = "Username and password are required."
+        if not username:
+            error = "Username is required."
         elif auth_mode == "ise":
-            ok, message = authenticate_with_ise(username, password, settings)
+            if not password:
+                error = "Password is required for ISE login."
+            else:
+                ok, message = authenticate_with_ise(username, password, settings)
+                if not ok:
+                    error = message
+        else:
+            ok, local_message, role = validate_local_user(username, password)
+            if not ok and local_message == "PASSWORD_SETUP_REQUIRED":
+                session["pending_password_user"] = username
+                session["pending_password_role"] = role or "operator"
+                return redirect(url_for("change_password"))
             if not ok:
-                error = message
+                error = local_message
 
         if not error:
             session["auth_mode"] = auth_mode
@@ -444,6 +525,110 @@ def login() -> Any:
             return redirect(url_for("dashboard"))
 
     return render_template("login.html", error=error)
+
+
+@app.route("/change-password", methods=["GET", "POST"])
+def change_password() -> Any:
+    username = session.get("pending_password_user", "")
+    if not username:
+        return redirect(url_for("login"))
+
+    error = ""
+    info = ""
+    if request.method == "POST":
+        new_password = request.form.get("new_password", "")
+        confirm_password = request.form.get("confirm_password", "")
+        timeout = int(request.form.get("timeout", "8") or 8)
+
+        if not new_password:
+            error = "New password is required."
+        elif new_password != confirm_password:
+            error = "Passwords do not match."
+        else:
+            if verify_super_admin(username, new_password):
+                session.pop("pending_password_user", None)
+                session.pop("pending_password_role", None)
+                session["auth_mode"] = "local"
+                session["creds"] = {"username": username, "password": new_password, "timeout": timeout}
+                session.setdefault("buttons", default_buttons())
+                session.setdefault("run_history", [])
+                return redirect(url_for("dashboard"))
+
+            users = load_users()
+            user = find_user(users, username)
+            if user is None:
+                error = "User no longer exists."
+            else:
+                set_user_password(user, new_password)
+                user["must_change_password"] = False
+                save_users(users)
+                session.pop("pending_password_user", None)
+                session.pop("pending_password_role", None)
+                session["auth_mode"] = "local"
+                session["creds"] = {"username": username, "password": new_password, "timeout": timeout}
+                session.setdefault("buttons", default_buttons())
+                session.setdefault("run_history", [])
+                return redirect(url_for("dashboard"))
+
+    return render_template("change_password.html", username=username, error=error, info=info)
+
+
+@app.route("/settings/users", methods=["POST"])
+def manage_users() -> Any:
+    if not super_admin_exists():
+        return redirect(url_for("setup_super_admin"))
+    if not session.get("super_admin_verified"):
+        return redirect(url_for("verify_super_admin_route"))
+
+    action = request.form.get("action", "").strip()
+    users = load_users()
+
+    if action == "create":
+        username = request.form.get("new_username", "").strip()
+        if not username:
+            session["settings_error"] = "Username is required to create user."
+        elif load_super_admin().get("username", "").strip().lower() == username.lower():
+            session["settings_error"] = "This username is reserved for super admin."
+        else:
+            ok, message = upsert_user(username)
+            if ok:
+                session["settings_info"] = message
+            else:
+                session["settings_error"] = message
+
+    elif action == "delete":
+        username = request.form.get("selected_username", "").strip()
+        before = len(users)
+        users = [u for u in users if str(u.get("username", "")).strip().lower() != username.lower()]
+        if len(users) == before:
+            session["settings_error"] = "User not found."
+        else:
+            save_users(users)
+            session["settings_info"] = f"User '{username}' deleted."
+
+    elif action == "reset_password":
+        username = request.form.get("selected_username", "").strip()
+        user = find_user(users, username)
+        if user is None:
+            session["settings_error"] = "User not found."
+        else:
+            user["salt"] = ""
+            user["password_hash"] = ""
+            user["must_change_password"] = True
+            save_users(users)
+            session["settings_info"] = f"Password reset for '{username}'. User must set password on next login."
+
+    elif action == "force_change":
+        username = request.form.get("selected_username", "").strip()
+        user = find_user(users, username)
+        if user is None:
+            session["settings_error"] = "User not found."
+        else:
+            user["must_change_password"] = True
+            save_users(users)
+            session["settings_info"] = f"User '{username}' will be forced to change password at next login."
+
+    return redirect(url_for("ise_settings_page"))
 
 
 @app.route("/logout")

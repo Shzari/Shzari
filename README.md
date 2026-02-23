@@ -13,6 +13,11 @@ A web-based network engineering app to authenticate users, select routers/switch
   - Primary ISE server/port/shared-secret
   - Secondary ISE server/port/shared-secret
   - Timeout and NAS-IP
+- Super Admin local-user controls:
+  - create local users with username only (no initial password)
+  - list all created users with password-set and force-change status
+  - edit popup supports reset password, force-change next login, and delete user
+  - users with blank/reset password are forced to set password at next login
 - Category/group workflow:
   - split view: Groups list on left and Devices list on right
   - drag-select one or more groups, then devices list updates

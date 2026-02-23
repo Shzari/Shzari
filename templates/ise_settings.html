@@ -4,6 +4,32 @@
   <meta charset="utf-8">
   <title>ISE Settings</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script>
+    function openUserEditModal() {
+      const modal = document.getElementById('userEditModal');
+      if (modal && modal.showModal) modal.showModal();
+    }
+
+    function closeUserEditModal() {
+      const modal = document.getElementById('userEditModal');
+      if (modal && modal.close) modal.close();
+    }
+
+    function updateEditActionLabel() {
+      const action = document.getElementById('userEditAction').value;
+      const note = document.getElementById('userEditActionNote');
+      if (!note) return;
+      if (action === 'delete') {
+        note.textContent = 'Delete selected user permanently.';
+      } else if (action === 'reset_password') {
+        note.textContent = 'Reset selected user password to blank and force set on next login.';
+      } else if (action === 'force_change') {
+        note.textContent = 'Keep current password but force user to change on next login.';
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', updateEditActionLabel);
+  </script>
 </head>
 <body>
   <div class="page-bg"></div>
@@ -41,6 +67,70 @@
 
       <button class="btn run" type="submit">Save ISE Settings</button>
     </form>
+
+    <hr>
+    <h2>Local User Management (Super Admin Only)</h2>
+    <p>Create, delete, reset password, and force password change for local dashboard users.</p>
+
+    <form method="post" action="{{ url_for('manage_users') }}" class="submenu-form">
+      <input type="hidden" name="action" value="create">
+      <label>New Username</label>
+      <input name="new_username" type="text" placeholder="e.g., noc-operator-1">
+      <button class="btn" type="submit">Add User</button>
+    </form>
+
+    <h3>Created Users</h3>
+    <div class="device-list">
+      {% if users %}
+        {% for user in users %}
+          <div class="device-item">
+            <span>{{ user.username }}</span>
+            <small>
+              {% if user.password_hash %}
+                password set
+              {% else %}
+                password not set
+              {% endif %}
+              {% if user.must_change_password %}
+                | must change next login
+              {% endif %}
+            </small>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="device-item"><span>No users created yet.</span></div>
+      {% endif %}
+    </div>
+
+    <div class="action-row">
+      <button class="btn" type="button" onclick="openUserEditModal()">Edit User</button>
+    </div>
   </div>
+
+  <dialog id="userEditModal" class="device-modal">
+    <form method="post" action="{{ url_for('manage_users') }}">
+      <h3>Edit User</h3>
+      <label>Select User</label>
+      <select name="selected_username" required>
+        {% for user in users %}
+          <option value="{{ user.username }}">{{ user.username }}</option>
+        {% endfor %}
+      </select>
+
+      <label>Action</label>
+      <select id="userEditAction" name="action" onchange="updateEditActionLabel()" required>
+        <option value="reset_password">Reset Password (blank + force set next login)</option>
+        <option value="force_change">Force Change Password on Next Login</option>
+        <option value="delete">Delete User</option>
+      </select>
+
+      <div id="userEditActionNote" class="command-preview"></div>
+
+      <div class="action-row">
+        <button class="btn" type="submit">Apply</button>
+        <button class="btn ghost" type="button" onclick="closeUserEditModal()">Cancel</button>
+      </div>
+    </form>
+  </dialog>
 </body>
 </html>
