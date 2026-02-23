@@ -1070,6 +1070,11 @@ def buttons_menu() -> Any:
                     item["label"] = new_label
                     break
             session["buttons"] = buttons
+    elif action == "delete":
+        button_id = request.form.get("button_id", "").strip()
+        if button_id:
+            buttons = [item for item in buttons if str(item.get("id", "")).strip() != button_id]
+            session["buttons"] = buttons
     elif action == "clear_history":
         session["run_history"] = []
 

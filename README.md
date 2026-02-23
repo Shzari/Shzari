@@ -45,8 +45,9 @@ A web-based network engineering app to authenticate users, select routers/switch
   - device credentials are stored per logged-in account (each user must set their own)
 - Command workflow:
   - two in-panel modes: Show Commands and Config Commands (no popup)
+  - settings icon on top-right of Commands panel opens popup to add/rename/delete buttons
+  - button settings popup includes mode + optional categories where command should appear
   - command buttons are filtered by selected mode and selected Groups
-  - custom button creation supports mode + optional categories where command should appear
   - command preview before RUN
   - RUN button
   - output window opens first run, then reuses

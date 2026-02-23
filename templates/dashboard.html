@@ -209,6 +209,30 @@
       }
     }
 
+    function openCommandSettingsModal() {
+      const modal = document.getElementById('commandSettingsModal');
+      if (modal && modal.showModal) {
+        modal.showModal();
+      }
+    }
+
+    function closeCommandSettingsModal() {
+      const modal = document.getElementById('commandSettingsModal');
+      if (modal && modal.close) {
+        modal.close();
+      }
+    }
+
+    function handleDeleteButtonSubmit(event) {
+      const selector = document.getElementById('deleteButtonId');
+      const selectedText = selector && selector.selectedOptions.length ? selector.selectedOptions[0].textContent : 'this button';
+      if (!confirm(`Delete ${selectedText}?`)) {
+        event.preventDefault();
+        return false;
+      }
+      return true;
+    }
+
     function handleRunSubmit() {
       const form = document.getElementById('runForm');
       const key = 'output_window_opened';
@@ -438,7 +462,10 @@
     </div>
 
     <div class="card glass">
-      <h3>Commands</h3>
+      <div class="card-head">
+        <h3>Commands</h3>
+        <button class="icon-btn" type="button" onclick="openCommandSettingsModal()" title="Command Button Settings" aria-label="Command Button Settings">⚙️</button>
+      </div>
       <form method="post" action="{{ url_for('run_commands') }}" id="runForm" onsubmit="return handleRunSubmit()">
         <div class="mode-tabs">
           <button class="btn" type="button" data-command-mode-tab="show" onclick="setCommandMode('show')">Show Commands</button>
@@ -461,48 +488,6 @@
           <button class="btn run" type="submit">RUN</button>
         </div>
       </form>
-
-      <details class="submenu">
-        <summary>⚙️ Button Menu / Sub Menu</summary>
-
-        <form method="post" action="{{ url_for('buttons_menu') }}" class="submenu-form">
-          <input type="hidden" name="action" value="add">
-          <label>Add button label</label>
-          <input name="new_label" type="text" placeholder="e.g., Check CPU">
-          <label>Add button command</label>
-          <input name="new_command" type="text" placeholder="e.g., show processes cpu sorted">
-          <label>Command mode</label>
-          <select name="new_mode">
-            <option value="show" selected>Show</option>
-            <option value="config">Config</option>
-          </select>
-          <label>Select categories where this command will appear (optional)</label>
-          <select class="drag-list" name="new_command_categories" multiple size="5">
-            {% for grp in categories %}
-              <option value="{{ grp }}">{{ grp }}</option>
-            {% endfor %}
-          </select>
-          <button class="btn" type="submit">Add Button</button>
-        </form>
-
-        <form method="post" action="{{ url_for('buttons_menu') }}" class="submenu-form">
-          <input type="hidden" name="action" value="rename">
-          <label>Choose button to rename</label>
-          <select name="button_id">
-            {% for b in buttons %}
-              <option value="{{ b.id }}">{{ b.label }} ({{ b.command }})</option>
-            {% endfor %}
-          </select>
-          <label>New button name</label>
-          <input name="rename_label" type="text" placeholder="New label">
-          <button class="btn" type="submit">Rename Button</button>
-        </form>
-
-        <form method="post" action="{{ url_for('buttons_menu') }}" class="submenu-form">
-          <input type="hidden" name="action" value="clear_history">
-          <button class="btn ghost" type="submit">Clear Output History</button>
-        </form>
-      </details>
     </div>
   </div>
 
@@ -518,6 +503,67 @@
         <button class="btn ghost" type="button" onclick="closeSuperAdminPasswordModal()">Cancel</button>
       </div>
     </form>
+  </dialog>
+
+
+  <dialog id="commandSettingsModal" class="device-modal">
+    <div class="command-settings-body">
+      <h3>Command Button Settings</h3>
+      <p>Add, rename, delete, and scope command buttons by mode and categories.</p>
+
+      <form method="post" action="{{ url_for('buttons_menu') }}" class="submenu-form">
+        <input type="hidden" name="action" value="add">
+        <label>Add button label</label>
+        <input name="new_label" type="text" placeholder="e.g., Check CPU">
+        <label>Add button command</label>
+        <input name="new_command" type="text" placeholder="e.g., show processes cpu sorted">
+        <label>Command mode</label>
+        <select name="new_mode">
+          <option value="show" selected>Show</option>
+          <option value="config">Config</option>
+        </select>
+        <label>Select categories where this command will appear (optional)</label>
+        <select class="drag-list" name="new_command_categories" multiple size="5">
+          {% for grp in categories %}
+            <option value="{{ grp }}">{{ grp }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn" type="submit">Add Button</button>
+      </form>
+
+      <form method="post" action="{{ url_for('buttons_menu') }}" class="submenu-form">
+        <input type="hidden" name="action" value="rename">
+        <label>Choose button to rename</label>
+        <select name="button_id">
+          {% for b in buttons %}
+            <option value="{{ b.id }}">{{ b.label }} ({{ b.command }})</option>
+          {% endfor %}
+        </select>
+        <label>New button name</label>
+        <input name="rename_label" type="text" placeholder="New label">
+        <button class="btn" type="submit">Rename Button</button>
+      </form>
+
+      <form method="post" action="{{ url_for('buttons_menu') }}" class="submenu-form" onsubmit="return handleDeleteButtonSubmit(event)">
+        <input type="hidden" name="action" value="delete">
+        <label>Choose button to delete</label>
+        <select id="deleteButtonId" name="button_id">
+          {% for b in buttons %}
+            <option value="{{ b.id }}">{{ b.label }} ({{ b.command }})</option>
+          {% endfor %}
+        </select>
+        <button class="btn ghost" type="submit">Delete Button</button>
+      </form>
+
+      <form method="post" action="{{ url_for('buttons_menu') }}" class="submenu-form">
+        <input type="hidden" name="action" value="clear_history">
+        <button class="btn ghost" type="submit">Clear Output History</button>
+      </form>
+
+      <div class="action-row">
+        <button class="btn ghost" type="button" onclick="closeCommandSettingsModal()">Close</button>
+      </div>
+    </div>
   </dialog>
 
   <dialog id="deviceCredsModal" class="device-modal">

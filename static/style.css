@@ -166,6 +166,32 @@ pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; white-
   border-bottom: 1px dashed #dbe4ff;
 }
 
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.icon-btn {
+  border: 1px solid #cfdcff;
+  background: #eef4ff;
+  border-radius: 10px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.icon-btn:hover {
+  background: #dbeafe;
+}
+
+.command-settings-body {
+  padding: 16px;
+  background: #ffffff;
+}
+
 .device-modal {
   border: none;
   border-radius: 14px;
