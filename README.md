@@ -16,7 +16,8 @@ A web-based network engineering app to authenticate users, select routers/switch
 - Super Admin local-user controls:
   - create local users with username only (no initial password)
   - list all created users with password-set and force-change status
-  - edit popup supports reset password, force-change next login, and delete user
+  - edit popup supports reset password, force-change next login, delete user, and set allowed categories per user
+  - per-user category access control (all categories / selected categories / no categories)
   - users with blank/reset password are forced to set password at next login
 - Category/group workflow:
   - split view: Groups list on left and Devices list on right

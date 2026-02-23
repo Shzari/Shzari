@@ -5,6 +5,11 @@
   <title>ISE Settings</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <script>
+    const USER_CATEGORY_MAP = {{ users|tojson }}.reduce((acc, user) => {
+      acc[user.username] = Array.isArray(user.allowed_categories) ? user.allowed_categories : null;
+      return acc;
+    }, {});
+
     function openUserEditModal() {
       const modal = document.getElementById('userEditModal');
       if (modal && modal.showModal) modal.showModal();
@@ -25,10 +30,43 @@
         note.textContent = 'Reset selected user password to blank and force set on next login.';
       } else if (action === 'force_change') {
         note.textContent = 'Keep current password but force user to change on next login.';
+      } else if (action === 'set_categories') {
+        note.textContent = 'Set exact category access for selected user. Empty selection means no access.';
       }
     }
 
-    window.addEventListener('DOMContentLoaded', updateEditActionLabel);
+    function syncUserCategoriesSelection() {
+      const userSelect = document.getElementById('userEditUsername');
+      const categoriesSelect = document.getElementById('userCategoryAccess');
+      if (!userSelect || !categoriesSelect) return;
+
+      const username = userSelect.value;
+      const allowedCategories = USER_CATEGORY_MAP[username];
+      const allOptions = Array.from(categoriesSelect.options);
+
+      allOptions.forEach(option => {
+        option.selected = false;
+      });
+
+      if (allowedCategories === null) {
+        allOptions.forEach(option => {
+          option.selected = true;
+        });
+        return;
+      }
+
+      const allowedSet = new Set(allowedCategories || []);
+      allOptions.forEach(option => {
+        if (allowedSet.has(option.value)) {
+          option.selected = true;
+        }
+      });
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      updateEditActionLabel();
+      syncUserCategoriesSelection();
+    });
   </script>
 </head>
 <body>
@@ -94,6 +132,13 @@
               {% if user.must_change_password %}
                 | must change next login
               {% endif %}
+              {% if user.allowed_categories is none %}
+                | category access: all
+              {% elif user.allowed_categories %}
+                | category access: {{ user.allowed_categories|join(", ") }}
+              {% else %}
+                | category access: none
+              {% endif %}
             </small>
           </div>
         {% endfor %}
@@ -111,7 +156,7 @@
     <form method="post" action="{{ url_for('manage_users') }}">
       <h3>Edit User</h3>
       <label>Select User</label>
-      <select name="selected_username" required>
+      <select id="userEditUsername" name="selected_username" onchange="syncUserCategoriesSelection()" required>
         {% for user in users %}
           <option value="{{ user.username }}">{{ user.username }}</option>
         {% endfor %}
@@ -122,6 +167,14 @@
         <option value="reset_password">Reset Password (blank + force set next login)</option>
         <option value="force_change">Force Change Password on Next Login</option>
         <option value="delete">Delete User</option>
+        <option value="set_categories">Set User Category Access</option>
+      </select>
+
+      <label>Allowed Categories for Selected User</label>
+      <select id="userCategoryAccess" class="drag-list" name="allowed_categories" multiple size="8">
+        {% for category in available_categories %}
+          <option value="{{ category }}">{{ category }}</option>
+        {% endfor %}
       </select>
 
       <div id="userEditActionNote" class="command-preview"></div>

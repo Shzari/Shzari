@@ -96,7 +96,19 @@ def load_users() -> list[dict[str, Any]]:
         data = json.load(f)
     if not isinstance(data, list):
         return []
-    return data
+
+    normalized: list[dict[str, Any]] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        user = dict(item)
+        user.setdefault("role", "operator")
+        user.setdefault("salt", "")
+        user.setdefault("password_hash", "")
+        user.setdefault("must_change_password", True)
+        user.setdefault("allowed_categories", None)
+        normalized.append(user)
+    return normalized
 
 
 def save_users(users: list[dict[str, Any]]) -> None:
@@ -154,6 +166,7 @@ def upsert_user(username: str) -> tuple[bool, str]:
         "salt": "",
         "password_hash": "",
         "must_change_password": True,
+        "allowed_categories": None,
     })
     save_users(users)
     return True, f"User '{username}' created. Password will be set on first login."
@@ -180,6 +193,50 @@ def grouped_devices(devices: list[dict[str, Any]]) -> dict[str, list[dict[str, A
             groups.setdefault(group, []).append(device)
     return groups
 
+
+
+
+def all_categories(devices: list[dict[str, Any]]) -> list[str]:
+    categories: set[str] = set()
+    for device in devices:
+        for group in device.get("groups", []):
+            categories.add(str(group))
+    return sorted(categories)
+
+
+def user_allowed_categories(username: str, auth_mode: str) -> list[str] | None:
+    if auth_mode != "local":
+        return None
+
+    super_admin_username = str(load_super_admin().get("username", "")).strip().lower()
+    if username.strip().lower() == super_admin_username:
+        return None
+
+    users = load_users()
+    user = find_user(users, username)
+    if user is None:
+        return None
+
+    allowed = user.get("allowed_categories")
+    if allowed is None:
+        return None
+    if isinstance(allowed, list):
+        return [str(item).strip() for item in allowed if str(item).strip()]
+    return []
+
+
+def filter_devices_for_user(devices: list[dict[str, Any]], username: str, auth_mode: str) -> list[dict[str, Any]]:
+    allowed = user_allowed_categories(username, auth_mode)
+    if allowed is None:
+        return devices
+
+    allowed_set = set(allowed)
+    filtered: list[dict[str, Any]] = []
+    for device in devices:
+        groups = {str(g).strip() for g in device.get("groups", []) if str(g).strip()}
+        if groups & allowed_set:
+            filtered.append(device)
+    return filtered
 
 def default_buttons() -> list[dict[str, str]]:
     return [
@@ -482,7 +539,15 @@ def ise_settings_page() -> Any:
         except Exception as exc:
             error = f"Failed to save settings: {exc}"
 
-    return render_template("ise_settings.html", ise=settings, info=info, error=error, users=load_users())
+    devices = load_devices()
+    return render_template(
+        "ise_settings.html",
+        ise=settings,
+        info=info,
+        error=error,
+        users=load_users(),
+        available_categories=all_categories(devices),
+    )
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -628,6 +693,20 @@ def manage_users() -> Any:
             save_users(users)
             session["settings_info"] = f"User '{username}' will be forced to change password at next login."
 
+    elif action == "set_categories":
+        username = request.form.get("selected_username", "").strip()
+        selected_categories = [c.strip() for c in request.form.getlist("allowed_categories") if c.strip()]
+        user = find_user(users, username)
+        if user is None:
+            session["settings_error"] = "User not found."
+        else:
+            user["allowed_categories"] = selected_categories
+            save_users(users)
+            if selected_categories:
+                session["settings_info"] = f"Updated category access for '{username}'."
+            else:
+                session["settings_info"] = f"'{username}' now has no category access."
+
     return redirect(url_for("ise_settings_page"))
 
 
@@ -642,7 +721,10 @@ def dashboard() -> Any:
     if "creds" not in session:
         return redirect(url_for("login"))
 
-    devices = load_devices()
+    all_devices = load_devices()
+    current_username = str(session.get("creds", {}).get("username", ""))
+    auth_mode = str(session.get("auth_mode", "local"))
+    devices = filter_devices_for_user(all_devices, current_username, auth_mode)
     groups = grouped_devices(devices)
     info = session.pop("dashboard_info", "")
     error = session.pop("dashboard_error", "")
@@ -884,7 +966,10 @@ def run_commands() -> Any:
     if "creds" not in session:
         return redirect(url_for("login"))
 
-    devices = load_devices()
+    all_devices = load_devices()
+    current_username = str(session.get("creds", {}).get("username", ""))
+    auth_mode = str(session.get("auth_mode", "local"))
+    devices = filter_devices_for_user(all_devices, current_username, auth_mode)
     by_name = {device["name"]: device for device in devices}
     selected_names = request.form.getlist("selected_devices")
     manual_command = request.form.get("manual_command", "").strip()
