@@ -130,6 +130,13 @@ def set_user_password(user: dict[str, Any], password: str) -> None:
     user["password_hash"] = _hash_password(password, salt)
 
 
+def is_super_admin_password(password: str) -> bool:
+    username = str(load_super_admin().get("username", "")).strip()
+    if not username or not password:
+        return False
+    return verify_super_admin(username, password)
+
+
 def validate_local_user(username: str, password: str) -> tuple[bool, str, str]:
     if verify_super_admin(username, password):
         return True, "", "super_admin"
@@ -751,6 +758,11 @@ def manage_devices() -> Any:
         hostname = request.form.get("hostname", "").strip()
         ip_address = request.form.get("ip_address", "").strip()
         selected_categories = [c.strip() for c in request.form.getlist("new_device_categories") if c.strip()]
+        admin_password = request.form.get("super_admin_password", "")
+
+        if not is_super_admin_password(admin_password):
+            session["dashboard_error"] = "Saving devices requires valid super admin password."
+            return redirect(url_for("dashboard"))
 
         if not hostname or not ip_address:
             session["dashboard_error"] = "Hostname and IP address are required."
@@ -774,6 +786,11 @@ def manage_devices() -> Any:
         requested_name = request.form.get("edit_hostname", "").strip()
         requested_ip = request.form.get("edit_ip_address", "").strip()
         new_categories = [c.strip() for c in request.form.getlist("edit_device_categories") if c.strip()]
+        admin_password = request.form.get("super_admin_password", "")
+
+        if not is_super_admin_password(admin_password):
+            session["dashboard_error"] = "Editing devices requires valid super admin password."
+            return redirect(url_for("dashboard"))
 
         if not original_name:
             session["dashboard_error"] = "Select a device to edit."
@@ -817,6 +834,12 @@ def manage_devices() -> Any:
 
     if action == "delete":
         delete_name = request.form.get("delete_device_name", "").strip()
+        admin_password = request.form.get("super_admin_password", "")
+
+        if not is_super_admin_password(admin_password):
+            session["dashboard_error"] = "Deleting devices requires valid super admin password."
+            return redirect(url_for("dashboard"))
+
         if not delete_name:
             session["dashboard_error"] = "Select a device to delete."
             return redirect(url_for("dashboard"))

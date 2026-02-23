@@ -30,6 +30,7 @@ A web-based network engineering app to authenticate users, select routers/switch
   - Add Device popup includes **Test** button for dual connectivity checks (ICMP ping + SSH TCP/22)
   - ICMP ping test supports both Linux/macOS and Windows hosts running the web app
   - duplicate hostname/IP validation when adding device
+  - adding, editing, and deleting devices requires super admin password confirmation popup every time
   - edit and delete devices from GUI
   - edit device form auto-fills current hostname/IP/categories from selected device
   - when editing, you can change category only (hostname/IP can stay unchanged)

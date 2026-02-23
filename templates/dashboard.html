@@ -155,6 +155,28 @@
       return true;
     }
 
+    function requireSuperAdminPassword(event) {
+      const form = event.target;
+      const actionInput = form.querySelector('input[name="action"]');
+      const action = actionInput ? actionInput.value : 'save';
+      const actionLabel = action === 'add' ? 'save this device' : (action === 'edit' ? 'edit this device' : 'delete this device');
+      const password = window.prompt(`Super Admin password is required to ${actionLabel}:`);
+      if (!password) {
+        event.preventDefault();
+        return false;
+      }
+
+      let hidden = form.querySelector('input[name="super_admin_password"]');
+      if (!hidden) {
+        hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = 'super_admin_password';
+        form.appendChild(hidden);
+      }
+      hidden.value = password;
+      return true;
+    }
+
     function populateEditDeviceForm() {
       const selector = document.getElementById('editDeviceSelect');
       const hostnameInput = document.getElementById('editHostnameInput');
@@ -271,7 +293,7 @@
           <button class="btn ghost" type="submit">Delete Category</button>
         </form>
 
-        <form method="post" action="{{ url_for('manage_devices') }}" class="submenu-form">
+        <form method="post" action="{{ url_for('manage_devices') }}" class="submenu-form" onsubmit="return requireSuperAdminPassword(event)">
           <input type="hidden" name="action" value="edit">
           <label>Edit device (select existing)</label>
           <select id="editDeviceSelect" name="original_device_name">
@@ -292,7 +314,7 @@
           <button class="btn" type="submit">Save Device Changes</button>
         </form>
 
-        <form method="post" action="{{ url_for('manage_devices') }}" class="submenu-form">
+        <form method="post" action="{{ url_for('manage_devices') }}" class="submenu-form" onsubmit="return requireSuperAdminPassword(event)">
           <input type="hidden" name="action" value="delete">
           <label>Delete device</label>
           <select name="delete_device_name">
@@ -384,7 +406,7 @@
   </dialog>
 
   <dialog id="addDeviceModal" class="device-modal">
-    <form method="post" action="{{ url_for('manage_devices') }}">
+    <form method="post" action="{{ url_for('manage_devices') }}" onsubmit="return requireSuperAdminPassword(event)">
       <input type="hidden" name="action" value="add">
       <h3>Add Device</h3>
       <label>Hostname</label>
