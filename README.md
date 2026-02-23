@@ -14,8 +14,11 @@ A web-based network engineering app to authenticate users, select routers/switch
   - NAS-IP-Address
 - Device controls:
   - select all / clear
-  - select by group
+  - select by group/category
+  - drag-list view for devices inside selected category
   - select specific devices
+  - create new categories from GUI
+  - add any device into selected category from GUI
 - Command controls:
   - predefined buttons
   - add custom command buttons

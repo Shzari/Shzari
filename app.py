@@ -53,6 +53,11 @@ def load_devices() -> list[dict[str, Any]]:
     return data
 
 
+def save_devices(devices: list[dict[str, Any]]) -> None:
+    with DEVICES_FILE.open("w", encoding="utf-8") as f:
+        json.dump(devices, f, indent=2)
+
+
 def grouped_devices(devices: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     groups: dict[str, list[dict[str, Any]]] = {}
     for device in devices:
@@ -156,16 +161,15 @@ def authenticate_with_ise(username: str, password: str, settings: dict[str, Any]
     attrs += _radius_attr(ATTR_USER_PASSWORD, _radius_encrypt_user_password(password, secret, request_authenticator))
 
     try:
-        nas_ip_bytes = socket.inet_aton(nas_ip)
-        attrs += _radius_attr(ATTR_NAS_IP_ADDRESS, nas_ip_bytes)
+        attrs += _radius_attr(ATTR_NAS_IP_ADDRESS, socket.inet_aton(nas_ip))
     except OSError:
         pass
 
     attrs += _radius_attr(ATTR_NAS_PORT, struct.pack("!I", 0))
     attrs += _radius_attr(ATTR_SERVICE_TYPE, struct.pack("!I", SERVICE_TYPE_LOGIN))
 
-    length = 20 + len(attrs)
-    packet = struct.pack("!BBH", ACCESS_REQUEST, identifier, length) + request_authenticator + attrs
+    packet_len = 20 + len(attrs)
+    packet = struct.pack("!BBH", ACCESS_REQUEST, identifier, packet_len) + request_authenticator + attrs
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(timeout)
@@ -311,6 +315,41 @@ def dashboard() -> Any:
     return render_template("dashboard.html", devices=devices, groups=groups, buttons=get_buttons())
 
 
+@app.route("/categories", methods=["POST"])
+def manage_categories() -> Any:
+    if "creds" not in session:
+        return redirect(url_for("login"))
+
+    action = request.form.get("action", "").strip()
+    devices = load_devices()
+
+    if action == "create_category":
+        category_name = request.form.get("category_name", "").strip()
+        if category_name:
+            for device in devices:
+                groups = device.setdefault("groups", [])
+                if category_name in groups:
+                    break
+            else:
+                if devices:
+                    devices[0].setdefault("groups", []).append(category_name)
+        save_devices(devices)
+
+    elif action == "assign_device":
+        device_name = request.form.get("device_name", "").strip()
+        category_name = request.form.get("target_category", "").strip()
+        if device_name and category_name:
+            for device in devices:
+                if device.get("name") == device_name:
+                    groups = device.setdefault("groups", [])
+                    if category_name not in groups:
+                        groups.append(category_name)
+                    break
+            save_devices(devices)
+
+    return redirect(url_for("dashboard"))
+
+
 @app.route("/buttons", methods=["POST"])
 def buttons_menu() -> Any:
     if "creds" not in session:
@@ -369,7 +408,6 @@ def run_commands() -> Any:
             results.append(future.result())
 
     results.sort(key=lambda result: result.device)
-
     run_entry = {
         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         "command": command,

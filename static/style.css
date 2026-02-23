@@ -151,3 +151,17 @@ pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; white-
 }
 
 .info { color:#0b3a25; background:#c9f7dd; padding:10px; border-radius:8px; margin:8px 0; border:1px solid #8ee4b0; }
+
+.drag-list {
+  width: 100%;
+  min-height: 180px;
+  margin-top: 6px;
+  border: 1px solid #dbe4ff;
+  border-radius: 10px;
+  background: #f8fbff;
+  padding: 6px;
+}
+.drag-list option {
+  padding: 6px;
+  border-bottom: 1px dashed #dbe4ff;
+}

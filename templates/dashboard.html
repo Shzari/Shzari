@@ -5,23 +5,68 @@
   <title>Network Tool - Dashboard</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <script>
+    const DEVICE_DATA = {{ devices|tojson }};
+
     function selectAllDevices() {
       document.querySelectorAll('.device-box').forEach(cb => cb.checked = true);
+      refreshDragList();
     }
+
     function clearDevices() {
       document.querySelectorAll('.device-box').forEach(cb => cb.checked = false);
+      refreshDragList();
     }
+
     function selectGroup() {
       const grp = document.getElementById('groupSelect').value;
       clearDevices();
-      if (!grp) return;
+      if (!grp) {
+        renderDragList(DEVICE_DATA);
+        return;
+      }
       document.querySelectorAll(`.group-${grp}`).forEach(cb => cb.checked = true);
+      const filtered = DEVICE_DATA.filter(d => (d.groups || []).includes(grp));
+      renderDragList(filtered);
     }
+
+    function renderDragList(items) {
+      const list = document.getElementById('groupDragList');
+      list.innerHTML = '';
+      items.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d.name;
+        opt.textContent = `${d.name} (${d.host})`;
+        list.appendChild(opt);
+      });
+    }
+
+    function refreshDragList() {
+      const selected = Array.from(document.querySelectorAll('.device-box:checked')).map(cb => cb.value);
+      if (!selected.length) {
+        renderDragList(DEVICE_DATA);
+        return;
+      }
+      const filtered = DEVICE_DATA.filter(d => selected.includes(d.name));
+      renderDragList(filtered);
+    }
+
+    function syncCheckboxesFromDragList() {
+      const selectedNames = Array.from(document.getElementById('groupDragList').selectedOptions).map(o => o.value);
+      if (!selectedNames.length) return;
+      clearDevices();
+      selectedNames.forEach(name => {
+        const cb = document.querySelector(`.device-box[value="${name}"]`);
+        if (cb) cb.checked = true;
+      });
+    }
+
     function setCommand(cmd) {
       document.getElementById('selected_command').value = cmd;
       document.getElementById('manual_command').value = '';
     }
+
     function handleRunSubmit() {
+      syncCheckboxesFromDragList();
       const form = document.getElementById('runForm');
       const key = 'output_window_opened';
       const targetName = 'network_output_window';
@@ -32,6 +77,11 @@
       form.target = targetName;
       return true;
     }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      renderDragList(DEVICE_DATA);
+      document.querySelectorAll('.device-box').forEach(cb => cb.addEventListener('change', refreshDragList));
+    });
   </script>
 </head>
 <body>
@@ -55,13 +105,16 @@
         <button class="btn" type="button" onclick="selectAllDevices()">Select All</button>
         <button class="btn ghost" type="button" onclick="clearDevices()">Clear</button>
       </div>
-      <label>Group</label>
+      <label>Group / Category</label>
       <select id="groupSelect" onchange="selectGroup()">
         <option value="">--Choose group--</option>
         {% for grp in groups.keys() %}
           <option value="{{ grp }}">{{ grp }}</option>
         {% endfor %}
       </select>
+
+      <label>Devices in selected category (drag list style)</label>
+      <select id="groupDragList" class="drag-list" multiple size="8" onchange="syncCheckboxesFromDragList()"></select>
 
       <div class="device-list">
         {% for d in devices %}
@@ -72,6 +125,35 @@
           </label>
         {% endfor %}
       </div>
+
+      <details class="submenu">
+        <summary>🧩 Category Menu / Sub Menu</summary>
+
+        <form method="post" action="{{ url_for('manage_categories') }}" class="submenu-form">
+          <input type="hidden" name="action" value="create_category">
+          <label>Create new category</label>
+          <input name="category_name" type="text" placeholder="e.g., datacenter-switches">
+          <button class="btn" type="submit">Create Category</button>
+        </form>
+
+        <form method="post" action="{{ url_for('manage_categories') }}" class="submenu-form">
+          <input type="hidden" name="action" value="assign_device">
+          <label>Select device</label>
+          <select name="device_name">
+            {% for d in devices %}
+              <option value="{{ d.name }}">{{ d.name }} ({{ d.host }})</option>
+            {% endfor %}
+          </select>
+
+          <label>Select category to add device into</label>
+          <select name="target_category">
+            {% for grp in groups.keys() %}
+              <option value="{{ grp }}">{{ grp }}</option>
+            {% endfor %}
+          </select>
+          <button class="btn" type="submit">Add Device To Category</button>
+        </form>
+      </details>
     </div>
 
     <div class="card glass">
