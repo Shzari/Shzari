@@ -24,6 +24,7 @@ A web-based network engineering app to authenticate users, select routers/switch
   - edit and delete devices from GUI
 - Command workflow:
   - command buttons and custom buttons
+  - command preview before RUN
   - RUN button
   - output window opens first run, then reuses
   - output history appends down page

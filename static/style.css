@@ -181,3 +181,14 @@ pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; white-
   padding: 16px;
   background: #ffffff;
 }
+
+.command-preview {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #cfdcff;
+  background: #eef4ff;
+  color: #1e3a8a;
+  font-weight: 600;
+  word-break: break-word;
+}

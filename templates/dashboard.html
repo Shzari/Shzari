@@ -63,6 +63,24 @@
     function setCommand(cmd) {
       document.getElementById('selected_command').value = cmd;
       document.getElementById('manual_command').value = '';
+      updateCommandPreview();
+    }
+
+    function updateCommandPreview() {
+      const selectedCmd = document.getElementById('selected_command').value.trim();
+      const manualCmd = document.getElementById('manual_command').value.trim();
+      const preview = document.getElementById('commandPreview');
+      if (!preview) return;
+
+      if (manualCmd) {
+        preview.textContent = `Manual command ready: ${manualCmd}`;
+        return;
+      }
+      if (selectedCmd) {
+        preview.textContent = `Selected command ready: ${selectedCmd}`;
+        return;
+      }
+      preview.textContent = 'No command selected yet.';
     }
 
     function openAddDeviceModal() {
@@ -95,6 +113,11 @@
     window.addEventListener('DOMContentLoaded', () => {
       renderDragList(DEVICE_DATA);
       document.querySelectorAll('.device-box').forEach(cb => cb.addEventListener('change', refreshDragList));
+      const selectedInput = document.getElementById('selected_command');
+      const manualInput = document.getElementById('manual_command');
+      if (selectedInput) selectedInput.addEventListener('input', updateCommandPreview);
+      if (manualInput) manualInput.addEventListener('input', updateCommandPreview);
+      updateCommandPreview();
     });
   </script>
 </head>
@@ -232,6 +255,8 @@
 
         <label>Manual command (overrides selected button command)</label>
         <input id="manual_command" name="manual_command" type="text" placeholder="Type any show/troubleshoot command">
+
+        <div class="command-preview" id="commandPreview">No command selected yet.</div>
 
         <div class="action-row">
           <button class="btn run" type="submit">RUN</button>
