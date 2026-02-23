@@ -10,6 +10,10 @@
   <div class="card narrow glass">
     <h1>Network Automation Login</h1>
     <p>Authenticate with local credentials or Cisco ISE (RADIUS).</p>
+
+    <div class="action-row">
+      <a class="btn" href="{{ url_for('verify_super_admin_route') }}">Settings (Super Admin)</a>
+    </div>
     {% if error %}<div class="error">{{ error }}</div>{% endif %}
 
     <form method="post">

@@ -18,8 +18,10 @@ A web-based network engineering app to authenticate users, select routers/switch
   - drag-list devices in selected group
   - create category from GUI
   - add devices to category from GUI
+  - delete category from GUI
   - Add Device popup (hostname + IP + category drag-list)
   - duplicate hostname/IP validation when adding device
+  - edit and delete devices from GUI
 - Command workflow:
   - command buttons and custom buttons
   - RUN button
@@ -30,7 +32,7 @@ A web-based network engineering app to authenticate users, select routers/switch
 1. Start app.
 2. Open web UI.
 3. Create Super Admin account.
-4. Login and click **Settings**.
+4. From login page click **Settings (Super Admin)**.
 5. Verify Super Admin and configure primary/secondary ISE.
 
 ## Run

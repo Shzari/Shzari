@@ -104,7 +104,6 @@
   <div class="user-strip">
     <div class="chip">👤 User: <b>{{ current_user or 'Unknown' }}</b></div>
     <div class="chip">🔐 Mode: <b>{{ auth_mode|upper }}</b></div>
-    <a class="logout-link" href="{{ url_for('ise_settings_page') }}">Settings</a>
     <a class="logout-link" href="{{ url_for('logout') }}">Logout</a>
   </div>
 
@@ -172,6 +171,49 @@
           </select>
           <button class="btn" type="submit">Add Device To Category</button>
         </form>
+
+        <form method="post" action="{{ url_for('manage_categories') }}" class="submenu-form">
+          <input type="hidden" name="action" value="delete_category">
+          <label>Delete category</label>
+          <select name="delete_category_name">
+            {% for grp in groups.keys() %}
+              <option value="{{ grp }}">{{ grp }}</option>
+            {% endfor %}
+          </select>
+          <button class="btn ghost" type="submit">Delete Category</button>
+        </form>
+
+        <form method="post" action="{{ url_for('manage_devices') }}" class="submenu-form">
+          <input type="hidden" name="action" value="edit">
+          <label>Edit device (select existing)</label>
+          <select name="original_device_name">
+            {% for d in devices %}
+              <option value="{{ d.name }}">{{ d.name }} ({{ d.host }})</option>
+            {% endfor %}
+          </select>
+          <label>New Hostname</label>
+          <input name="edit_hostname" type="text" placeholder="updated-hostname">
+          <label>New IP Address</label>
+          <input name="edit_ip_address" type="text" placeholder="10.20.30.50">
+          <label>Categories (drag-list)</label>
+          <select class="drag-list" name="edit_device_categories" multiple size="6">
+            {% for grp in groups.keys() %}
+              <option value="{{ grp }}">{{ grp }}</option>
+            {% endfor %}
+          </select>
+          <button class="btn" type="submit">Save Device Changes</button>
+        </form>
+
+        <form method="post" action="{{ url_for('manage_devices') }}" class="submenu-form">
+          <input type="hidden" name="action" value="delete">
+          <label>Delete device</label>
+          <select name="delete_device_name">
+            {% for d in devices %}
+              <option value="{{ d.name }}">{{ d.name }} ({{ d.host }})</option>
+            {% endfor %}
+          </select>
+          <button class="btn ghost" type="submit">Delete Device</button>
+        </form>
       </details>
     </div>
 
@@ -230,7 +272,8 @@
   </div>
 
   <dialog id="addDeviceModal" class="device-modal">
-    <form method="post" action="{{ url_for('add_device') }}">
+    <form method="post" action="{{ url_for('manage_devices') }}">
+      <input type="hidden" name="action" value="add">
       <h3>Add Device</h3>
       <label>Hostname</label>
       <input name="hostname" type="text" required placeholder="e.g., branch-rtr-02">

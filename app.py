@@ -471,37 +471,89 @@ def dashboard() -> Any:
 
 
 @app.route("/devices", methods=["POST"])
-def add_device() -> Any:
+def manage_devices() -> Any:
     if "creds" not in session:
         return redirect(url_for("login"))
 
-    hostname = request.form.get("hostname", "").strip()
-    ip_address = request.form.get("ip_address", "").strip()
-    selected_categories = [c.strip() for c in request.form.getlist("new_device_categories") if c.strip()]
-
-    if not hostname or not ip_address:
-        session["dashboard_error"] = "Hostname and IP address are required."
-        return redirect(url_for("dashboard"))
-
+    action = request.form.get("action", "add").strip()
     devices = load_devices()
-    if any(str(device.get("name", "")).strip().lower() == hostname.lower() for device in devices):
-        session["dashboard_error"] = "Duplicate hostname is not allowed."
+
+    if action == "add":
+        hostname = request.form.get("hostname", "").strip()
+        ip_address = request.form.get("ip_address", "").strip()
+        selected_categories = [c.strip() for c in request.form.getlist("new_device_categories") if c.strip()]
+
+        if not hostname or not ip_address:
+            session["dashboard_error"] = "Hostname and IP address are required."
+            return redirect(url_for("dashboard"))
+
+        if any(str(device.get("name", "")).strip().lower() == hostname.lower() for device in devices):
+            session["dashboard_error"] = "Duplicate hostname is not allowed."
+            return redirect(url_for("dashboard"))
+
+        if any(str(device.get("host", "")).strip() == ip_address for device in devices):
+            session["dashboard_error"] = "Duplicate IP address is not allowed."
+            return redirect(url_for("dashboard"))
+
+        devices.append({"name": hostname, "host": ip_address, "port": 22, "groups": selected_categories})
+        save_devices(devices)
+        session["dashboard_info"] = f"Device '{hostname}' added successfully."
         return redirect(url_for("dashboard"))
 
-    if any(str(device.get("host", "")).strip() == ip_address for device in devices):
-        session["dashboard_error"] = "Duplicate IP address is not allowed."
+    if action == "edit":
+        original_name = request.form.get("original_device_name", "").strip()
+        new_name = request.form.get("edit_hostname", "").strip()
+        new_ip = request.form.get("edit_ip_address", "").strip()
+        new_categories = [c.strip() for c in request.form.getlist("edit_device_categories") if c.strip()]
+
+        if not original_name or not new_name or not new_ip:
+            session["dashboard_error"] = "Device edit requires original name, new hostname, and new IP."
+            return redirect(url_for("dashboard"))
+
+        target = None
+        for device in devices:
+            if str(device.get("name", "")).strip() == original_name:
+                target = device
+                break
+
+        if target is None:
+            session["dashboard_error"] = "Device to edit not found."
+            return redirect(url_for("dashboard"))
+
+        for device in devices:
+            if device is target:
+                continue
+            if str(device.get("name", "")).strip().lower() == new_name.lower():
+                session["dashboard_error"] = "Cannot rename: hostname already exists."
+                return redirect(url_for("dashboard"))
+            if str(device.get("host", "")).strip() == new_ip:
+                session["dashboard_error"] = "Cannot change IP: IP already exists."
+                return redirect(url_for("dashboard"))
+
+        target["name"] = new_name
+        target["host"] = new_ip
+        target["groups"] = new_categories
+        save_devices(devices)
+        session["dashboard_info"] = f"Device '{original_name}' updated."
         return redirect(url_for("dashboard"))
 
-    devices.append(
-        {
-            "name": hostname,
-            "host": ip_address,
-            "port": 22,
-            "groups": selected_categories,
-        }
-    )
-    save_devices(devices)
-    session["dashboard_info"] = f"Device '{hostname}' added successfully."
+    if action == "delete":
+        delete_name = request.form.get("delete_device_name", "").strip()
+        if not delete_name:
+            session["dashboard_error"] = "Select a device to delete."
+            return redirect(url_for("dashboard"))
+
+        before = len(devices)
+        devices = [d for d in devices if str(d.get("name", "")).strip() != delete_name]
+        if len(devices) == before:
+            session["dashboard_error"] = "Device not found for deletion."
+            return redirect(url_for("dashboard"))
+
+        save_devices(devices)
+        session["dashboard_info"] = f"Device '{delete_name}' deleted."
+        return redirect(url_for("dashboard"))
+
+    session["dashboard_error"] = "Unknown device action."
     return redirect(url_for("dashboard"))
 
 
@@ -531,6 +583,14 @@ def manage_categories() -> Any:
                     if category_name not in groups:
                         groups.append(category_name)
                     break
+            save_devices(devices)
+
+    elif action == "delete_category":
+        category_name = request.form.get("delete_category_name", "").strip()
+        if category_name:
+            for device in devices:
+                groups = device.setdefault("groups", [])
+                device["groups"] = [g for g in groups if g != category_name]
             save_devices(devices)
 
     return redirect(url_for("dashboard"))
