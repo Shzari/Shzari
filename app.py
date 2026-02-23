@@ -458,7 +458,51 @@ def dashboard() -> Any:
 
     devices = load_devices()
     groups = grouped_devices(devices)
-    return render_template("dashboard.html", devices=devices, groups=groups, buttons=get_buttons())
+    info = session.pop("dashboard_info", "")
+    error = session.pop("dashboard_error", "")
+    return render_template(
+        "dashboard.html",
+        devices=devices,
+        groups=groups,
+        buttons=get_buttons(),
+        info=info,
+        error=error,
+    )
+
+
+@app.route("/devices", methods=["POST"])
+def add_device() -> Any:
+    if "creds" not in session:
+        return redirect(url_for("login"))
+
+    hostname = request.form.get("hostname", "").strip()
+    ip_address = request.form.get("ip_address", "").strip()
+    selected_categories = [c.strip() for c in request.form.getlist("new_device_categories") if c.strip()]
+
+    if not hostname or not ip_address:
+        session["dashboard_error"] = "Hostname and IP address are required."
+        return redirect(url_for("dashboard"))
+
+    devices = load_devices()
+    if any(str(device.get("name", "")).strip().lower() == hostname.lower() for device in devices):
+        session["dashboard_error"] = "Duplicate hostname is not allowed."
+        return redirect(url_for("dashboard"))
+
+    if any(str(device.get("host", "")).strip() == ip_address for device in devices):
+        session["dashboard_error"] = "Duplicate IP address is not allowed."
+        return redirect(url_for("dashboard"))
+
+    devices.append(
+        {
+            "name": hostname,
+            "host": ip_address,
+            "port": 22,
+            "groups": selected_categories,
+        }
+    )
+    save_devices(devices)
+    session["dashboard_info"] = f"Device '{hostname}' added successfully."
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/categories", methods=["POST"])

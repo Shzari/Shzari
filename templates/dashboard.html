@@ -65,6 +65,20 @@
       document.getElementById('manual_command').value = '';
     }
 
+    function openAddDeviceModal() {
+      const modal = document.getElementById('addDeviceModal');
+      if (modal && modal.showModal) {
+        modal.showModal();
+      }
+    }
+
+    function closeAddDeviceModal() {
+      const modal = document.getElementById('addDeviceModal');
+      if (modal && modal.close) {
+        modal.close();
+      }
+    }
+
     function handleRunSubmit() {
       syncCheckboxesFromDragList();
       const form = document.getElementById('runForm');
@@ -99,12 +113,16 @@
     <p>Fast operations for routers and switches.</p>
   </div>
 
+  {% if info %}<div class="info">{{ info }}</div>{% endif %}
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+
   <div class="grid">
     <div class="card glass">
       <h3>Device Selection</h3>
       <div class="action-row">
         <button class="btn" type="button" onclick="selectAllDevices()">Select All</button>
         <button class="btn ghost" type="button" onclick="clearDevices()">Clear</button>
+        <button class="btn" type="button" onclick="openAddDeviceModal()">Add Device</button>
       </div>
       <label>Group / Category</label>
       <select id="groupSelect" onchange="selectGroup()">
@@ -210,5 +228,28 @@
       </details>
     </div>
   </div>
+
+  <dialog id="addDeviceModal" class="device-modal">
+    <form method="post" action="{{ url_for('add_device') }}">
+      <h3>Add Device</h3>
+      <label>Hostname</label>
+      <input name="hostname" type="text" required placeholder="e.g., branch-rtr-02">
+
+      <label>IP Address</label>
+      <input name="ip_address" type="text" required placeholder="e.g., 10.20.30.40">
+
+      <label>Select Categories (drag-list)</label>
+      <select class="drag-list" name="new_device_categories" multiple size="6">
+        {% for grp in groups.keys() %}
+          <option value="{{ grp }}">{{ grp }}</option>
+        {% endfor %}
+      </select>
+
+      <div class="action-row">
+        <button class="btn" type="submit">Save Device</button>
+        <button class="btn ghost" type="button" onclick="closeAddDeviceModal()">Cancel</button>
+      </div>
+    </form>
+  </dialog>
 </body>
 </html>

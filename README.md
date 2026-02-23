@@ -18,6 +18,8 @@ A web-based network engineering app to authenticate users, select routers/switch
   - drag-list devices in selected group
   - create category from GUI
   - add devices to category from GUI
+  - Add Device popup (hostname + IP + category drag-list)
+  - duplicate hostname/IP validation when adding device
 - Command workflow:
   - command buttons and custom buttons
   - RUN button

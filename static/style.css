@@ -165,3 +165,19 @@ pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; white-
   padding: 6px;
   border-bottom: 1px dashed #dbe4ff;
 }
+
+.device-modal {
+  border: none;
+  border-radius: 14px;
+  max-width: 520px;
+  width: 92%;
+  padding: 0;
+  box-shadow: 0 30px 60px rgba(0,0,0,.35);
+}
+.device-modal::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+.device-modal form {
+  padding: 16px;
+  background: #ffffff;
+}
