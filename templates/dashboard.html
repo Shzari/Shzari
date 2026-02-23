@@ -213,7 +213,7 @@
       const clock = document.getElementById('dashboardClock');
       if (!clock) return;
       const now = new Date();
-      clock.textContent = now.toLocaleString();
+      clock.textContent = now.toLocaleTimeString();
     }
 
     function syncEditCommandField() {
@@ -402,8 +402,8 @@
   <div class="page-bg"></div>
 
   <div class="user-strip">
+    <div class="chip center-chip"><span id="dashboardClock">--</span></div>
     <button class="btn" type="button" onclick="openDeviceCredsModal()">Device Credentials</button>
-    <div class="chip center-chip">NTP output: <b>{{ ntp.last_status }}</b> | 🕒 <span id="dashboardClock">--</span></div>
     <div class="chip">👤 User: <b>{{ current_user or 'Unknown' }}</b></div>
     <div class="chip">🔐 Mode: <b>{{ auth_mode|upper }}</b></div>
     <a class="logout-link" href="{{ url_for('logout') }}">Logout</a>
@@ -426,6 +426,7 @@
       <div class="action-row">
         <button class="btn" type="button" onclick="selectAllDevices()">Select All</button>
         <button class="btn ghost" type="button" onclick="clearDevices()">Clear</button>
+        <button class="btn" type="button" onclick="pingSelectedDevices()">Ping</button>
       </div>
 
       <div class="split-panel">
@@ -464,7 +465,6 @@
         <div class="command-preview" id="commandPreview">No command selected yet.</div>
 
         <div class="action-row">
-          <button class="btn" type="button" onclick="pingSelectedDevices()">Ping</button>
           <button class="btn run" type="submit">RUN</button>
         </div>
       </form>

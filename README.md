@@ -21,7 +21,7 @@ A web-based network engineering app to authenticate users, select routers/switch
   - per-user category access control (all categories / selected categories / no categories) with Select All / Deselect All and per-category checkbox rows
   - users with blank/reset password are forced to set password at next login
 - NTP workflow:
-  - dashboard top row includes NTP output status + live clock (centered)
+  - dashboard top row shows centered live numeric clock
   - NTP configuration/synchronize is available only in Super Admin settings
   - super admin settings has Users / ISE / NTP buttons in one equal row
 - Devices workflow:
@@ -57,7 +57,7 @@ A web-based network engineering app to authenticate users, select routers/switch
   - button selectors in settings popup default to blank (`-- Select Button --`)
   - command buttons appear for all devices/users based on each user's personal saved dashboard button set
   - command preview before RUN
-  - Ping button runs 5 ICMP probes for selected devices and shows CMD-style popup output (`!` success, `.` loss)
+  - Ping button (in Devices panel) runs 5 ICMP probes for selected devices and shows CMD-style popup output (`!` success, `.` loss)
   - RUN button
   - output window opens first run, then reuses
   - output history appends down page
