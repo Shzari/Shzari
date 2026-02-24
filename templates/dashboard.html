@@ -10,6 +10,9 @@
     const BUTTON_DATA = {{ buttons|tojson }};
     let activeCommandMode = 'show';
     const IS_SUPER_ADMIN_SESSION = {{ is_super_admin_session|tojson }};
+    const SESSION_TIMEOUT_SECONDS = {{ session_timeout_seconds|tojson }};
+    const LOGOUT_ON_HIDDEN = {{ logout_on_hidden|tojson }};
+    let inactivityDeadline = Date.now() + (SESSION_TIMEOUT_SECONDS * 1000);
 
     function renderGroups() {
       const groupList = document.getElementById('groupDragList');
@@ -67,6 +70,33 @@
     function clearDevices() {
       const options = document.querySelectorAll('#deviceDragList option');
       options.forEach(option => { option.selected = false; });
+    }
+
+    function resetInactivityDeadline() {
+      inactivityDeadline = Date.now() + (SESSION_TIMEOUT_SECONDS * 1000);
+    }
+
+    function startSessionGuard() {
+      const activityEvents = ['click', 'keydown', 'mousemove', 'scroll', 'touchstart'];
+      activityEvents.forEach((eventName) => {
+        window.addEventListener(eventName, resetInactivityDeadline, { passive: true });
+      });
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          if (LOGOUT_ON_HIDDEN) {
+            resetInactivityDeadline();
+          }
+          return;
+        }
+        resetInactivityDeadline();
+      });
+
+      setInterval(() => {
+        if (Date.now() > inactivityDeadline) {
+          window.location.href = "{{ url_for('logout', expired='1') }}";
+        }
+      }, 1000);
     }
 
     function setCommand(cmd) {
@@ -381,6 +411,7 @@
     }
 
     window.addEventListener('DOMContentLoaded', () => {
+      startSessionGuard();
       renderGroups();
       renderDevices(DEVICE_DATA);
       const groupList = document.getElementById('groupDragList');

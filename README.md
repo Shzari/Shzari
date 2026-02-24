@@ -6,10 +6,11 @@ A web-based network engineering app to authenticate users, select routers/switch
 - Login supports:
   - Local login
   - Cisco ISE (RADIUS) login
+  - remembers the last logged-in username in browser storage (username only; never password), even after logout
 - Super Admin security workflow:
   - First run requires creating a super admin account
   - Settings page requires super admin verification
-- Super Admin Settings page now provides separate Users and ISE popup windows
+- Super Admin Settings page provides popup windows for Users, ISE, NTP, and Session Guard
 - ISE settings page supports:
   - Primary ISE server/port/shared-secret
   - Secondary ISE server/port/shared-secret
@@ -23,7 +24,11 @@ A web-based network engineering app to authenticate users, select routers/switch
 - NTP workflow:
   - dashboard top row shows centered live numeric clock
   - NTP configuration is available only in Super Admin settings (choose NTP server sync or set manual time)
-  - super admin settings has Users / ISE / NTP buttons in one equal row
+  - super admin settings launcher layout: first row Users + ISE, second row NTP + Session Guard
+- Session Guard workflow:
+  - super admin can set global idle timeout (minutes) for all users
+  - optional enforcement when browser tab is hidden/minimized
+  - inactive dashboard sessions auto-logout
 - Devices workflow:
   - top-right settings icon on Devices panel opens popup for add/edit/delete devices and category actions
   - bottom inline devices/category management section removed from devices panel

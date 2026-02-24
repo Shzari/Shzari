@@ -35,6 +35,16 @@
       if (modal && modal.close) modal.close();
     }
 
+    function openSessionModal() {
+      const modal = document.getElementById('sessionConfigModal');
+      if (modal && modal.showModal) modal.showModal();
+    }
+
+    function closeSessionModal() {
+      const modal = document.getElementById('sessionConfigModal');
+      if (modal && modal.close) modal.close();
+    }
+
     function closeUsersModal() {
       const modal = document.getElementById('usersManageModal');
       if (modal && modal.close) modal.close();
@@ -109,6 +119,8 @@
         openIseModal();
       } else if (selectedModal === 'ntp') {
         openNtpModal();
+      } else if (selectedModal === 'session') {
+        openSessionModal();
       }
     });
   </script>
@@ -127,7 +139,10 @@
     <div class="action-row equal-buttons">
       <button class="btn run" type="button" onclick="openUsersModal()">Users</button>
       <button class="btn" type="button" onclick="openIseModal()">ISE</button>
+    </div>
+    <div class="action-row equal-buttons">
       <button class="btn" type="button" onclick="openNtpModal()">NTP</button>
+      <button class="btn" type="button" onclick="openSessionModal()">Session Guard</button>
     </div>
   </div>
 
@@ -189,6 +204,25 @@
         <button class="btn run" type="submit" name="action" value="sync">Synchronize via NTP</button>
         <button class="btn" type="submit" name="action" value="set_manual">Set Manual Time</button>
         <button class="btn ghost" type="button" onclick="closeNtpModal()">Close</button>
+      </div>
+    </form>
+  </dialog>
+
+
+  <dialog id="sessionConfigModal" class="device-modal">
+    <form method="post" action="{{ url_for('session_settings_page') }}">
+      <h3>Session Guard</h3>
+      <p>Control automatic logout for inactive dashboard sessions.</p>
+
+      <label>Idle Timeout (minutes)</label>
+      <input name="idle_timeout_minutes" type="number" value="{{ session_settings.idle_timeout_minutes }}" min="1" max="240" required>
+
+      <label>Apply timeout when browser tab is hidden/minimized</label>
+      <input name="logout_on_hidden" type="checkbox" {% if session_settings.logout_on_hidden %}checked{% endif %}>
+
+      <div class="action-row">
+        <button class="btn run" type="submit">Save Session Guard</button>
+        <button class="btn ghost" type="button" onclick="closeSessionModal()">Close</button>
       </div>
     </form>
   </dialog>

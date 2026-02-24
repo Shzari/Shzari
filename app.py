@@ -11,6 +11,7 @@ import secrets
 import socket
 import struct
 import subprocess
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -27,6 +28,7 @@ USERS_FILE = BASE_DIR / "users.json"
 DEVICE_CREDS_FILE = BASE_DIR / "device_credentials.json"
 USER_BUTTONS_FILE = BASE_DIR / "user_buttons.json"
 NTP_SETTINGS_FILE = BASE_DIR / "ntp_settings.json"
+SESSION_SETTINGS_FILE = BASE_DIR / "session_settings.json"
 SECRET_KEY = os.environ.get("APP_SECRET_KEY", "dev-secret-change-me")
 
 app = Flask(__name__)
@@ -194,6 +196,34 @@ def save_user_buttons(account_username: str, auth_mode: str, buttons: list[dict[
     store = load_user_buttons_store()
     store[key] = normalize_buttons(buttons)
     save_user_buttons_store(store)
+
+
+def default_session_settings() -> dict[str, Any]:
+    return {
+        "idle_timeout_minutes": 15,
+        "logout_on_hidden": True,
+    }
+
+
+def load_session_settings() -> dict[str, Any]:
+    if not SESSION_SETTINGS_FILE.exists():
+        return default_session_settings()
+    with SESSION_SETTINGS_FILE.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+    defaults = default_session_settings()
+    defaults.update(data if isinstance(data, dict) else {})
+    defaults["idle_timeout_minutes"] = int(defaults.get("idle_timeout_minutes", 15) or 15)
+    defaults["logout_on_hidden"] = bool(defaults.get("logout_on_hidden", True))
+    return defaults
+
+
+def save_session_settings(settings: dict[str, Any]) -> None:
+    payload = {
+        "idle_timeout_minutes": max(1, int(settings.get("idle_timeout_minutes", 15) or 15)),
+        "logout_on_hidden": bool(settings.get("logout_on_hidden", True)),
+    }
+    with SESSION_SETTINGS_FILE.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
 
 
 def default_ntp_settings() -> dict[str, Any]:
@@ -734,6 +764,29 @@ def root() -> Any:
     return redirect(url_for("login"))
 
 
+@app.before_request
+def enforce_dashboard_session_timeout() -> Any:
+    if "creds" not in session:
+        return None
+
+    endpoint = request.endpoint or ""
+    if endpoint in {"static", "login", "logout", "setup_super_admin", "change_password"}:
+        return None
+
+    settings = load_session_settings()
+    timeout_seconds = max(60, int(settings.get("idle_timeout_minutes", 15)) * 60)
+    now = int(time.time())
+    last_activity = int(session.get("last_activity_ts", now))
+
+    if now - last_activity > timeout_seconds:
+        session.clear()
+        session["login_info"] = "Session expired due to inactivity. Please log in again."
+        return redirect(url_for("login"))
+
+    session["last_activity_ts"] = now
+    return None
+
+
 @app.route("/super-admin/setup", methods=["GET", "POST"])
 def setup_super_admin() -> Any:
     if super_admin_exists():
@@ -812,6 +865,7 @@ def ise_settings_page() -> Any:
         available_categories=all_categories(devices),
         selected_modal=request.args.get("modal", ""),
         ntp=load_ntp_settings(),
+        session_settings=load_session_settings(),
     )
 
 
@@ -880,12 +934,41 @@ def ntp_settings_page() -> Any:
 
 
 
+@app.route("/settings/session", methods=["POST"])
+def session_settings_page() -> Any:
+    if not super_admin_exists():
+        return redirect(url_for("setup_super_admin"))
+    if not session.get("super_admin_verified"):
+        return redirect(url_for("verify_super_admin_route"))
+
+    timeout_raw = request.form.get("idle_timeout_minutes", "15").strip()
+    logout_on_hidden = request.form.get("logout_on_hidden") == "on"
+
+    try:
+        timeout_minutes = int(timeout_raw or 15)
+        if timeout_minutes < 1:
+            raise ValueError
+    except ValueError:
+        session["settings_error"] = "Session timeout must be a positive number of minutes."
+        return redirect(url_for("ise_settings_page", modal="session"))
+
+    save_session_settings({
+        "idle_timeout_minutes": timeout_minutes,
+        "logout_on_hidden": logout_on_hidden,
+    })
+    session["settings_info"] = "Session guard settings updated."
+    return redirect(url_for("ise_settings_page", modal="session"))
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login() -> Any:
     if not super_admin_exists():
         return redirect(url_for("setup_super_admin"))
 
     error = ""
+    info = session.pop("login_info", "")
+    if request.args.get("expired") == "1":
+        info = "Session expired due to inactivity. Please log in again."
     settings = load_ise_settings()
 
     if request.method == "POST":
@@ -918,9 +1001,10 @@ def login() -> Any:
             session["device_creds"] = load_user_device_creds(username, auth_mode)
             session["buttons"] = load_user_buttons(username, auth_mode) or default_buttons()
             session.setdefault("run_history", [])
+            session["last_activity_ts"] = int(time.time())
             return redirect(url_for("dashboard"))
 
-    return render_template("login.html", error=error)
+    return render_template("login.html", error=error, info=info)
 
 
 @app.route("/change-password", methods=["GET", "POST"])
@@ -949,6 +1033,7 @@ def change_password() -> Any:
                 session["device_creds"] = load_user_device_creds(username, "local")
                 session["buttons"] = load_user_buttons(username, "local") or default_buttons()
                 session.setdefault("run_history", [])
+                session["last_activity_ts"] = int(time.time())
                 return redirect(url_for("dashboard"))
 
             users = load_users()
@@ -966,6 +1051,7 @@ def change_password() -> Any:
                 session["device_creds"] = load_user_device_creds(username, "local")
                 session["buttons"] = load_user_buttons(username, "local") or default_buttons()
                 session.setdefault("run_history", [])
+                session["last_activity_ts"] = int(time.time())
                 return redirect(url_for("dashboard"))
 
     return render_template("change_password.html", username=username, error=error, info=info)
@@ -1045,7 +1131,10 @@ def manage_users() -> Any:
 
 @app.route("/logout")
 def logout() -> Any:
+    expired = request.args.get("expired") == "1"
     session.clear()
+    if expired:
+        session["login_info"] = "Session expired due to inactivity. Please log in again."
     return redirect(url_for("login"))
 
 
@@ -1072,6 +1161,8 @@ def dashboard() -> Any:
         error=error,
         device_creds=session.get("device_creds", {}),
         ntp=load_ntp_settings(),
+        session_timeout_seconds=max(60, int(load_session_settings().get("idle_timeout_minutes", 15)) * 60),
+        logout_on_hidden=bool(load_session_settings().get("logout_on_hidden", True)),
     )
 
 
