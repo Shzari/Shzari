@@ -56,7 +56,12 @@
 
     function selectAllDevices() {
       const options = document.querySelectorAll('#deviceDragList option');
-      options.forEach(option => { option.selected = true; });
+      if (!options.length) return;
+
+      const areAllSelected = Array.from(options).every(option => option.selected);
+      options.forEach(option => {
+        option.selected = !areAllSelected;
+      });
     }
 
     function clearDevices() {
