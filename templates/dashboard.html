@@ -10,6 +10,7 @@
     const BUTTON_DATA = {{ buttons|tojson }};
     let activeCommandMode = 'show';
     const IS_SUPER_ADMIN_SESSION = {{ is_super_admin_session|tojson }};
+    const USER_ADMIN_PERMISSIONS = new Set({{ user_admin_permissions|tojson }});
     const SESSION_TIMEOUT_SECONDS = {{ session_timeout_seconds|tojson }};
     let inactivityDeadline = Date.now() + (SESSION_TIMEOUT_SECONDS * 1000);
 
@@ -315,10 +316,21 @@
         return true;
       }
 
-      event.preventDefault();
       const form = event.target;
       const actionInput = form.querySelector('input[name="action"]');
       const action = actionInput ? actionInput.value : 'save';
+      const actionPermissionMap = {
+        edit: 'edit_device',
+        delete: 'delete_device',
+        create_category: 'create_category',
+        delete_category: 'delete_category',
+      };
+      const neededPermission = actionPermissionMap[action];
+      if (neededPermission && USER_ADMIN_PERMISSIONS.has(neededPermission)) {
+        return true;
+      }
+
+      event.preventDefault();
       const actionLabelMap = {
         add: 'save this device',
         edit: 'edit this device',
@@ -556,7 +568,7 @@
         <button class="btn" type="submit">Add Device To Category</button>
       </form>
 
-      <form method="post" action="{{ url_for('manage_categories') }}" class="submenu-form">
+      <form method="post" action="{{ url_for('manage_categories') }}" class="submenu-form" onsubmit="return requireSuperAdminPassword(event)">
         <input type="hidden" name="action" value="delete_category">
         <label>Delete category</label>
         <select name="delete_category_name">

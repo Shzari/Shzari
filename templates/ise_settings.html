@@ -9,6 +9,10 @@
       acc[user.username] = Array.isArray(user.allowed_categories) ? user.allowed_categories : null;
       return acc;
     }, {});
+    const USER_OPERATION_PERMISSIONS_MAP = {{ users|tojson }}.reduce((acc, user) => {
+      acc[user.username] = Array.isArray(user.admin_permissions) ? user.admin_permissions : [];
+      return acc;
+    }, {});
 
     function openIseModal() {
       const modal = document.getElementById('iseConfigModal');
@@ -118,6 +122,8 @@
         note.textContent = 'Keep current password but force user to change on next login.';
       } else if (action === 'set_categories') {
         note.textContent = 'Set exact category access for selected user. Empty selection means no access.';
+      } else if (action === 'set_admin_permissions') {
+        note.textContent = 'Set which operations user can do without super admin password.';
       }
     }
 
@@ -152,9 +158,22 @@
       });
     }
 
+    function syncUserOperationPermissionsSelection() {
+      const userSelect = document.getElementById('userEditUsername');
+      const checkboxes = Array.from(document.querySelectorAll('.operation-permission-checkbox'));
+      if (!userSelect || !checkboxes.length) return;
+
+      const username = userSelect.value;
+      const perms = new Set(USER_OPERATION_PERMISSIONS_MAP[username] || []);
+      checkboxes.forEach((item) => {
+        item.checked = perms.has(item.value);
+      });
+    }
+
     window.addEventListener('DOMContentLoaded', () => {
       updateEditActionLabel();
       syncUserCategoriesSelection();
+      syncUserOperationPermissionsSelection();
 
       const selectedModal = {{ selected_modal|tojson }};
       if (selectedModal === 'users') {
@@ -313,6 +332,11 @@
                 {% else %}
                   | category access: none
                 {% endif %}
+                {% if user.admin_permissions %}
+                  | operation access: {{ user.admin_permissions|join(", ") }}
+                {% else %}
+                  | operation access: none
+                {% endif %}
               </small>
             </div>
           {% endfor %}
@@ -332,7 +356,7 @@
     <form method="post" action="{{ url_for('manage_users') }}">
       <h3>Edit User</h3>
       <label>Select User</label>
-      <select id="userEditUsername" name="selected_username" onchange="syncUserCategoriesSelection()" required>
+      <select id="userEditUsername" name="selected_username" onchange="syncUserCategoriesSelection(); syncUserOperationPermissionsSelection()" required>
         <option value="" selected>-- Select User --</option>
         {% for user in users %}
           <option value="{{ user.username }}">{{ user.username }}</option>
@@ -346,6 +370,7 @@
         <option value="force_change">Force Change Password on Next Login</option>
         <option value="delete">Delete User</option>
         <option value="set_categories">Set User Category Access</option>
+        <option value="set_admin_permissions">Set User Operation Access</option>
       </select>
 
       <label>Allowed Categories for Selected User</label>
@@ -363,6 +388,26 @@
         {% if not available_categories %}
           <div class="category-access-empty">No categories found yet.</div>
         {% endif %}
+      </div>
+
+      <label>Operation Access (without super admin password)</label>
+      <div class="category-access-list">
+        <label class="category-access-row">
+          <span>Create Categories</span>
+          <input class="operation-permission-checkbox" type="checkbox" name="admin_permissions" value="create_category">
+        </label>
+        <label class="category-access-row">
+          <span>Edit Devices</span>
+          <input class="operation-permission-checkbox" type="checkbox" name="admin_permissions" value="edit_device">
+        </label>
+        <label class="category-access-row">
+          <span>Delete Devices</span>
+          <input class="operation-permission-checkbox" type="checkbox" name="admin_permissions" value="delete_device">
+        </label>
+        <label class="category-access-row">
+          <span>Delete Categories</span>
+          <input class="operation-permission-checkbox" type="checkbox" name="admin_permissions" value="delete_category">
+        </label>
       </div>
 
       <div id="userEditActionNote" class="command-preview"></div>

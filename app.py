@@ -121,10 +121,15 @@ def init_db() -> None:
                 salt TEXT NOT NULL DEFAULT '',
                 password_hash TEXT NOT NULL DEFAULT '',
                 must_change_password INTEGER NOT NULL DEFAULT 1,
-                allowed_categories TEXT
+                allowed_categories TEXT,
+                admin_permissions TEXT
             )
             """
         )
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN admin_permissions TEXT")
+        except sqlite3.OperationalError:
+            pass
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS devices (
@@ -197,8 +202,8 @@ def migrate_legacy_json_to_db() -> None:
                         continue
                     conn.execute(
                         """
-                        INSERT OR REPLACE INTO users(username, role, salt, password_hash, must_change_password, allowed_categories)
-                        VALUES (?, ?, ?, ?, ?, ?)
+                        INSERT OR REPLACE INTO users(username, role, salt, password_hash, must_change_password, allowed_categories, admin_permissions)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             username,
@@ -207,6 +212,7 @@ def migrate_legacy_json_to_db() -> None:
                             str(item.get("password_hash", "")),
                             1 if bool(item.get("must_change_password", True)) else 0,
                             json.dumps(item.get("allowed_categories")),
+                            json.dumps(item.get("admin_permissions", [])),
                         ),
                     )
 
@@ -345,7 +351,7 @@ def load_users() -> list[dict[str, Any]]:
     normalized: list[dict[str, Any]] = []
     with db_conn() as conn:
         rows = conn.execute(
-            "SELECT username, role, salt, password_hash, must_change_password, allowed_categories FROM users ORDER BY username"
+            "SELECT username, role, salt, password_hash, must_change_password, allowed_categories, admin_permissions FROM users ORDER BY username"
         ).fetchall()
 
     for row in rows:
@@ -354,6 +360,11 @@ def load_users() -> list[dict[str, Any]]:
             allowed_categories = json.loads(allowed_raw) if allowed_raw else None
         except Exception:
             allowed_categories = None
+        admin_raw = row["admin_permissions"]
+        try:
+            admin_permissions = json.loads(admin_raw) if admin_raw else []
+        except Exception:
+            admin_permissions = []
         user: dict[str, Any] = {
             "username": row["username"],
             "role": row["role"],
@@ -361,12 +372,14 @@ def load_users() -> list[dict[str, Any]]:
             "password_hash": row["password_hash"],
             "must_change_password": bool(row["must_change_password"]),
             "allowed_categories": allowed_categories,
+            "admin_permissions": admin_permissions,
         }
         user.setdefault("role", "operator")
         user.setdefault("salt", "")
         user.setdefault("password_hash", "")
         user.setdefault("must_change_password", True)
         user.setdefault("allowed_categories", None)
+        user.setdefault("admin_permissions", [])
         normalized.append(user)
     return normalized
 
@@ -377,8 +390,8 @@ def save_users(users: list[dict[str, Any]]) -> None:
         for user in users:
             conn.execute(
                 """
-                INSERT INTO users(username, role, salt, password_hash, must_change_password, allowed_categories)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO users(username, role, salt, password_hash, must_change_password, allowed_categories, admin_permissions)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     str(user.get("username", "")).strip(),
@@ -387,6 +400,7 @@ def save_users(users: list[dict[str, Any]]) -> None:
                     str(user.get("password_hash", "")),
                     1 if bool(user.get("must_change_password", True)) else 0,
                     json.dumps(user.get("allowed_categories")),
+                    json.dumps(user.get("admin_permissions", [])),
                 ),
             )
 
@@ -687,6 +701,7 @@ def upsert_user(username: str) -> tuple[bool, str]:
         "password_hash": "",
         "must_change_password": True,
         "allowed_categories": None,
+        "admin_permissions": [],
     })
     save_users(users)
     return True, f"User '{username}' created. Password will be set on first login."
@@ -804,6 +819,34 @@ def user_can_assign_categories(categories: list[str], username: str, auth_mode: 
         return True
     allowed_set = set(allowed)
     return all(category in allowed_set for category in categories)
+
+def user_admin_permissions(username: str, auth_mode: str) -> set[str]:
+    if auth_mode != "local":
+        return set()
+
+    super_admin_username = str(load_super_admin().get("username", "")).strip().lower()
+    if username.strip().lower() == super_admin_username:
+        return {"create_category", "edit_device", "delete_device", "delete_category"}
+
+    user = find_user(load_users(), username)
+    if user is None:
+        return set()
+
+    perms = user.get("admin_permissions", [])
+    if isinstance(perms, list):
+        return {str(item).strip() for item in perms if str(item).strip()}
+    return set()
+
+
+def current_user_has_admin_permission(permission_name: str) -> bool:
+    if is_current_session_super_admin():
+        return True
+    creds = session.get("creds", {})
+    username = str(creds.get("username", "")).strip()
+    auth_mode = str(session.get("auth_mode", "local")).strip().lower()
+    if not username:
+        return False
+    return permission_name in user_admin_permissions(username, auth_mode)
 
 def default_buttons() -> list[dict[str, Any]]:
     return [
@@ -1489,6 +1532,19 @@ def manage_users() -> Any:
             else:
                 session["settings_info"] = f"'{username}' now has no category access."
 
+    elif action == "set_admin_permissions":
+        username = request.form.get("selected_username", "").strip()
+        selected_permissions = [p.strip() for p in request.form.getlist("admin_permissions") if p.strip()]
+        allowed_permissions = {"create_category", "edit_device", "delete_device", "delete_category"}
+        selected_permissions = [p for p in selected_permissions if p in allowed_permissions]
+        user = find_user(users, username)
+        if user is None:
+            session["settings_error"] = "User not found."
+        else:
+            user["admin_permissions"] = selected_permissions
+            save_users(users)
+            session["settings_info"] = f"Updated operation permissions for '{username}'."
+
     return redirect(url_for("ise_settings_page", modal="users"))
 
 
@@ -1524,6 +1580,7 @@ def dashboard() -> Any:
         error=error,
         device_creds=session.get("device_creds", {}),
         ntp=load_ntp_settings(),
+        user_admin_permissions=sorted(user_admin_permissions(current_username, auth_mode)),
         session_timeout_seconds=max(60, int(load_session_settings().get("idle_timeout_minutes", 15)) * 60),
     )
 
@@ -1578,7 +1635,7 @@ def manage_devices() -> Any:
         new_categories = [c.strip() for c in request.form.getlist("edit_device_categories") if c.strip()]
         admin_password = request.form.get("super_admin_password", "")
 
-        if not is_current_session_super_admin() and not is_super_admin_password(admin_password):
+        if not current_user_has_admin_permission("edit_device") and not is_super_admin_password(admin_password):
             session["dashboard_error"] = "Editing devices requires valid super admin password."
             return redirect(url_for("dashboard"))
 
@@ -1634,7 +1691,7 @@ def manage_devices() -> Any:
         delete_name = request.form.get("delete_device_name", "").strip()
         admin_password = request.form.get("super_admin_password", "")
 
-        if not is_current_session_super_admin() and not is_super_admin_password(admin_password):
+        if not current_user_has_admin_permission("delete_device") and not is_super_admin_password(admin_password):
             session["dashboard_error"] = "Deleting devices requires valid super admin password."
             return redirect(url_for("dashboard"))
 
@@ -1676,7 +1733,7 @@ def manage_categories() -> Any:
 
     if action == "create_category":
         admin_password = request.form.get("super_admin_password", "")
-        if not is_current_session_super_admin() and not is_super_admin_password(admin_password):
+        if not current_user_has_admin_permission("create_category") and not is_super_admin_password(admin_password):
             session["dashboard_error"] = "Creating categories requires valid super admin password."
             return redirect(url_for("dashboard"))
 
@@ -1705,6 +1762,10 @@ def manage_categories() -> Any:
             session["dashboard_error"] = f"'{DEFAULT_CATEGORY}' category cannot be deleted."
             return redirect(url_for("dashboard"))
         if category_name:
+            admin_password = request.form.get("super_admin_password", "")
+            if not current_user_has_admin_permission("delete_category") and not is_super_admin_password(admin_password):
+                session["dashboard_error"] = "Deleting categories requires valid super admin password."
+                return redirect(url_for("dashboard"))
             for device in devices:
                 groups = device.setdefault("groups", [])
                 device["groups"] = [g for g in groups if g != category_name]
