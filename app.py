@@ -220,8 +220,8 @@ def migrate_legacy_json_to_db() -> None:
                 for item in data:
                     if not isinstance(item, dict):
                         continue
-                    hostname = str(item.get("hostname", "")).strip()
-                    ip_address = str(item.get("ip_address", "")).strip()
+                    hostname = str(item.get("name", item.get("hostname", ""))).strip()
+                    ip_address = str(item.get("host", item.get("ip_address", ""))).strip()
                     if not hostname or not ip_address:
                         continue
                     conn.execute("INSERT OR REPLACE INTO devices(hostname, ip_address) VALUES (?, ?)", (hostname, ip_address))
@@ -685,8 +685,9 @@ def load_devices() -> list[dict[str, Any]]:
     for row in rows:
         hostname = str(row["hostname"])
         devices.append({
-            "hostname": hostname,
-            "ip_address": str(row["ip_address"]),
+            "name": hostname,
+            "host": str(row["ip_address"]),
+            "port": 22,
             "groups": sorted(group_map.get(hostname, [])),
         })
     return devices
@@ -697,8 +698,8 @@ def save_devices(devices: list[dict[str, Any]]) -> None:
         conn.execute("DELETE FROM device_groups")
         conn.execute("DELETE FROM devices")
         for device in devices:
-            hostname = str(device.get("hostname", "")).strip()
-            ip_address = str(device.get("ip_address", "")).strip()
+            hostname = str(device.get("name", device.get("hostname", ""))).strip()
+            ip_address = str(device.get("host", device.get("ip_address", ""))).strip()
             if not hostname or not ip_address:
                 continue
             conn.execute("INSERT INTO devices(hostname, ip_address) VALUES (?, ?)", (hostname, ip_address))
