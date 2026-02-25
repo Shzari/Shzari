@@ -784,10 +784,22 @@ def load_senior_notification_targets() -> list[str]:
     return targets
 
 
-def notify_seniors_new_pending_request(request_id: int, requester_username: str, device_name: str) -> None:
+def notify_seniors_new_pending_request(
+    request_id: int,
+    requester_username: str,
+    device_name: str,
+    original_hostname: str,
+    proposed_hostname: str,
+    original_ip: str,
+    proposed_ip: str,
+    original_categories: list[str],
+    proposed_categories: list[str],
+) -> None:
     message = (
-        f"New pending request #{request_id} from {requester_username} "
-        f"for device '{device_name}'."
+        f"New pending request #{request_id} from {requester_username} for device '{device_name}'. "
+        f"Hostname: {original_hostname} → {proposed_hostname}; "
+        f"IP: {original_ip} → {proposed_ip}; "
+        f"Categories: {', '.join(original_categories) or '-'} → {', '.join(proposed_categories) or '-'}."
     )
     for senior_username in load_senior_notification_targets():
         if senior_username.strip().lower() == str(requester_username).strip().lower():
@@ -885,10 +897,20 @@ def create_pending_device_request(*, requester_username: str, requester_role: st
         request_id = int(cursor.lastrowid or 0)
 
     if request_id > 0:
+        original_hostname = str(original_device.get("name", "")).strip()
+        original_ip = str(original_device.get("host", "")).strip()
+        original_categories = [str(g).strip() for g in original_device.get("groups", []) if str(g).strip()]
+        normalized_proposed_categories = [str(g).strip() for g in proposed_categories if str(g).strip()]
         notify_seniors_new_pending_request(
             request_id=request_id,
             requester_username=str(requester_username),
-            device_name=str(original_device.get("name", "")),
+            device_name=original_hostname,
+            original_hostname=original_hostname,
+            proposed_hostname=str(proposed_hostname).strip() or original_hostname,
+            original_ip=original_ip,
+            proposed_ip=str(proposed_ip).strip() or original_ip,
+            original_categories=original_categories,
+            proposed_categories=normalized_proposed_categories,
         )
 
 
