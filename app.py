@@ -1528,6 +1528,11 @@ def split_cli_commands(command: str) -> list[str]:
     return segments
 
 
+def normalize_config_command_text(command: str) -> str:
+    commands = split_cli_commands(command)
+    return "\n".join(commands)
+
+
 def _read_shell_output(channel: Any, timeout_seconds: int) -> str:
     end_at = time.time() + max(2, timeout_seconds)
     chunks: list[str] = []
