@@ -323,6 +323,7 @@
         edit: 'edit_device',
         delete: 'delete_device',
         create_category: 'create_category',
+        assign_device: 'move_device_category',
         delete_category: 'delete_category',
       };
       const neededPermission = actionPermissionMap[action];
@@ -336,6 +337,7 @@
         edit: 'edit this device',
         delete: 'delete this device',
         create_category: 'create this category',
+        assign_device: 'move this device to another category',
       };
       const actionLabel = actionLabelMap[action] || 'submit this change';
 
@@ -551,7 +553,7 @@
         <button class="btn" type="submit">Create Category</button>
       </form>
 
-      <form method="post" action="{{ url_for('manage_categories') }}" class="submenu-form">
+      <form method="post" action="{{ url_for('manage_categories') }}" class="submenu-form" onsubmit="return requireSuperAdminPassword(event)">
         <input type="hidden" name="action" value="assign_device">
         <label>Select device</label>
         <select name="device_name">

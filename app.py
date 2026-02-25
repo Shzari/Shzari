@@ -826,7 +826,7 @@ def user_admin_permissions(username: str, auth_mode: str) -> set[str]:
 
     super_admin_username = str(load_super_admin().get("username", "")).strip().lower()
     if username.strip().lower() == super_admin_username:
-        return {"create_category", "edit_device", "delete_device", "delete_category"}
+        return {"create_category", "edit_device", "move_device_category", "delete_device", "delete_category"}
 
     user = find_user(load_users(), username)
     if user is None:
@@ -1535,8 +1535,10 @@ def manage_users() -> Any:
     elif action == "set_admin_permissions":
         username = request.form.get("selected_username", "").strip()
         selected_permissions = [p.strip() for p in request.form.getlist("admin_permissions") if p.strip()]
-        allowed_permissions = {"create_category", "edit_device", "delete_device", "delete_category"}
+        allowed_permissions = {"create_category", "edit_device", "move_device_category", "delete_device", "delete_category"}
         selected_permissions = [p for p in selected_permissions if p in allowed_permissions]
+        if "move_device_category" in selected_permissions and "edit_device" not in selected_permissions:
+            selected_permissions.append("edit_device")
         user = find_user(users, username)
         if user is None:
             session["settings_error"] = "User not found."
@@ -1745,6 +1747,12 @@ def manage_categories() -> Any:
             save_devices(devices)
 
     elif action == "assign_device":
+        admin_password = request.form.get("super_admin_password", "")
+        can_move = current_user_has_admin_permission("edit_device") and current_user_has_admin_permission("move_device_category")
+        if not can_move and not is_super_admin_password(admin_password):
+            session["dashboard_error"] = "Moving devices between categories requires valid super admin password."
+            return redirect(url_for("dashboard"))
+
         device_name = request.form.get("device_name", "").strip()
         category_name = request.form.get("target_category", "").strip()
         if device_name and category_name:
