@@ -1572,6 +1572,7 @@ def dashboard() -> Any:
         device_creds=session.get("device_creds", {}),
         ntp=load_ntp_settings(),
         user_admin_permissions=sorted(user_admin_permissions(current_username, auth_mode)),
+        selected_modal=request.args.get("modal", ""),
         session_timeout_seconds=max(60, int(load_session_settings().get("idle_timeout_minutes", 15)) * 60),
     )
 
@@ -1583,6 +1584,7 @@ def manage_devices() -> Any:
 
     action = request.form.get("action", "add").strip()
     devices = load_devices()
+    dashboard_modal_url = url_for("dashboard", modal="device_settings")
     current_username = str(session.get("creds", {}).get("username", "")).strip()
     auth_mode = str(session.get("auth_mode", "local"))
 
@@ -1596,28 +1598,28 @@ def manage_devices() -> Any:
 
         if not is_current_session_super_admin() and not is_super_admin_password(admin_password):
             session["dashboard_error"] = "Saving devices requires valid super admin password."
-            return redirect(url_for("dashboard"))
+            return redirect(dashboard_modal_url)
 
         if not user_can_assign_categories(selected_categories, current_username, auth_mode):
             session["dashboard_error"] = "You can only add devices to categories you are allowed to access."
-            return redirect(url_for("dashboard"))
+            return redirect(dashboard_modal_url)
 
         if not hostname or not ip_address:
             session["dashboard_error"] = "Hostname and IP address are required."
-            return redirect(url_for("dashboard"))
+            return redirect(dashboard_modal_url)
 
         if any(str(device.get("name", "")).strip().lower() == hostname.lower() for device in devices):
             session["dashboard_error"] = "Duplicate hostname is not allowed."
-            return redirect(url_for("dashboard"))
+            return redirect(dashboard_modal_url)
 
         if any(str(device.get("host", "")).strip() == ip_address for device in devices):
             session["dashboard_error"] = "Duplicate IP address is not allowed."
-            return redirect(url_for("dashboard"))
+            return redirect(dashboard_modal_url)
 
         devices.append({"name": hostname, "host": ip_address, "port": 22, "groups": selected_categories})
         save_devices(devices)
         session["dashboard_info"] = f"Device '{hostname}' added successfully."
-        return redirect(url_for("dashboard"))
+        return redirect(dashboard_modal_url)
 
     if action == "edit":
         original_name = request.form.get("original_device_name", "").strip()
@@ -1628,11 +1630,11 @@ def manage_devices() -> Any:
 
         if not current_user_has_admin_permission("edit_device") and not is_super_admin_password(admin_password):
             session["dashboard_error"] = "Editing devices requires valid super admin password."
-            return redirect(url_for("dashboard"))
+            return redirect(dashboard_modal_url)
 
         if not original_name:
             session["dashboard_error"] = "Select a device to edit."
-            return redirect(url_for("dashboard"))
+            return redirect(dashboard_modal_url)
 
         target = None
         for device in devices:
@@ -1642,41 +1644,41 @@ def manage_devices() -> Any:
 
         if target is None:
             session["dashboard_error"] = "Device to edit not found."
-            return redirect(url_for("dashboard"))
+            return redirect(dashboard_modal_url)
 
         if not user_can_access_device(target, current_username, auth_mode):
             session["dashboard_error"] = "You can only edit devices in categories you are allowed to access."
-            return redirect(url_for("dashboard"))
+            return redirect(dashboard_modal_url)
 
         new_name = requested_name or str(target.get("name", "")).strip()
         new_ip = requested_ip or str(target.get("host", "")).strip()
         if not new_name or not new_ip:
             session["dashboard_error"] = "Edited device must keep hostname and IP."
-            return redirect(url_for("dashboard"))
+            return redirect(dashboard_modal_url)
 
         if not new_categories:
             new_categories = [str(g).strip() for g in target.get("groups", []) if str(g).strip()]
 
         if not user_can_assign_categories(new_categories, current_username, auth_mode):
             session["dashboard_error"] = "You can only assign categories you are allowed to access."
-            return redirect(url_for("dashboard"))
+            return redirect(dashboard_modal_url)
 
         for device in devices:
             if device is target:
                 continue
             if str(device.get("name", "")).strip().lower() == new_name.lower():
                 session["dashboard_error"] = "Cannot rename: hostname already exists."
-                return redirect(url_for("dashboard"))
+                return redirect(dashboard_modal_url)
             if str(device.get("host", "")).strip() == new_ip:
                 session["dashboard_error"] = "Cannot change IP: IP already exists."
-                return redirect(url_for("dashboard"))
+                return redirect(dashboard_modal_url)
 
         target["name"] = new_name
         target["host"] = new_ip
         target["groups"] = new_categories
         save_devices(devices)
         session["dashboard_info"] = f"Device '{original_name}' updated."
-        return redirect(url_for("dashboard"))
+        return redirect(dashboard_modal_url)
 
     if action == "delete":
         delete_name = request.form.get("delete_device_name", "").strip()
@@ -1684,11 +1686,11 @@ def manage_devices() -> Any:
 
         if not current_user_has_admin_permission("delete_device") and not is_super_admin_password(admin_password):
             session["dashboard_error"] = "Deleting devices requires valid super admin password."
-            return redirect(url_for("dashboard"))
+            return redirect(dashboard_modal_url)
 
         if not delete_name:
             session["dashboard_error"] = "Select a device to delete."
-            return redirect(url_for("dashboard"))
+            return redirect(dashboard_modal_url)
 
         delete_target = None
         for device in devices:
@@ -1698,20 +1700,20 @@ def manage_devices() -> Any:
 
         if delete_target is not None and not user_can_access_device(delete_target, current_username, auth_mode):
             session["dashboard_error"] = "You can only delete devices in categories you are allowed to access."
-            return redirect(url_for("dashboard"))
+            return redirect(dashboard_modal_url)
 
         before = len(devices)
         devices = [d for d in devices if str(d.get("name", "")).strip() != delete_name]
         if len(devices) == before:
             session["dashboard_error"] = "Device not found for deletion."
-            return redirect(url_for("dashboard"))
+            return redirect(dashboard_modal_url)
 
         save_devices(devices)
         session["dashboard_info"] = f"Device '{delete_name}' deleted."
-        return redirect(url_for("dashboard"))
+        return redirect(dashboard_modal_url)
 
     session["dashboard_error"] = "Unknown device action."
-    return redirect(url_for("dashboard"))
+    return redirect(dashboard_modal_url)
 
 
 @app.route("/categories", methods=["POST"])
@@ -1721,12 +1723,13 @@ def manage_categories() -> Any:
 
     action = request.form.get("action", "").strip()
     devices = load_devices()
+    dashboard_modal_url = url_for("dashboard", modal="device_settings")
 
     if action == "create_category":
         admin_password = request.form.get("super_admin_password", "")
         if not current_user_has_admin_permission("create_category") and not is_super_admin_password(admin_password):
             session["dashboard_error"] = "Creating categories requires valid super admin password."
-            return redirect(url_for("dashboard"))
+            return redirect(dashboard_modal_url)
 
         category_name = request.form.get("category_name", "").strip()
         if category_name:
@@ -1740,7 +1743,7 @@ def manage_categories() -> Any:
         can_move = current_user_has_admin_permission("edit_device") and current_user_has_admin_permission("move_device_category")
         if not can_move and not is_super_admin_password(admin_password):
             session["dashboard_error"] = "Moving devices between categories requires valid super admin password."
-            return redirect(url_for("dashboard"))
+            return redirect(dashboard_modal_url)
 
         device_name = request.form.get("device_name", "").strip()
         category_name = request.form.get("target_category", "").strip()
@@ -1757,18 +1760,18 @@ def manage_categories() -> Any:
         category_name = request.form.get("delete_category_name", "").strip()
         if category_name.strip().lower() == DEFAULT_CATEGORY.lower():
             session["dashboard_error"] = f"'{DEFAULT_CATEGORY}' category cannot be deleted."
-            return redirect(url_for("dashboard"))
+            return redirect(dashboard_modal_url)
         if category_name:
             admin_password = request.form.get("super_admin_password", "")
             if not current_user_has_admin_permission("delete_category") and not is_super_admin_password(admin_password):
                 session["dashboard_error"] = "Deleting categories requires valid super admin password."
-                return redirect(url_for("dashboard"))
+                return redirect(dashboard_modal_url)
             for device in devices:
                 groups = device.setdefault("groups", [])
                 device["groups"] = [g for g in groups if g != category_name]
             save_devices(devices)
 
-    return redirect(url_for("dashboard"))
+    return redirect(dashboard_modal_url)
 
 
 @app.route("/buttons", methods=["POST"])

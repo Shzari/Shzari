@@ -12,6 +12,7 @@
     const IS_SUPER_ADMIN_SESSION = {{ is_super_admin_session|tojson }};
     const USER_ADMIN_PERMISSIONS = new Set({{ user_admin_permissions|tojson }});
     const SESSION_TIMEOUT_SECONDS = {{ session_timeout_seconds|tojson }};
+    const SELECTED_MODAL = {{ selected_modal|tojson }};
     let inactivityDeadline = Date.now() + (SESSION_TIMEOUT_SECONDS * 1000);
 
     function renderGroups() {
@@ -435,6 +436,11 @@
         editSelect.addEventListener('change', populateEditDeviceForm);
         populateEditDeviceForm();
       }
+
+      if (SELECTED_MODAL === 'device_settings') {
+        openDeviceSettingsModal();
+      }
+
       setCommandMode('show');
       updateCommandPreview();
       updateClock();

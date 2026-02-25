@@ -30,6 +30,7 @@ A web-based network engineering app to authenticate users, select routers/switch
   - any dashboard inactivity auto-logout is enforced by frontend and backend
 - Devices workflow:
   - top-right settings icon on Devices panel opens popup for add/edit/delete devices and category actions
+  - after create/delete category or edit/delete device, the device settings popup stays open
   - bottom inline devices/category management section removed from devices panel
 - Category/group workflow:
   - split view: Groups list on left and Devices list on right
