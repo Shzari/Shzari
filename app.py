@@ -9,9 +9,11 @@ import random
 import re
 import secrets
 import socket
+import sqlite3
 import struct
 import subprocess
 import time
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -26,6 +28,7 @@ ISE_SETTINGS_FILE = BASE_DIR / "ise_settings.json"
 SUPER_ADMIN_FILE = BASE_DIR / "super_admin.json"
 USERS_FILE = BASE_DIR / "users.json"
 DEVICE_CREDS_FILE = BASE_DIR / "device_credentials.json"
+DB_FILE = BASE_DIR / "app_data.db"
 USER_BUTTONS_FILE = BASE_DIR / "user_buttons.json"
 NTP_SETTINGS_FILE = BASE_DIR / "ntp_settings.json"
 SESSION_SETTINGS_FILE = BASE_DIR / "session_settings.json"
@@ -58,6 +61,175 @@ def _hash_password(password: str, salt_hex: str) -> str:
     return hashlib.pbkdf2_hmac(
         "sha256", password.encode("utf-8"), bytes.fromhex(salt_hex), 200000
     ).hex()
+
+
+def _crypto_key() -> bytes:
+    return hashlib.sha256(SECRET_KEY.encode("utf-8")).digest()
+
+
+def _keystream(length: int, nonce: bytes) -> bytes:
+    key = _crypto_key()
+    stream = b""
+    counter = 0
+    while len(stream) < length:
+        stream += hashlib.sha256(key + nonce + counter.to_bytes(4, "big")).digest()
+        counter += 1
+    return stream[:length]
+
+
+def encrypt_secret(value: str) -> str:
+    if value == "":
+        return ""
+    raw = value.encode("utf-8")
+    nonce = os.urandom(16)
+    cipher = bytes(a ^ b for a, b in zip(raw, _keystream(len(raw), nonce)))
+    return f"enc:v1:{urlsafe_b64encode(nonce).decode('ascii')}:{urlsafe_b64encode(cipher).decode('ascii')}"
+
+
+def decrypt_secret(value: str) -> str:
+    text = str(value or "")
+    if not text.startswith("enc:v1:"):
+        return text
+    parts = text.split(":", 3)
+    if len(parts) != 4:
+        return ""
+    try:
+        nonce = urlsafe_b64decode(parts[2].encode("ascii"))
+        cipher = urlsafe_b64decode(parts[3].encode("ascii"))
+    except Exception:
+        return ""
+    plain = bytes(a ^ b for a, b in zip(cipher, _keystream(len(cipher), nonce)))
+    try:
+        return plain.decode("utf-8")
+    except UnicodeDecodeError:
+        return ""
+
+
+def db_conn() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db() -> None:
+    with db_conn() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                username TEXT PRIMARY KEY,
+                role TEXT NOT NULL DEFAULT 'operator',
+                salt TEXT NOT NULL DEFAULT '',
+                password_hash TEXT NOT NULL DEFAULT '',
+                must_change_password INTEGER NOT NULL DEFAULT 1,
+                allowed_categories TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS devices (
+                hostname TEXT PRIMARY KEY,
+                ip_address TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS device_groups (
+                hostname TEXT NOT NULL,
+                group_name TEXT NOT NULL,
+                PRIMARY KEY(hostname, group_name)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS device_credentials (
+                account_key TEXT PRIMARY KEY,
+                username TEXT NOT NULL DEFAULT '',
+                password_enc TEXT NOT NULL DEFAULT '',
+                enable_password_enc TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+    migrate_legacy_json_to_db()
+
+
+def migrate_legacy_json_to_db() -> None:
+    with db_conn() as conn:
+        user_count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        if user_count == 0 and USERS_FILE.exists():
+            try:
+                data = json.loads(USERS_FILE.read_text(encoding="utf-8"))
+            except Exception:
+                data = []
+            if isinstance(data, list):
+                for item in data:
+                    if not isinstance(item, dict):
+                        continue
+                    username = str(item.get("username", "")).strip()
+                    if not username:
+                        continue
+                    conn.execute(
+                        """
+                        INSERT OR REPLACE INTO users(username, role, salt, password_hash, must_change_password, allowed_categories)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            username,
+                            str(item.get("role", "operator")),
+                            str(item.get("salt", "")),
+                            str(item.get("password_hash", "")),
+                            1 if bool(item.get("must_change_password", True)) else 0,
+                            json.dumps(item.get("allowed_categories")),
+                        ),
+                    )
+
+        device_count = conn.execute("SELECT COUNT(*) FROM devices").fetchone()[0]
+        if device_count == 0 and DEVICES_FILE.exists():
+            try:
+                data = json.loads(DEVICES_FILE.read_text(encoding="utf-8"))
+            except Exception:
+                data = []
+            if isinstance(data, list):
+                for item in data:
+                    if not isinstance(item, dict):
+                        continue
+                    hostname = str(item.get("hostname", "")).strip()
+                    ip_address = str(item.get("ip_address", "")).strip()
+                    if not hostname or not ip_address:
+                        continue
+                    conn.execute("INSERT OR REPLACE INTO devices(hostname, ip_address) VALUES (?, ?)", (hostname, ip_address))
+                    for group in item.get("groups", []):
+                        group_name = str(group).strip()
+                        if group_name:
+                            conn.execute("INSERT OR IGNORE INTO device_groups(hostname, group_name) VALUES (?, ?)", (hostname, group_name))
+
+        creds_count = conn.execute("SELECT COUNT(*) FROM device_credentials").fetchone()[0]
+        if creds_count == 0 and DEVICE_CREDS_FILE.exists():
+            try:
+                data = json.loads(DEVICE_CREDS_FILE.read_text(encoding="utf-8"))
+            except Exception:
+                data = {}
+            if isinstance(data, dict):
+                for key, value in data.items():
+                    if not isinstance(value, dict):
+                        continue
+                    conn.execute(
+                        """
+                        INSERT OR REPLACE INTO device_credentials(account_key, username, password_enc, enable_password_enc)
+                        VALUES (?, ?, ?, ?)
+                        """,
+                        (
+                            str(key),
+                            str(value.get("username", "")).strip(),
+                            encrypt_secret(str(value.get("password", ""))),
+                            encrypt_secret(str(value.get("enable_password", ""))),
+                        ),
+                    )
+
+
+init_db()
 
 
 def super_admin_exists() -> bool:
@@ -97,18 +269,26 @@ def verify_super_admin(username: str, password: str) -> bool:
 
 
 def load_users() -> list[dict[str, Any]]:
-    if not USERS_FILE.exists():
-        return []
-    with USERS_FILE.open("r", encoding="utf-8") as f:
-        data = json.load(f)
-    if not isinstance(data, list):
-        return []
-
     normalized: list[dict[str, Any]] = []
-    for item in data:
-        if not isinstance(item, dict):
-            continue
-        user = dict(item)
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT username, role, salt, password_hash, must_change_password, allowed_categories FROM users ORDER BY username"
+        ).fetchall()
+
+    for row in rows:
+        allowed_raw = row["allowed_categories"]
+        try:
+            allowed_categories = json.loads(allowed_raw) if allowed_raw else None
+        except Exception:
+            allowed_categories = None
+        user: dict[str, Any] = {
+            "username": row["username"],
+            "role": row["role"],
+            "salt": row["salt"],
+            "password_hash": row["password_hash"],
+            "must_change_password": bool(row["must_change_password"]),
+            "allowed_categories": allowed_categories,
+        }
         user.setdefault("role", "operator")
         user.setdefault("salt", "")
         user.setdefault("password_hash", "")
@@ -119,32 +299,57 @@ def load_users() -> list[dict[str, Any]]:
 
 
 def save_users(users: list[dict[str, Any]]) -> None:
-    with USERS_FILE.open("w", encoding="utf-8") as f:
-        json.dump(users, f, indent=2)
+    with db_conn() as conn:
+        conn.execute("DELETE FROM users")
+        for user in users:
+            conn.execute(
+                """
+                INSERT INTO users(username, role, salt, password_hash, must_change_password, allowed_categories)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(user.get("username", "")).strip(),
+                    str(user.get("role", "operator")),
+                    str(user.get("salt", "")),
+                    str(user.get("password_hash", "")),
+                    1 if bool(user.get("must_change_password", True)) else 0,
+                    json.dumps(user.get("allowed_categories")),
+                ),
+            )
 
 
 def load_device_creds_store() -> dict[str, dict[str, str]]:
-    if not DEVICE_CREDS_FILE.exists():
-        return {}
-    with DEVICE_CREDS_FILE.open("r", encoding="utf-8") as f:
-        data = json.load(f)
-    if not isinstance(data, dict):
-        return {}
     normalized: dict[str, dict[str, str]] = {}
-    for key, value in data.items():
-        if not isinstance(value, dict):
-            continue
-        normalized[str(key)] = {
-            "username": str(value.get("username", "")).strip(),
-            "password": str(value.get("password", "")),
-            "enable_password": str(value.get("enable_password", "")),
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT account_key, username, password_enc, enable_password_enc FROM device_credentials"
+        ).fetchall()
+
+    for row in rows:
+        normalized[str(row["account_key"])] = {
+            "username": str(row["username"] or "").strip(),
+            "password": decrypt_secret(str(row["password_enc"] or "")),
+            "enable_password": decrypt_secret(str(row["enable_password_enc"] or "")),
         }
     return normalized
 
 
 def save_device_creds_store(store: dict[str, dict[str, str]]) -> None:
-    with DEVICE_CREDS_FILE.open("w", encoding="utf-8") as f:
-        json.dump(store, f, indent=2)
+    with db_conn() as conn:
+        conn.execute("DELETE FROM device_credentials")
+        for account_key, value in store.items():
+            conn.execute(
+                """
+                INSERT INTO device_credentials(account_key, username, password_enc, enable_password_enc)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    str(account_key),
+                    str(value.get("username", "")).strip(),
+                    encrypt_secret(str(value.get("password", ""))),
+                    encrypt_secret(str(value.get("enable_password", ""))),
+                ),
+            )
 
 
 def device_creds_key(account_username: str, auth_mode: str) -> str:
@@ -201,7 +406,6 @@ def save_user_buttons(account_username: str, auth_mode: str, buttons: list[dict[
 def default_session_settings() -> dict[str, Any]:
     return {
         "idle_timeout_minutes": 15,
-        "logout_on_hidden": True,
     }
 
 
@@ -213,14 +417,12 @@ def load_session_settings() -> dict[str, Any]:
     defaults = default_session_settings()
     defaults.update(data if isinstance(data, dict) else {})
     defaults["idle_timeout_minutes"] = int(defaults.get("idle_timeout_minutes", 15) or 15)
-    defaults["logout_on_hidden"] = bool(defaults.get("logout_on_hidden", True))
     return defaults
 
 
 def save_session_settings(settings: dict[str, Any]) -> None:
     payload = {
         "idle_timeout_minutes": max(1, int(settings.get("idle_timeout_minutes", 15) or 15)),
-        "logout_on_hidden": bool(settings.get("logout_on_hidden", True)),
     }
     with SESSION_SETTINGS_FILE.open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
@@ -398,18 +600,42 @@ def upsert_user(username: str) -> tuple[bool, str]:
     return True, f"User '{username}' created. Password will be set on first login."
 
 def load_devices() -> list[dict[str, Any]]:
-    if not DEVICES_FILE.exists():
-        return []
-    with DEVICES_FILE.open("r", encoding="utf-8") as f:
-        data = json.load(f)
-    if not isinstance(data, list):
-        raise ValueError("devices_web.json must be a JSON array")
-    return data
+    devices: list[dict[str, Any]] = []
+    with db_conn() as conn:
+        rows = conn.execute("SELECT hostname, ip_address FROM devices ORDER BY hostname").fetchall()
+        group_rows = conn.execute("SELECT hostname, group_name FROM device_groups").fetchall()
+
+    group_map: dict[str, list[str]] = {}
+    for row in group_rows:
+        group_map.setdefault(str(row["hostname"]), []).append(str(row["group_name"]))
+
+    for row in rows:
+        hostname = str(row["hostname"])
+        devices.append({
+            "hostname": hostname,
+            "ip_address": str(row["ip_address"]),
+            "groups": sorted(group_map.get(hostname, [])),
+        })
+    return devices
 
 
 def save_devices(devices: list[dict[str, Any]]) -> None:
-    with DEVICES_FILE.open("w", encoding="utf-8") as f:
-        json.dump(devices, f, indent=2)
+    with db_conn() as conn:
+        conn.execute("DELETE FROM device_groups")
+        conn.execute("DELETE FROM devices")
+        for device in devices:
+            hostname = str(device.get("hostname", "")).strip()
+            ip_address = str(device.get("ip_address", "")).strip()
+            if not hostname or not ip_address:
+                continue
+            conn.execute("INSERT INTO devices(hostname, ip_address) VALUES (?, ?)", (hostname, ip_address))
+            for group in device.get("groups", []):
+                group_name = str(group).strip()
+                if group_name:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO device_groups(hostname, group_name) VALUES (?, ?)",
+                        (hostname, group_name),
+                    )
 
 
 def grouped_devices(devices: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
@@ -573,6 +799,8 @@ def load_ise_settings() -> dict[str, Any]:
         data = json.load(f)
     defaults = default_ise_settings()
     defaults.update(data)
+    defaults["primary_shared_secret"] = decrypt_secret(defaults.get("primary_shared_secret", ""))
+    defaults["secondary_shared_secret"] = decrypt_secret(defaults.get("secondary_shared_secret", ""))
     return defaults
 
 
@@ -580,10 +808,10 @@ def save_ise_settings(settings: dict[str, Any]) -> None:
     payload = {
         "primary_server": str(settings.get("primary_server", "")).strip(),
         "primary_port": int(settings.get("primary_port", 1812) or 1812),
-        "primary_shared_secret": str(settings.get("primary_shared_secret", "")),
+        "primary_shared_secret": encrypt_secret(str(settings.get("primary_shared_secret", ""))),
         "secondary_server": str(settings.get("secondary_server", "")).strip(),
         "secondary_port": int(settings.get("secondary_port", 1812) or 1812),
-        "secondary_shared_secret": str(settings.get("secondary_shared_secret", "")),
+        "secondary_shared_secret": encrypt_secret(str(settings.get("secondary_shared_secret", ""))),
         "timeout": int(settings.get("timeout", 5) or 5),
         "nas_ip": str(settings.get("nas_ip", "127.0.0.1")).strip(),
     }
@@ -942,8 +1170,6 @@ def session_settings_page() -> Any:
         return redirect(url_for("verify_super_admin_route"))
 
     timeout_raw = request.form.get("idle_timeout_minutes", "15").strip()
-    logout_on_hidden = request.form.get("logout_on_hidden") == "on"
-
     try:
         timeout_minutes = int(timeout_raw or 15)
         if timeout_minutes < 1:
@@ -954,9 +1180,8 @@ def session_settings_page() -> Any:
 
     save_session_settings({
         "idle_timeout_minutes": timeout_minutes,
-        "logout_on_hidden": logout_on_hidden,
     })
-    session["settings_info"] = "Session guard settings updated."
+    session["settings_info"] = "Idle logout settings updated."
     return redirect(url_for("ise_settings_page", modal="session"))
 
 
@@ -1162,7 +1387,6 @@ def dashboard() -> Any:
         device_creds=session.get("device_creds", {}),
         ntp=load_ntp_settings(),
         session_timeout_seconds=max(60, int(load_session_settings().get("idle_timeout_minutes", 15)) * 60),
-        logout_on_hidden=bool(load_session_settings().get("logout_on_hidden", True)),
     )
 
 

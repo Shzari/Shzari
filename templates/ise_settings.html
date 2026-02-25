@@ -142,7 +142,7 @@
     </div>
     <div class="action-row equal-buttons">
       <button class="btn" type="button" onclick="openNtpModal()">NTP</button>
-      <button class="btn" type="button" onclick="openSessionModal()">Session Guard</button>
+      <button class="btn" type="button" onclick="openSessionModal()">Idle Logout</button>
     </div>
   </div>
 
@@ -211,17 +211,14 @@
 
   <dialog id="sessionConfigModal" class="device-modal">
     <form method="post" action="{{ url_for('session_settings_page') }}">
-      <h3>Session Guard</h3>
+      <h3>Idle Logout</h3>
       <p>Control automatic logout for inactive dashboard sessions.</p>
 
       <label>Idle Timeout (minutes)</label>
       <input name="idle_timeout_minutes" type="number" value="{{ session_settings.idle_timeout_minutes }}" min="1" max="240" required>
 
-      <label>Apply timeout when browser tab is hidden/minimized</label>
-      <input name="logout_on_hidden" type="checkbox" {% if session_settings.logout_on_hidden %}checked{% endif %}>
-
       <div class="action-row">
-        <button class="btn run" type="submit">Save Session Guard</button>
+        <button class="btn run" type="submit">Save</button>
         <button class="btn ghost" type="button" onclick="closeSessionModal()">Close</button>
       </div>
     </form>

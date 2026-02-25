@@ -10,7 +10,7 @@ A web-based network engineering app to authenticate users, select routers/switch
 - Super Admin security workflow:
   - First run requires creating a super admin account
   - Settings page requires super admin verification
-- Super Admin Settings page provides popup windows for Users, ISE, NTP, and Session Guard
+- Super Admin Settings page provides popup windows for Users, ISE, NTP, and Idle Logout
 - ISE settings page supports:
   - Primary ISE server/port/shared-secret
   - Secondary ISE server/port/shared-secret
@@ -24,11 +24,10 @@ A web-based network engineering app to authenticate users, select routers/switch
 - NTP workflow:
   - dashboard top row shows centered live numeric clock
   - NTP configuration is available only in Super Admin settings (choose NTP server sync or set manual time)
-  - super admin settings launcher layout: first row Users + ISE, second row NTP + Session Guard
-- Session Guard workflow:
+  - super admin settings launcher layout: first row Users + ISE, second row NTP + Idle Logout
+- Idle Logout workflow:
   - super admin can set global idle timeout (minutes) for all users
-  - optional enforcement when browser tab is hidden/minimized
-  - inactive dashboard sessions auto-logout
+  - any dashboard inactivity auto-logout is enforced by frontend and backend
 - Devices workflow:
   - top-right settings icon on Devices panel opens popup for add/edit/delete devices and category actions
   - bottom inline devices/category management section removed from devices panel
@@ -55,6 +54,10 @@ A web-based network engineering app to authenticate users, select routers/switch
   - button in user strip (left of User) to open credential popup
   - set ISE login/SSH username + password + enable password used by RUN device connections
   - device credentials are stored per logged-in account (each user must set their own)
+- Data/security storage:
+  - local users, devices, categories, and per-user device credentials are stored in SQLite (`app_data.db`)
+  - legacy `users.json` / `devices_web.json` / `device_credentials.json` are auto-migrated to DB on startup
+  - sensitive saved secrets (ISE shared secrets and stored device passwords) are encrypted before writing to disk
 - Command workflow:
   - two in-panel modes: Show Commands and Config Commands (no popup)
   - settings icon on top-right of Commands panel opens popup to add/rename/delete buttons
