@@ -1017,62 +1017,6 @@ ${entry.output}
     </div>
   </div>
 
-  {% if current_user_role == 'senior' %}
-  <div class="card glass" style="margin-top:12px;">
-    <div class="card-head">
-      <h3>Pending Requests</h3>
-    </div>
-    {% if pending_requests %}
-      {% for req in pending_requests %}
-        <div class="submenu-form" style="margin-bottom:10px;">
-          <div><b>#{{ req.id }}</b> {{ req.requester_username }} requested changes for <b>{{ req.device_name }}</b> at {{ req.created_at }}</div>
-          <div>IP: {{ req.original_ip }} → {{ req.proposed_ip }}</div>
-          <div>Categories: {{ req.original_categories|join(', ') if req.original_categories else 'None' }} → {{ req.proposed_categories|join(', ') if req.proposed_categories else 'None' }}</div>
-          <div class="action-row">
-            <form method="post" action="{{ url_for('pending_requests_action') }}">
-              <input type="hidden" name="request_id" value="{{ req.id }}">
-              <input type="hidden" name="action" value="approve">
-              <button class="btn" type="submit">Approve</button>
-            </form>
-            <form method="post" action="{{ url_for('pending_requests_action') }}">
-              <input type="hidden" name="request_id" value="{{ req.id }}">
-              <input type="hidden" name="action" value="reject">
-              <button class="btn ghost" type="submit">Reject</button>
-            </form>
-          </div>
-        </div>
-      {% endfor %}
-    {% else %}
-      <div class="muted-note">No pending requests.</div>
-    {% endif %}
-
-    <h4>Processed Requests</h4>
-    <div class="action-row">
-      <form method="post" action="{{ url_for('pending_requests_cleanup') }}">
-        <input type="hidden" name="action" value="delete_all_closed">
-        <button class="btn ghost" type="submit">Delete All Processed</button>
-      </form>
-    </div>
-    {% if closed_requests %}
-      {% for req in closed_requests %}
-        <div class="submenu-form" style="margin-bottom:10px;">
-          <div><b>#{{ req.id }}</b> {{ req.requester_username }} - <b>{{ req.device_name }}</b> ({{ req.status|upper }})</div>
-          <div>IP: {{ req.original_ip }} → {{ req.proposed_ip }}</div>
-          <div class="action-row">
-            <form method="post" action="{{ url_for('pending_requests_cleanup') }}">
-              <input type="hidden" name="action" value="delete_one">
-              <input type="hidden" name="request_id" value="{{ req.id }}">
-              <button class="btn ghost" type="submit">Delete</button>
-            </form>
-          </div>
-        </div>
-      {% endfor %}
-    {% else %}
-      <div class="muted-note">No processed requests.</div>
-    {% endif %}
-  </div>
-  {% endif %}
-
   <dialog id="notificationsModal" class="device-modal">
     <div class="command-settings-body">
       <div class="modal-title-row">
