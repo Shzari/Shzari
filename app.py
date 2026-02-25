@@ -561,6 +561,25 @@ def sync_ntp_time(server: str, port: int, timeout: int) -> tuple[bool, str, str]
         sock.close()
 
 
+def test_ntp_connectivity(server: str, port: int, timeout: int) -> tuple[bool, str]:
+    if not server:
+        return False, "NTP server is required."
+
+    packet = b"\x1b" + 47 * b"\0"
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(timeout)
+    try:
+        sock.sendto(packet, (server, port))
+        data, _ = sock.recvfrom(48)
+        if len(data) < 48:
+            return False, f"NTP test failed: invalid response from {server}:{port}."
+        return True, f"NTP test success: connected to {server}:{port}."
+    except OSError as exc:
+        return False, f"NTP test failed: {exc}"
+    finally:
+        sock.close()
+
+
 def run_ping_for_host(host: str, count: int = 5) -> str:
     if os.name == "nt":
         cmd = ["ping", "-n", str(count), "-w", "1000", host]
@@ -1193,6 +1212,27 @@ def ise_settings_page() -> Any:
         ntp=load_ntp_settings(),
         session_settings=load_session_settings(),
     )
+
+
+@app.route("/settings/ntp/test", methods=["POST"])
+def ntp_test_page() -> Any:
+    if not super_admin_exists():
+        return jsonify({"ok": False, "message": "Super admin setup is required."}), 403
+    if not session.get("super_admin_verified"):
+        return jsonify({"ok": False, "message": "Super admin verification is required."}), 403
+
+    server = request.form.get("ntp_server", "").strip()
+    port_raw = request.form.get("ntp_port", "123").strip()
+    timeout_raw = request.form.get("ntp_timeout", "3").strip()
+
+    try:
+        port = int(port_raw or 123)
+        timeout = int(timeout_raw or 3)
+    except ValueError:
+        return jsonify({"ok": False, "message": "NTP port/timeout must be numbers."}), 400
+
+    ok, message = test_ntp_connectivity(server, port, timeout)
+    return jsonify({"ok": ok, "message": message})
 
 
 @app.route("/settings/ntp", methods=["POST"])

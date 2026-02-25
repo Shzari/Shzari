@@ -35,6 +35,50 @@
       if (modal && modal.close) modal.close();
     }
 
+    function closeNtpTestResultModal() {
+      const modal = document.getElementById('ntpTestResultModal');
+      if (modal && modal.close) modal.close();
+    }
+
+    function showNtpTestResult(ok, message) {
+      const modal = document.getElementById('ntpTestResultModal');
+      const box = document.getElementById('ntpTestResultMessage');
+      if (!modal || !box) return;
+      box.className = ok ? 'info' : 'error';
+      box.textContent = message;
+      if (modal.showModal) {
+        modal.showModal();
+      }
+    }
+
+    async function testNtpConnection() {
+      const form = document.getElementById('ntpSettingsForm');
+      if (!form) return;
+
+      const testButton = document.getElementById('ntpTestButton');
+      if (testButton) {
+        testButton.disabled = true;
+        testButton.textContent = 'Testing...';
+      }
+
+      try {
+        const formData = new FormData(form);
+        const response = await fetch("{{ url_for('ntp_test_page') }}", {
+          method: 'POST',
+          body: formData,
+        });
+        const payload = await response.json();
+        showNtpTestResult(Boolean(payload.ok), payload.message || 'NTP test finished.');
+      } catch (error) {
+        showNtpTestResult(false, `NTP test failed: ${error}`);
+      } finally {
+        if (testButton) {
+          testButton.disabled = false;
+          testButton.textContent = 'Test Connection';
+        }
+      }
+    }
+
     function openSessionModal() {
       const modal = document.getElementById('sessionConfigModal');
       if (modal && modal.showModal) modal.showModal();
@@ -179,7 +223,7 @@
   </dialog>
 
   <dialog id="ntpConfigModal" class="device-modal">
-    <form method="post" action="{{ url_for('ntp_settings_page') }}">
+    <form id="ntpSettingsForm" method="post" action="{{ url_for('ntp_settings_page') }}">
       <h3>NTP Configuration</h3>
 
       <label>Time Source Mode</label>
@@ -200,10 +244,21 @@
 
       <div class="info">Last Sync: {{ ntp.last_sync or 'Never' }}<br>Status: {{ ntp.last_status }}</div>
       <div class="action-row">
+        <button id="ntpTestButton" class="btn" type="button" onclick="testNtpConnection()">Test Connection</button>
         <button class="btn" type="submit" name="action" value="save">Save NTP Settings</button>
         <button class="btn run" type="submit" name="action" value="sync">Synchronize via NTP</button>
         <button class="btn" type="submit" name="action" value="set_manual">Set Manual Time</button>
         <button class="btn ghost" type="button" onclick="closeNtpModal()">Close</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="ntpTestResultModal" class="device-modal">
+    <form method="dialog">
+      <h3>NTP Test Result</h3>
+      <div id="ntpTestResultMessage" class="info">Ready to test NTP connection.</div>
+      <div class="action-row">
+        <button class="btn ghost" type="button" onclick="closeNtpTestResultModal()">Close</button>
       </div>
     </form>
   </dialog>
