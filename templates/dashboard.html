@@ -311,7 +311,7 @@
         note.textContent = 'No session yet. Run a command to create device sessions.';
         wrap.appendChild(note);
         const out = document.getElementById('runSessionOutput');
-        if (out) out.textContent = '';
+        if (out) out.value = '';
         return;
       }
 
@@ -340,20 +340,48 @@
       renderRunOutput();
     }
 
-    function renderRunOutput() {
-      const out = document.getElementById('runSessionOutput');
-      if (!out) return;
-      const data = RUN_SESSIONS[ACTIVE_RUN_SESSION];
-      if (!data) {
-        out.textContent = '';
-        return;
-      }
+    const SESSION_DRAFTS = {};
+
+    function terminalPromptPrefix() {
+      return '\n> ';
+    }
+
+    function buildSessionTranscript(deviceName) {
+      const data = RUN_SESSIONS[deviceName];
+      if (!data || !Array.isArray(data.entries)) return '';
       const chunks = data.entries.map((entry) => {
         return `[${entry.timestamp}] ${entry.status} | ${entry.command}
 ${entry.output}
 `;
       });
-      out.textContent = chunks.join('\n----------------------------------------\n');
+      return chunks.join('\n----------------------------------------\n');
+    }
+
+    function getTerminalCommandFromArea(area) {
+      const value = area.value || '';
+      const prompt = terminalPromptPrefix();
+      const idx = value.lastIndexOf(prompt);
+      if (idx < 0) {
+        return value.trim();
+      }
+      return value.slice(idx + prompt.length).trim();
+    }
+
+    function renderRunOutput() {
+      const area = document.getElementById('runSessionOutput');
+      if (!area) return;
+
+      if (!ACTIVE_RUN_SESSION || !RUN_SESSIONS[ACTIVE_RUN_SESSION]) {
+        area.value = '';
+        return;
+      }
+
+      const transcript = buildSessionTranscript(ACTIVE_RUN_SESSION);
+      const draft = SESSION_DRAFTS[ACTIVE_RUN_SESSION] || '';
+      area.value = (transcript ? transcript : '') + terminalPromptPrefix() + draft;
+      area.scrollTop = area.scrollHeight;
+      area.focus();
+      area.selectionStart = area.selectionEnd = area.value.length;
     }
 
     function clearActiveSessionOutput() {
@@ -362,8 +390,31 @@ ${entry.output}
         return;
       }
       RUN_SESSIONS[ACTIVE_RUN_SESSION].entries = [];
+      SESSION_DRAFTS[ACTIVE_RUN_SESSION] = '';
       renderRunOutput();
       setRunStatus(`Output cleared for ${ACTIVE_RUN_SESSION}. Session is still active.`, false);
+    }
+
+    function keepTerminalCursorAtPromptEnd(event) {
+      const area = event.target;
+      if (!area || !ACTIVE_RUN_SESSION) return;
+      const content = area.value || '';
+      const prompt = terminalPromptPrefix();
+      const idx = content.lastIndexOf(prompt);
+      if (idx < 0) {
+        renderRunOutput();
+        return;
+      }
+      const minPos = idx + prompt.length;
+      if (area.selectionStart < minPos || area.selectionEnd < minPos) {
+        area.selectionStart = area.selectionEnd = content.length;
+      }
+    }
+
+    function syncTerminalDraft(event) {
+      const area = event.target;
+      if (!area || !ACTIVE_RUN_SESSION) return;
+      SESSION_DRAFTS[ACTIVE_RUN_SESSION] = getTerminalCommandFromArea(area);
     }
 
     function appendRunResults(payload) {
@@ -456,16 +507,27 @@ ${entry.output}
     }
 
     async function handleSessionCommandKeydown(event) {
-      if (event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) {
+      const area = event.target;
+      if (!area) return;
+
+      if (event.key === 'Enter' && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
+        event.preventDefault();
+        const command = getTerminalCommandFromArea(area);
+        const sent = await sendSessionCommand(command);
+        if (sent && ACTIVE_RUN_SESSION) {
+          SESSION_DRAFTS[ACTIVE_RUN_SESSION] = '';
+          renderRunOutput();
+        }
         return;
       }
-      event.preventDefault();
-      const input = event.target;
-      if (!input) return;
-      const command = input.value || '';
-      const sent = await sendSessionCommand(command);
-      if (sent) {
-        input.value = '';
+
+      if ((event.key === 'Backspace' || event.key === 'ArrowUp' || event.key === 'PageUp' || event.key === 'Home') && ACTIVE_RUN_SESSION) {
+        const prompt = terminalPromptPrefix();
+        const idx = area.value.lastIndexOf(prompt);
+        const minPos = idx >= 0 ? idx + prompt.length : 0;
+        if (area.selectionStart <= minPos) {
+          event.preventDefault();
+        }
       }
     }
 
@@ -727,13 +789,11 @@ ${entry.output}
       <div id="runStatusMessage" class="info" style="display:none;"></div>
       <div id="runSessionTabs" class="mode-tabs"></div>
       <div class="session-cli-wrap">
-        <label>Active session device: <b id="activeSessionDeviceLabel">No session selected</b></label>
-        <pre id="runSessionOutput" class="ping-output-screen" style="max-height: 320px; overflow:auto;"></pre>
-        <div class="session-cli-input-row">
-          <span class="session-cli-prompt">&gt;</span>
-          <input id="sessionCommandInput" class="session-cli-input" type="text" placeholder="Type command in CLI and press Enter" onkeydown="handleSessionCommandKeydown(event)">
+        <div class="action-row">
+          <label>Active session device: <b id="activeSessionDeviceLabel">No session selected</b></label>
           <button class="btn ghost session-clear-btn" type="button" onclick="clearActiveSessionOutput()">Clear</button>
         </div>
+        <textarea id="runSessionOutput" class="ping-output-screen session-terminal-area" style="max-height: 360px; overflow:auto;" spellcheck="false" onkeydown="handleSessionCommandKeydown(event)" oninput="syncTerminalDraft(event)" onclick="keepTerminalCursorAtPromptEnd(event)"></textarea>
       </div>
     </div>
   </div>
