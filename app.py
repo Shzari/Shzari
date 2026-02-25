@@ -1518,34 +1518,23 @@ def manage_users() -> Any:
             save_users(users)
             session["settings_info"] = f"User '{username}' will be forced to change password at next login."
 
-    elif action == "set_categories":
+    elif action == "set_user_rights":
         username = request.form.get("selected_username", "").strip()
         selected_categories = [c.strip() for c in request.form.getlist("allowed_categories") if c.strip()]
-        user = find_user(users, username)
-        if user is None:
-            session["settings_error"] = "User not found."
-        else:
-            user["allowed_categories"] = selected_categories
-            save_users(users)
-            if selected_categories:
-                session["settings_info"] = f"Updated category access for '{username}'."
-            else:
-                session["settings_info"] = f"'{username}' now has no category access."
-
-    elif action == "set_admin_permissions":
-        username = request.form.get("selected_username", "").strip()
         selected_permissions = [p.strip() for p in request.form.getlist("admin_permissions") if p.strip()]
         allowed_permissions = {"create_category", "edit_device", "move_device_category", "delete_device", "delete_category"}
         selected_permissions = [p for p in selected_permissions if p in allowed_permissions]
         if "move_device_category" in selected_permissions and "edit_device" not in selected_permissions:
             selected_permissions.append("edit_device")
+
         user = find_user(users, username)
         if user is None:
             session["settings_error"] = "User not found."
         else:
+            user["allowed_categories"] = selected_categories
             user["admin_permissions"] = selected_permissions
             save_users(users)
-            session["settings_info"] = f"Updated operation permissions for '{username}'."
+            session["settings_info"] = f"Updated user rights for '{username}'."
 
     return redirect(url_for("ise_settings_page", modal="users"))
 

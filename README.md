@@ -18,9 +18,8 @@ A web-based network engineering app to authenticate users, select routers/switch
 - Super Admin local-user controls:
   - create local users with username only (no initial password)
   - list all created users with password-set and force-change status
-  - edit popup default action is blank (must choose action), supports reset password, force-change next login, delete user, and set allowed categories per user
-  - per-user category access control (all categories / selected categories / no categories) with Select All / Deselect All and per-category checkbox rows
-  - per-user operation access checkboxes for create category, edit device, move device between categories, delete device, delete category (users without access are prompted for super-admin password)
+  - edit popup default action is blank (must choose action), supports reset password, force-change next login, delete user, and User Rights
+  - User Rights combines category access (all categories / selected categories / no categories) and operation access checkboxes for create category, edit device, move device between categories, delete device, delete category (users without access are prompted for super-admin password)
   - users with blank/reset password are forced to set password at next login
 - NTP workflow:
   - dashboard top row shows centered live numeric clock

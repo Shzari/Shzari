@@ -120,10 +120,8 @@
         note.textContent = 'Reset selected user password to blank and force set on next login.';
       } else if (action === 'force_change') {
         note.textContent = 'Keep current password but force user to change on next login.';
-      } else if (action === 'set_categories') {
-        note.textContent = 'Set exact category access for selected user. Empty selection means no access.';
-      } else if (action === 'set_admin_permissions') {
-        note.textContent = 'Set which operations user can do without super admin password. Move category requires both Edit Devices + Move Device Category.';
+      } else if (action === 'set_user_rights') {
+        note.textContent = 'Set user rights: category access + operation access. Move category requires both Edit Devices + Move Device Category.';
       }
     }
 
@@ -369,8 +367,7 @@
         <option value="reset_password">Reset Password (blank + force set next login)</option>
         <option value="force_change">Force Change Password on Next Login</option>
         <option value="delete">Delete User</option>
-        <option value="set_categories">Set User Category Access</option>
-        <option value="set_admin_permissions">Set User Operation Access</option>
+        <option value="set_user_rights">User Rights</option>
       </select>
 
       <label>Allowed Categories for Selected User</label>
