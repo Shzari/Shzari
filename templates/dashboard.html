@@ -218,6 +218,133 @@
       preview.textContent = 'No command selected yet.';
     }
 
+    function parseIpv4Strict(value) {
+      const text = String(value || '').trim();
+      if (!/^\d+\.\d+\.\d+\.\d+$/.test(text)) {
+        return null;
+      }
+      const parts = text.split('.');
+      if (parts.length !== 4) {
+        return null;
+      }
+      for (const part of parts) {
+        if (!/^\d{1,3}$/.test(part)) {
+          return null;
+        }
+        const n = Number(part);
+        if (!Number.isInteger(n) || n < 0 || n > 255) {
+          return null;
+        }
+      }
+      return parts;
+    }
+
+    function sanitizeIpv4InputValue(raw) {
+      const cleaned = String(raw || '').replace(/[^\d.]/g, '');
+      const src = cleaned.split('.');
+      const out = [];
+      for (let i = 0; i < src.length && out.length < 4; i += 1) {
+        const sourcePart = src[i];
+        let built = '';
+        for (const ch of sourcePart) {
+          if (!/\d/.test(ch)) continue;
+          if (built.length >= 3) continue;
+          const candidate = built + ch;
+          if (Number(candidate) > 255) {
+            continue;
+          }
+          built = candidate;
+        }
+        out.push(built);
+      }
+      return out.join('.');
+    }
+
+    function setIpv4ValidationMessage(messageElementId, message) {
+      const box = document.getElementById(messageElementId);
+      if (!box) return;
+      box.textContent = message || '';
+      box.style.display = message ? 'block' : 'none';
+    }
+
+    function validateIpv4Field(inputElementId, messageElementId, required = true) {
+      const input = document.getElementById(inputElementId);
+      if (!input) return true;
+      const value = String(input.value || '').trim();
+      if (!value) {
+        if (required) {
+          setIpv4ValidationMessage(messageElementId, 'IP address is required.');
+          return false;
+        }
+        setIpv4ValidationMessage(messageElementId, '');
+        return true;
+      }
+      if (!parseIpv4Strict(value)) {
+        setIpv4ValidationMessage(messageElementId, 'Enter valid IPv4: four octets, digits only, each 0-255.');
+        return false;
+      }
+      setIpv4ValidationMessage(messageElementId, '');
+      return true;
+    }
+
+    function onIpv4InputRealtime(event, messageElementId, required = true) {
+      const input = event.target;
+      if (!input) return;
+      const sanitized = sanitizeIpv4InputValue(input.value);
+      if (input.value !== sanitized) {
+        input.value = sanitized;
+      }
+      validateIpv4Field(input.id, messageElementId, required);
+    }
+
+    function handleIpv4Keydown(event) {
+      const input = event.target;
+      if (!input) return;
+      const allowKeys = new Set(['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Tab', 'Home', 'End']);
+      if (allowKeys.has(event.key)) {
+        return;
+      }
+
+      if (event.ctrlKey || event.metaKey) {
+        return;
+      }
+
+      if (event.key === '.') {
+        const value = input.value || '';
+        const parts = value.split('.');
+        const caret = input.selectionStart ?? value.length;
+        const left = value.slice(0, caret);
+        const leftParts = left.split('.');
+        if (parts.length >= 4 || left.endsWith('.') || leftParts[leftParts.length - 1].length === 0) {
+          event.preventDefault();
+        }
+        return;
+      }
+
+      if (!/^\d$/.test(event.key)) {
+        event.preventDefault();
+        return;
+      }
+
+      const value = input.value || '';
+      const caretStart = input.selectionStart ?? value.length;
+      const caretEnd = input.selectionEnd ?? value.length;
+      const nextValue = value.slice(0, caretStart) + event.key + value.slice(caretEnd);
+      const sanitized = sanitizeIpv4InputValue(nextValue);
+      if (sanitized !== nextValue) {
+        event.preventDefault();
+      }
+    }
+
+    function validateAndRequireSuperAdmin(event, ipInputId, ipMessageId, required = true) {
+      const ok = validateIpv4Field(ipInputId, ipMessageId, required);
+      if (!ok) {
+        event.preventDefault();
+        return false;
+      }
+      return requireSuperAdminPassword(event);
+    }
+
     async function testNewDeviceConnectivity() {
       const ipAddress = document.getElementById('newDeviceIpAddress').value.trim();
       const result = document.getElementById('deviceTestResult');
@@ -225,6 +352,13 @@
 
       if (!ipAddress) {
         result.textContent = 'Enter an IP address first.';
+        result.classList.add('fail');
+        setIpv4ValidationMessage('newDeviceIpValidation', 'IP address is required.');
+        return;
+      }
+
+      if (!validateIpv4Field('newDeviceIpAddress', 'newDeviceIpValidation', true)) {
+        result.textContent = 'Enter a valid IPv4 address first.';
         result.classList.add('fail');
         return;
       }
@@ -744,6 +878,20 @@ ${entry.output}
         populateEditDeviceForm();
       }
 
+      const addIp = document.getElementById('newDeviceIpAddress');
+      if (addIp) {
+        addIp.addEventListener('keydown', handleIpv4Keydown);
+        addIp.addEventListener('input', (event) => onIpv4InputRealtime(event, 'newDeviceIpValidation', true));
+        addIp.addEventListener('blur', () => validateIpv4Field('newDeviceIpAddress', 'newDeviceIpValidation', true));
+      }
+
+      const editIp = document.getElementById('editIpInput');
+      if (editIp) {
+        editIp.addEventListener('keydown', handleIpv4Keydown);
+        editIp.addEventListener('input', (event) => onIpv4InputRealtime(event, 'editDeviceIpValidation', true));
+        editIp.addEventListener('blur', () => validateIpv4Field('editIpInput', 'editDeviceIpValidation', true));
+      }
+
       if (SELECTED_MODAL === 'device_settings') {
         openDeviceSettingsModal();
       }
@@ -862,12 +1010,13 @@ ${entry.output}
         <button class="btn ghost modal-close-top" type="button" onclick="closeDeviceSettingsModal()">Close</button>
       </div>
 
-      <form method="post" action="{{ url_for('manage_devices') }}" class="submenu-form" onsubmit="return requireSuperAdminPassword(event)">
+      <form method="post" action="{{ url_for('manage_devices') }}" class="submenu-form" onsubmit="return validateAndRequireSuperAdmin(event, 'newDeviceIpAddress', 'newDeviceIpValidation', true)">
         <input type="hidden" name="action" value="add">
         <label>Hostname</label>
         <input name="hostname" type="text" placeholder="e.g., branch-rtr-02">
         <label>IP Address</label>
-        <input id="newDeviceIpAddress" name="ip_address" type="text" placeholder="e.g., 10.20.30.40">
+        <input id="newDeviceIpAddress" name="ip_address" type="text" inputmode="numeric" autocomplete="off" maxlength="15" placeholder="e.g., 10.20.30.40">
+        <div id="newDeviceIpValidation" class="error" style="display:none;"></div>
         <div class="action-row">
           <button class="btn" type="button" onclick="testNewDeviceConnectivity()">Test</button>
         </div>
@@ -916,7 +1065,7 @@ ${entry.output}
         <button class="btn ghost" type="submit">Delete Category</button>
       </form>
 
-      <form method="post" action="{{ url_for('manage_devices') }}" class="submenu-form" onsubmit="return requireSuperAdminPassword(event)">
+      <form method="post" action="{{ url_for('manage_devices') }}" class="submenu-form" onsubmit="return validateAndRequireSuperAdmin(event, 'editIpInput', 'editDeviceIpValidation', true)">
         <input type="hidden" name="action" value="edit">
         <label>Edit device (select existing)</label>
         <select id="editDeviceSelect" name="original_device_name">
@@ -927,7 +1076,8 @@ ${entry.output}
         <label>New Hostname</label>
         <input id="editHostnameInput" name="edit_hostname" type="text" placeholder="updated-hostname">
         <label>New IP Address</label>
-        <input id="editIpInput" name="edit_ip_address" type="text" placeholder="10.20.30.50">
+        <input id="editIpInput" name="edit_ip_address" type="text" inputmode="numeric" autocomplete="off" maxlength="15" placeholder="10.20.30.50">
+        <div id="editDeviceIpValidation" class="error" style="display:none;"></div>
         <label>Categories (drag-list)</label>
         <select id="editCategorySelect" class="drag-list" name="edit_device_categories" multiple size="6">
           {% for grp in categories %}

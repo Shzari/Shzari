@@ -108,6 +108,24 @@ def decrypt_secret(value: str) -> str:
         return ""
 
 
+def is_valid_ipv4(value: str) -> bool:
+    text = str(value or "").strip()
+    if not re.fullmatch(r"\d+\.\d+\.\d+\.\d+", text):
+        return False
+    parts = text.split(".")
+    if len(parts) != 4:
+        return False
+    for part in parts:
+        if len(part) == 0 or len(part) > 3:
+            return False
+        if not part.isdigit():
+            return False
+        num = int(part)
+        if num < 0 or num > 255:
+            return False
+    return True
+
+
 def db_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
@@ -1730,6 +1748,10 @@ def manage_devices() -> Any:
             session["dashboard_error"] = "Hostname and IP address are required."
             return redirect(dashboard_modal_url)
 
+        if not is_valid_ipv4(ip_address):
+            session["dashboard_error"] = "IP address must be a valid IPv4 value (each octet 0-255)."
+            return redirect(dashboard_modal_url)
+
         if any(str(device.get("name", "")).strip().lower() == hostname.lower() for device in devices):
             session["dashboard_error"] = "Duplicate hostname is not allowed."
             return redirect(dashboard_modal_url)
@@ -1776,6 +1798,10 @@ def manage_devices() -> Any:
         new_ip = requested_ip or str(target.get("host", "")).strip()
         if not new_name or not new_ip:
             session["dashboard_error"] = "Edited device must keep hostname and IP."
+            return redirect(dashboard_modal_url)
+
+        if not is_valid_ipv4(new_ip):
+            session["dashboard_error"] = "IP address must be a valid IPv4 value (each octet 0-255)."
             return redirect(dashboard_modal_url)
 
         if not new_categories:
@@ -1993,6 +2019,8 @@ def test_device_connectivity() -> Any:
     ip_address = str(payload.get("ip_address", "")).strip()
     if not ip_address:
         return jsonify({"ok": False, "message": "IP address is required."}), 400
+    if not is_valid_ipv4(ip_address):
+        return jsonify({"ok": False, "message": "Enter a valid IPv4 address (each octet 0-255)."}), 400
 
     icmp_ok = False
     ssh_ok = False
