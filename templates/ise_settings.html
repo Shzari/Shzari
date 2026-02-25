@@ -245,8 +245,8 @@
       <div class="info">Last Sync: {{ ntp.last_sync or 'Never' }}<br>Status: {{ ntp.last_status }}</div>
       <div class="action-row">
         <button id="ntpTestButton" class="btn" type="button" onclick="testNtpConnection()">Test Connection</button>
-        <button class="btn" type="submit" name="action" value="save">Save NTP Settings</button>
-        <button class="btn run" type="submit" name="action" value="sync">Synchronize via NTP</button>
+        <button class="btn" type="submit" name="action" value="save">Save</button>
+        <button class="btn run" type="submit" name="action" value="sync">Sync</button>
         <button class="btn" type="submit" name="action" value="set_manual">Set Manual Time</button>
         <button class="btn ghost" type="button" onclick="closeNtpModal()">Close</button>
       </div>
