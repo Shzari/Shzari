@@ -766,6 +766,33 @@ def notify_user(username: str, message: str) -> None:
         )
 
 
+def load_senior_notification_targets() -> list[str]:
+    targets: list[str] = []
+    users = load_users()
+    for user in users:
+        if normalize_role(str(user.get("role", ""))) == "senior":
+            username = str(user.get("username", "")).strip()
+            if username and username not in targets:
+                targets.append(username)
+
+    super_admin_username = str(load_super_admin().get("username", "")).strip()
+    if super_admin_username and super_admin_username not in targets:
+        targets.append(super_admin_username)
+
+    return targets
+
+
+def notify_seniors_new_pending_request(request_id: int, requester_username: str, device_name: str) -> None:
+    message = (
+        f"New pending request #{request_id} from {requester_username} "
+        f"for device '{device_name}'."
+    )
+    for senior_username in load_senior_notification_targets():
+        if senior_username.strip().lower() == str(requester_username).strip().lower():
+            continue
+        notify_user(senior_username, message)
+
+
 def load_unread_notifications(username: str) -> list[dict[str, Any]]:
     target = str(username or "").strip()
     if not target:
@@ -819,8 +846,9 @@ def write_audit_log(action: str, requester: str, approver: str, device_name: str
 
 
 def create_pending_device_request(*, requester_username: str, requester_role: str, original_device: dict[str, Any], proposed_hostname: str, proposed_ip: str, proposed_categories: list[str]) -> None:
+    request_id = 0
     with db_conn() as conn:
-        conn.execute(
+        cursor = conn.execute(
             """
             INSERT INTO pending_device_requests(
                 requester_username, requester_role, device_name,
@@ -841,6 +869,14 @@ def create_pending_device_request(*, requester_username: str, requester_role: st
                 json.dumps([str(g).strip() for g in proposed_categories if str(g).strip()]),
                 datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
             ),
+        )
+        request_id = int(cursor.lastrowid or 0)
+
+    if request_id > 0:
+        notify_seniors_new_pending_request(
+            request_id=request_id,
+            requester_username=str(requester_username),
+            device_name=str(original_device.get("name", "")),
         )
 
 
@@ -2017,7 +2053,7 @@ def pending_requests_action() -> Any:
     with db_conn() as conn:
         row = conn.execute("SELECT * FROM pending_device_requests WHERE id = ? AND status = 'pending'", (request_id,)).fetchone()
         if not row:
-            session["dashboard_error"] = "Pending request not found."
+            session["dashboard_error"] = "Request not found or already decided. A request can be approved/rejected only once."
             return redirect(url_for("dashboard"))
 
         requester = str(row["requester_username"])
@@ -2040,10 +2076,13 @@ def pending_requests_action() -> Any:
             devices = load_devices()
             target = next((d for d in devices if str(d.get("name", "")).strip() == device_name), None)
             if target is None:
-                conn.execute(
-                    "UPDATE pending_device_requests SET status = 'rejected', approver_username = ?, decided_at = ? WHERE id = ?",
+                update_missing = conn.execute(
+                    "UPDATE pending_device_requests SET status = 'rejected', approver_username = ?, decided_at = ? WHERE id = ? AND status = 'pending'",
                     (approver, now, request_id),
                 )
+                if update_missing.rowcount == 0:
+                    session["dashboard_error"] = "Request already decided by another Senior user."
+                    return redirect(url_for("dashboard"))
                 notify_user(requester, f"Your request #{request_id} was rejected because device no longer exists.")
                 write_audit_log("request_rejected", requester, approver, device_name, {
                     "request_id": request_id,
@@ -2052,14 +2091,17 @@ def pending_requests_action() -> Any:
                 session["dashboard_error"] = "Device not found. Request rejected."
                 return redirect(url_for("dashboard"))
 
+            update_approved = conn.execute(
+                "UPDATE pending_device_requests SET status = 'approved', approver_username = ?, decided_at = ? WHERE id = ? AND status = 'pending'",
+                (approver, now, request_id),
+            )
+            if update_approved.rowcount == 0:
+                session["dashboard_error"] = "Request already decided by another Senior user."
+                return redirect(url_for("dashboard"))
             target["name"] = str(row["proposed_hostname"])
             target["host"] = proposed_ip
             target["groups"] = [str(g).strip() for g in proposed_categories if str(g).strip()]
             save_devices(devices)
-            conn.execute(
-                "UPDATE pending_device_requests SET status = 'approved', approver_username = ?, decided_at = ? WHERE id = ?",
-                (approver, now, request_id),
-            )
             notify_user(requester, f"Your request #{request_id} for device '{device_name}' was approved.")
             write_audit_log("request_approved", requester, approver, device_name, {
                 "request_id": request_id,
@@ -2071,10 +2113,13 @@ def pending_requests_action() -> Any:
             session["dashboard_info"] = f"Approved request #{request_id}."
             return redirect(url_for("dashboard"))
 
-        conn.execute(
-            "UPDATE pending_device_requests SET status = 'rejected', approver_username = ?, decided_at = ? WHERE id = ?",
+        update_rejected = conn.execute(
+            "UPDATE pending_device_requests SET status = 'rejected', approver_username = ?, decided_at = ? WHERE id = ? AND status = 'pending'",
             (approver, now, request_id),
         )
+        if update_rejected.rowcount == 0:
+            session["dashboard_error"] = "Request already decided by another Senior user."
+            return redirect(url_for("dashboard"))
         notify_user(requester, f"Your request #{request_id} for device '{device_name}' was rejected.")
         write_audit_log("request_rejected", requester, approver, device_name, {
             "request_id": request_id,
