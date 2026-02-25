@@ -35,7 +35,7 @@ A web-based network engineering app to authenticate users, select routers/switch
   - split view: Groups list on left and Devices list on right
   - drag-select one or more groups, then devices list updates
   - devices list shows 15 rows with scroll for larger inventories
-  - create category from GUI
+  - create category from GUI (requires super admin password confirmation)
   - Uncategorized category is protected and cannot be deleted (even by super admin)
   - Uncategorized always appears in the Groups list
   - add devices to category from GUI

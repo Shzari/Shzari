@@ -319,7 +319,13 @@
       const form = event.target;
       const actionInput = form.querySelector('input[name="action"]');
       const action = actionInput ? actionInput.value : 'save';
-      const actionLabel = action === 'add' ? 'save this device' : (action === 'edit' ? 'edit this device' : 'delete this device');
+      const actionLabelMap = {
+        add: 'save this device',
+        edit: 'edit this device',
+        delete: 'delete this device',
+        create_category: 'create this category',
+      };
+      const actionLabel = actionLabelMap[action] || 'submit this change';
 
       const modal = document.getElementById('superAdminPasswordModal');
       const title = document.getElementById('superAdminPasswordTitle');
@@ -526,7 +532,7 @@
         <button class="btn" type="submit">Save Device</button>
       </form>
 
-      <form method="post" action="{{ url_for('manage_categories') }}" class="submenu-form">
+      <form method="post" action="{{ url_for('manage_categories') }}" class="submenu-form" onsubmit="return requireSuperAdminPassword(event)">
         <input type="hidden" name="action" value="create_category">
         <label>Create new category</label>
         <input name="category_name" type="text" placeholder="e.g., datacenter-switches">

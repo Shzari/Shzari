@@ -1675,6 +1675,11 @@ def manage_categories() -> Any:
     devices = load_devices()
 
     if action == "create_category":
+        admin_password = request.form.get("super_admin_password", "")
+        if not is_current_session_super_admin() and not is_super_admin_password(admin_password):
+            session["dashboard_error"] = "Creating categories requires valid super admin password."
+            return redirect(url_for("dashboard"))
+
         category_name = request.form.get("category_name", "").strip()
         if category_name:
             found = any(category_name in d.get("groups", []) for d in devices)
