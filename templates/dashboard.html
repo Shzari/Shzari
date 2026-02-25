@@ -356,6 +356,16 @@ ${entry.output}
       out.textContent = chunks.join('\n----------------------------------------\n');
     }
 
+    function clearActiveSessionOutput() {
+      if (!ACTIVE_RUN_SESSION || !RUN_SESSIONS[ACTIVE_RUN_SESSION]) {
+        setRunStatus('Select or create a device session first.', true);
+        return;
+      }
+      RUN_SESSIONS[ACTIVE_RUN_SESSION].entries = [];
+      renderRunOutput();
+      setRunStatus(`Output cleared for ${ACTIVE_RUN_SESSION}. Session is still active.`, false);
+    }
+
     function appendRunResults(payload) {
       const timestamp = payload.timestamp || new Date().toISOString();
       const command = payload.command || '';
@@ -722,6 +732,7 @@ ${entry.output}
         <div class="session-cli-input-row">
           <span class="session-cli-prompt">&gt;</span>
           <input id="sessionCommandInput" class="session-cli-input" type="text" placeholder="Type command in CLI and press Enter" onkeydown="handleSessionCommandKeydown(event)">
+          <button class="btn ghost session-clear-btn" type="button" onclick="clearActiveSessionOutput()">Clear</button>
         </div>
       </div>
     </div>

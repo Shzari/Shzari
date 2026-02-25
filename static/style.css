@@ -373,6 +373,12 @@ pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; white-
   padding: 0;
 }
 
+
+.session-clear-btn {
+  white-space: nowrap;
+  padding: 4px 10px;
+}
+
 .session-cli-input::placeholder {
   color: #60d394;
 }
