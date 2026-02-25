@@ -396,6 +396,20 @@
       }
     }
 
+    function openNotificationsModal() {
+      const modal = document.getElementById('notificationsModal');
+      if (modal && modal.showModal) {
+        modal.showModal();
+      }
+    }
+
+    function closeNotificationsModal() {
+      const modal = document.getElementById('notificationsModal');
+      if (modal && modal.close) {
+        modal.close();
+      }
+    }
+
     function openCommandSettingsModal() {
       const modal = document.getElementById('commandSettingsModal');
       if (modal && modal.showModal) {
@@ -917,6 +931,7 @@ ${entry.output}
 
   <div class="user-strip">
     <div class="chip center-chip"><span id="dashboardClock">--</span></div>
+    <button class="btn" type="button" onclick="openNotificationsModal()">🔔 Notifications ({{ unread_notifications_count }})</button>
     <button class="btn" type="button" onclick="openDeviceCredsModal()">Device Credentials</button>
     <div class="chip">👤 User: <b>{{ current_user or 'Unknown' }}</b></div>
     <div class="chip">🔐 Mode: <b>{{ auth_mode|upper }}</b></div>
@@ -1030,9 +1045,63 @@ ${entry.output}
     {% else %}
       <div class="muted-note">No pending requests.</div>
     {% endif %}
+
+    <h4>Processed Requests</h4>
+    <div class="action-row">
+      <form method="post" action="{{ url_for('pending_requests_cleanup') }}">
+        <input type="hidden" name="action" value="delete_all_closed">
+        <button class="btn ghost" type="submit">Delete All Processed</button>
+      </form>
+    </div>
+    {% if closed_requests %}
+      {% for req in closed_requests %}
+        <div class="submenu-form" style="margin-bottom:10px;">
+          <div><b>#{{ req.id }}</b> {{ req.requester_username }} - <b>{{ req.device_name }}</b> ({{ req.status|upper }})</div>
+          <div>IP: {{ req.original_ip }} → {{ req.proposed_ip }}</div>
+          <div class="action-row">
+            <form method="post" action="{{ url_for('pending_requests_cleanup') }}">
+              <input type="hidden" name="action" value="delete_one">
+              <input type="hidden" name="request_id" value="{{ req.id }}">
+              <button class="btn ghost" type="submit">Delete</button>
+            </form>
+          </div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="muted-note">No processed requests.</div>
+    {% endif %}
   </div>
   {% endif %}
 
+  <dialog id="notificationsModal" class="device-modal">
+    <div class="command-settings-body">
+      <div class="modal-title-row">
+        <h3>Notifications</h3>
+        <button class="btn ghost modal-close-top" type="button" onclick="closeNotificationsModal()">Close</button>
+      </div>
+      <div class="action-row">
+        <form method="post" action="{{ url_for('mark_notifications_read_route') }}">
+          <button class="btn" type="submit">Mark All Read</button>
+        </form>
+      </div>
+      {% if unread_notifications %}
+        {% for item in unread_notifications %}
+          <div class="submenu-form" style="margin-bottom:10px;">
+            <div><b>{{ item.created_at }}</b></div>
+            <div>{{ item.message }}</div>
+            <div class="action-row">
+              <form method="post" action="{{ url_for('delete_notification_route') }}">
+                <input type="hidden" name="notification_id" value="{{ item.id }}">
+                <button class="btn ghost" type="submit">Delete</button>
+              </form>
+            </div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="muted-note">No unread notifications.</div>
+      {% endif %}
+    </div>
+  </dialog>
 
 
   <dialog id="deviceSettingsModal" class="device-modal">

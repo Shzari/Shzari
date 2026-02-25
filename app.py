@@ -766,19 +766,41 @@ def notify_user(username: str, message: str) -> None:
         )
 
 
-def pop_user_notifications(username: str) -> list[str]:
+def load_unread_notifications(username: str) -> list[dict[str, Any]]:
     target = str(username or "").strip()
     if not target:
         return []
     with db_conn() as conn:
         rows = conn.execute(
-            "SELECT id, message FROM user_notifications WHERE username = ? AND is_read = 0 ORDER BY id",
+            "SELECT id, message, created_at FROM user_notifications WHERE username = ? AND is_read = 0 ORDER BY id DESC",
             (target,),
         ).fetchall()
-        ids = [int(row["id"]) for row in rows]
-        if ids:
-            conn.executemany("UPDATE user_notifications SET is_read = 1 WHERE id = ?", [(item,) for item in ids])
-    return [str(row["message"]) for row in rows]
+    return [
+        {"id": int(row["id"]), "message": str(row["message"]), "created_at": str(row["created_at"])}
+        for row in rows
+    ]
+
+
+def mark_notifications_read(username: str, notification_ids: list[int] | None = None) -> None:
+    target = str(username or "").strip()
+    if not target:
+        return
+    with db_conn() as conn:
+        if notification_ids:
+            conn.executemany(
+                "UPDATE user_notifications SET is_read = 1 WHERE username = ? AND id = ?",
+                [(target, int(item)) for item in notification_ids],
+            )
+        else:
+            conn.execute("UPDATE user_notifications SET is_read = 1 WHERE username = ?", (target,))
+
+
+def delete_notification(username: str, notification_id: int) -> None:
+    target = str(username or "").strip()
+    if not target:
+        return
+    with db_conn() as conn:
+        conn.execute("DELETE FROM user_notifications WHERE username = ? AND id = ?", (target, int(notification_id)))
 
 
 def write_audit_log(action: str, requester: str, approver: str, device_name: str, details: dict[str, Any]) -> None:
@@ -822,11 +844,16 @@ def create_pending_device_request(*, requester_username: str, requester_role: st
         )
 
 
-def load_pending_device_requests() -> list[dict[str, Any]]:
+def load_pending_device_requests(status: str = "pending") -> list[dict[str, Any]]:
     with db_conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM pending_device_requests WHERE status = 'pending' ORDER BY id DESC"
-        ).fetchall()
+        if status == "all":
+            rows = conn.execute("SELECT * FROM pending_device_requests ORDER BY id DESC").fetchall()
+        elif status == "closed":
+            rows = conn.execute("SELECT * FROM pending_device_requests WHERE status IN ('approved','rejected') ORDER BY id DESC").fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM pending_device_requests WHERE status = 'pending' ORDER BY id DESC"
+            ).fetchall()
     pending: list[dict[str, Any]] = []
     for row in rows:
         try:
@@ -849,6 +876,7 @@ def load_pending_device_requests() -> list[dict[str, Any]]:
             "proposed_ip": str(row["proposed_ip"]),
             "proposed_categories": proposed_categories,
             "created_at": str(row["created_at"]),
+            "status": str(row["status"]),
         })
     return pending
 
@@ -1930,6 +1958,48 @@ def manage_users() -> Any:
     return redirect(url_for("ise_settings_page", modal="users"))
 
 
+@app.route("/notifications/read", methods=["POST"])
+def mark_notifications_read_route() -> Any:
+    if "creds" not in session:
+        return redirect(url_for("login"))
+    username = str(session.get("creds", {}).get("username", "")).strip()
+    mark_notifications_read(username)
+    session["dashboard_info"] = "Notifications marked as read."
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/notifications/delete", methods=["POST"])
+def delete_notification_route() -> Any:
+    if "creds" not in session:
+        return redirect(url_for("login"))
+    username = str(session.get("creds", {}).get("username", "")).strip()
+    notification_id = int(request.form.get("notification_id", "0") or 0)
+    if notification_id > 0:
+        delete_notification(username, notification_id)
+        session["dashboard_info"] = "Notification deleted."
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/pending-requests/cleanup", methods=["POST"])
+def pending_requests_cleanup() -> Any:
+    if "creds" not in session:
+        return redirect(url_for("login"))
+    if not is_senior_user():
+        session["dashboard_error"] = "Only Senior users can delete processed requests."
+        return redirect(url_for("dashboard"))
+
+    action = request.form.get("action", "").strip()
+    request_id = int(request.form.get("request_id", "0") or 0)
+    with db_conn() as conn:
+        if action == "delete_one" and request_id > 0:
+            conn.execute("DELETE FROM pending_device_requests WHERE id = ? AND status IN ('approved','rejected')", (request_id,))
+            session["dashboard_info"] = f"Processed request #{request_id} deleted."
+        elif action == "delete_all_closed":
+            conn.execute("DELETE FROM pending_device_requests WHERE status IN ('approved','rejected')")
+            session["dashboard_info"] = "All processed requests deleted."
+    return redirect(url_for("dashboard"))
+
+
 @app.route("/pending-requests", methods=["POST"])
 def pending_requests_action() -> Any:
     if "creds" not in session:
@@ -2043,11 +2113,9 @@ def dashboard() -> Any:
     info = session.pop("dashboard_info", "")
     error = session.pop("dashboard_error", "")
     role = current_user_role()
-    notices = pop_user_notifications(current_username)
-    if notices:
-        joined = " | ".join(notices)
-        info = f"{info} | {joined}".strip(" |")
+    unread_notifications = load_unread_notifications(current_username)
     pending_requests = load_pending_device_requests() if role == "senior" else []
+    closed_requests = load_pending_device_requests("closed") if role == "senior" else []
     return render_template(
         "dashboard.html",
         devices=devices,
@@ -2064,6 +2132,9 @@ def dashboard() -> Any:
         run_history=session.get("run_history", []),
         current_user_role=role,
         pending_requests=pending_requests,
+        closed_requests=closed_requests,
+        unread_notifications=unread_notifications,
+        unread_notifications_count=len(unread_notifications),
     )
 
 
