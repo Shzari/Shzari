@@ -933,9 +933,8 @@ ${entry.output}
     <div class="chip center-chip"><span id="dashboardClock">--</span></div>
     <button class="btn" type="button" onclick="openNotificationsModal()">🔔 Notifications ({{ unread_notifications_count }})</button>
     <button class="btn" type="button" onclick="openDeviceCredsModal()">Device Credentials</button>
-    <div class="chip">👤 User: <b>{{ current_user or 'Unknown' }}</b></div>
+    <div class="chip">👤 User: <b>{{ current_user or 'Unknown' }}/{{ current_user_role|upper }}</b></div>
     <div class="chip">🔐 Mode: <b>{{ auth_mode|upper }}</b></div>
-    <div class="chip">🛡️ Role: <b>{{ current_user_role|upper }}</b></div>
     <a class="logout-link" href="{{ url_for('logout') }}">Logout</a>
   </div>
 
