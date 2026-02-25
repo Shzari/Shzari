@@ -74,6 +74,41 @@
       options.forEach(option => { option.selected = false; });
     }
 
+
+    function openSshSessionsForSelectedDevices() {
+      const selected = Array.from(document.querySelectorAll('#deviceDragList option:checked')).map((item) => item.value);
+      if (!selected.length) {
+        setRunStatus('Select at least one device first.', true);
+        return;
+      }
+
+      let createdCount = 0;
+      selected.forEach((deviceName) => {
+        if (!RUN_SESSIONS[deviceName]) {
+          RUN_SESSIONS[deviceName] = { entries: [] };
+          createdCount += 1;
+        }
+        if (!SESSION_DRAFTS[deviceName]) {
+          SESSION_DRAFTS[deviceName] = '';
+        }
+      });
+
+      if (!ACTIVE_RUN_SESSION && selected.length) {
+        ACTIVE_RUN_SESSION = selected[0];
+      }
+      if (selected.length) {
+        ACTIVE_RUN_SESSION = selected[selected.length - 1];
+      }
+
+      renderRunTabs();
+      renderRunOutput();
+      if (createdCount > 0) {
+        setRunStatus(`SSH session ready for ${selected.length} device(s).`, false);
+      } else {
+        setRunStatus('SSH session already exists for selected device(s).', false);
+      }
+    }
+
     function resetInactivityDeadline() {
       inactivityDeadline = Date.now() + (SESSION_TIMEOUT_SECONDS * 1000);
     }
@@ -739,6 +774,7 @@ ${entry.output}
         <button class="btn" type="button" onclick="selectAllDevices()">Select All</button>
         <button class="btn ghost" type="button" onclick="clearDevices()">Clear</button>
         <button class="btn" type="button" onclick="pingSelectedDevices()">Ping</button>
+        <button class="btn" type="button" onclick="openSshSessionsForSelectedDevices()">SSH</button>
       </div>
 
       <div class="split-panel">
