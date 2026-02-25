@@ -339,6 +339,44 @@ pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; white-
   min-width: 280px;
 }
 
+
+.session-cli-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.session-cli-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #000;
+  border: 1px solid #1f2937;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.session-cli-prompt {
+  color: #00ff66;
+  font-family: monospace;
+  font-weight: 700;
+}
+
+.session-cli-input {
+  border: 0;
+  background: transparent;
+  color: #00ff66;
+  font-family: monospace;
+  width: 100%;
+  outline: none;
+  box-shadow: none;
+  padding: 0;
+}
+
+.session-cli-input::placeholder {
+  color: #60d394;
+}
+
 .ping-output-modal {
   max-width: 700px;
 }

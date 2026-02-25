@@ -411,26 +411,19 @@ ${entry.output}
       return false;
     }
 
-    async function handleSessionCommandSubmit(event) {
-      event.preventDefault();
-      const form = document.getElementById('sessionCommandForm');
-      const input = document.getElementById('sessionCommandInput');
-      if (!form || !input) return false;
-
+    async function sendSessionCommand(command) {
+      const cmd = (command || '').trim();
       if (!ACTIVE_RUN_SESSION) {
         setRunStatus('Select or create a device session first.', true);
         return false;
       }
-
-      const command = input.value.trim();
-      if (!command) {
-        setRunStatus('Type a command for this device session.', true);
+      if (!cmd) {
         return false;
       }
 
       const formData = new FormData();
       formData.append('device_name', ACTIVE_RUN_SESSION);
-      formData.append('command', command);
+      formData.append('command', cmd);
 
       setRunStatus(`Running command on ${ACTIVE_RUN_SESSION} ...`, false);
       try {
@@ -444,12 +437,26 @@ ${entry.output}
           return false;
         }
         appendRunResults(payload);
-        input.value = '';
         setRunStatus(`Command completed on ${ACTIVE_RUN_SESSION}.`, false);
+        return true;
       } catch (error) {
         setRunStatus(`Run request failed: ${error}`, true);
+        return false;
       }
-      return false;
+    }
+
+    async function handleSessionCommandKeydown(event) {
+      if (event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) {
+        return;
+      }
+      event.preventDefault();
+      const input = event.target;
+      if (!input) return;
+      const command = input.value || '';
+      const sent = await sendSessionCommand(command);
+      if (sent) {
+        input.value = '';
+      }
     }
 
     async function pingSelectedDevices() {
@@ -709,14 +716,14 @@ ${entry.output}
       </div>
       <div id="runStatusMessage" class="info" style="display:none;"></div>
       <div id="runSessionTabs" class="mode-tabs"></div>
-      <form id="sessionCommandForm" class="submenu-form" onsubmit="return handleSessionCommandSubmit(event)">
+      <div class="session-cli-wrap">
         <label>Active session device: <b id="activeSessionDeviceLabel">No session selected</b></label>
-        <textarea id="sessionCommandInput" rows="3" placeholder="Type command for this device session and press Send"></textarea>
-        <div class="action-row">
-          <button class="btn" type="submit">Send to Session</button>
+        <pre id="runSessionOutput" class="ping-output-screen" style="max-height: 320px; overflow:auto;"></pre>
+        <div class="session-cli-input-row">
+          <span class="session-cli-prompt">&gt;</span>
+          <input id="sessionCommandInput" class="session-cli-input" type="text" placeholder="Type command in CLI and press Enter" onkeydown="handleSessionCommandKeydown(event)">
         </div>
-      </form>
-      <pre id="runSessionOutput" class="ping-output-screen" style="max-height: 320px; overflow:auto;"></pre>
+      </div>
     </div>
   </div>
 
