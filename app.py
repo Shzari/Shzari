@@ -127,8 +127,10 @@ def is_valid_ipv4(value: str) -> bool:
 
 
 def db_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(DB_FILE, timeout=10)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 10000")
+    conn.execute("PRAGMA journal_mode = WAL")
     return conn
 
 
@@ -980,23 +982,30 @@ def load_devices() -> list[dict[str, Any]]:
     return devices
 
 
-def save_devices(devices: list[dict[str, Any]]) -> None:
-    with db_conn() as conn:
-        conn.execute("DELETE FROM device_groups")
-        conn.execute("DELETE FROM devices")
+def save_devices(devices: list[dict[str, Any]], conn: sqlite3.Connection | None = None) -> None:
+    def _save(target_conn: sqlite3.Connection) -> None:
+        target_conn.execute("DELETE FROM device_groups")
+        target_conn.execute("DELETE FROM devices")
         for device in devices:
             hostname = str(device.get("name", device.get("hostname", ""))).strip()
             ip_address = str(device.get("host", device.get("ip_address", ""))).strip()
             if not hostname or not ip_address:
                 continue
-            conn.execute("INSERT INTO devices(hostname, ip_address) VALUES (?, ?)", (hostname, ip_address))
+            target_conn.execute("INSERT INTO devices(hostname, ip_address) VALUES (?, ?)", (hostname, ip_address))
             for group in device.get("groups", []):
                 group_name = str(group).strip()
                 if group_name:
-                    conn.execute(
+                    target_conn.execute(
                         "INSERT OR IGNORE INTO device_groups(hostname, group_name) VALUES (?, ?)",
                         (hostname, group_name),
                     )
+
+    if conn is None:
+        with db_conn() as own_conn:
+            _save(own_conn)
+        return
+
+    _save(conn)
 
 
 def grouped_devices(devices: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
@@ -2052,45 +2061,52 @@ def pending_requests_action() -> Any:
 
     with db_conn() as conn:
         row = conn.execute("SELECT * FROM pending_device_requests WHERE id = ? AND status = 'pending'", (request_id,)).fetchone()
-        if not row:
-            session["dashboard_error"] = "Request not found or already decided. A request can be approved/rejected only once."
-            return redirect(url_for("dashboard"))
+    if not row:
+        session["dashboard_error"] = "Request not found or already decided. A request can be approved/rejected only once."
+        return redirect(url_for("dashboard"))
 
-        requester = str(row["requester_username"])
-        device_name = str(row["device_name"])
-        original_ip = str(row["original_ip"])
-        proposed_ip = str(row["proposed_ip"])
-        try:
-            original_categories = json.loads(str(row["original_categories"] or "[]"))
-        except Exception:
-            original_categories = []
-        try:
-            proposed_categories = json.loads(str(row["proposed_categories"] or "[]"))
-        except Exception:
-            proposed_categories = []
+    requester = str(row["requester_username"])
+    device_name = str(row["device_name"])
+    original_ip = str(row["original_ip"])
+    proposed_ip = str(row["proposed_ip"])
+    try:
+        original_categories = json.loads(str(row["original_categories"] or "[]"))
+    except Exception:
+        original_categories = []
+    try:
+        proposed_categories = json.loads(str(row["proposed_categories"] or "[]"))
+    except Exception:
+        proposed_categories = []
 
-        approver = str(session.get("creds", {}).get("username", ""))
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    approver = str(session.get("creds", {}).get("username", ""))
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
-        if action == "approve":
-            devices = load_devices()
-            target = next((d for d in devices if str(d.get("name", "")).strip() == device_name), None)
-            if target is None:
+    if action == "approve":
+        devices = load_devices()
+        target = next((d for d in devices if str(d.get("name", "")).strip() == device_name), None)
+
+        if target is None:
+            with db_conn() as conn:
                 update_missing = conn.execute(
                     "UPDATE pending_device_requests SET status = 'rejected', approver_username = ?, decided_at = ? WHERE id = ? AND status = 'pending'",
                     (approver, now, request_id),
                 )
-                if update_missing.rowcount == 0:
-                    session["dashboard_error"] = "Request already decided by another Senior user."
-                    return redirect(url_for("dashboard"))
-                notify_user(requester, f"Your request #{request_id} was rejected because device no longer exists.")
-                write_audit_log("request_rejected", requester, approver, device_name, {
-                    "request_id": request_id,
-                    "reason": "device_missing",
-                })
-                session["dashboard_error"] = "Device not found. Request rejected."
+            if update_missing.rowcount == 0:
+                session["dashboard_error"] = "Request already decided by another Senior user."
                 return redirect(url_for("dashboard"))
+            notify_user(requester, f"Your request #{request_id} was rejected because device no longer exists.")
+            write_audit_log("request_rejected", requester, approver, device_name, {
+                "request_id": request_id,
+                "reason": "device_missing",
+            })
+            session["dashboard_error"] = "Device not found. Request rejected."
+            return redirect(url_for("dashboard"))
 
+        target["name"] = str(row["proposed_hostname"])
+        target["host"] = proposed_ip
+        target["groups"] = [str(g).strip() for g in proposed_categories if str(g).strip()]
+
+        with db_conn() as conn:
             update_approved = conn.execute(
                 "UPDATE pending_device_requests SET status = 'approved', approver_username = ?, decided_at = ? WHERE id = ? AND status = 'pending'",
                 (approver, now, request_id),
@@ -2098,36 +2114,44 @@ def pending_requests_action() -> Any:
             if update_approved.rowcount == 0:
                 session["dashboard_error"] = "Request already decided by another Senior user."
                 return redirect(url_for("dashboard"))
-            target["name"] = str(row["proposed_hostname"])
-            target["host"] = proposed_ip
-            target["groups"] = [str(g).strip() for g in proposed_categories if str(g).strip()]
-            save_devices(devices)
-            notify_user(requester, f"Your request #{request_id} for device '{device_name}' was approved. Requested IP: {original_ip} → {proposed_ip}; categories: {', '.join(original_categories) or '-'} → {', '.join(proposed_categories) or '-'}.")
-            write_audit_log("request_approved", requester, approver, device_name, {
-                "request_id": request_id,
-                "fields": {
-                    "ip": {"from": original_ip, "to": proposed_ip},
-                    "categories": {"from": original_categories, "to": proposed_categories},
-                },
-            })
-            session["dashboard_info"] = f"Approved request #{request_id}."
-            return redirect(url_for("dashboard"))
+            save_devices(devices, conn=conn)
 
-        update_rejected = conn.execute(
-            "UPDATE pending_device_requests SET status = 'rejected', approver_username = ?, decided_at = ? WHERE id = ? AND status = 'pending'",
-            (approver, now, request_id),
+        notify_user(
+            requester,
+            f"Your request #{request_id} for device '{device_name}' was approved. "
+            f"Requested IP: {original_ip} → {proposed_ip}; categories: {', '.join(original_categories) or '-'} → {', '.join(proposed_categories) or '-'}.",
         )
-        if update_rejected.rowcount == 0:
-            session["dashboard_error"] = "Request already decided by another Senior user."
-            return redirect(url_for("dashboard"))
-        notify_user(requester, f"Your request #{request_id} for device '{device_name}' was rejected. Requested IP: {original_ip} → {proposed_ip}; categories: {', '.join(original_categories) or '-'} → {', '.join(proposed_categories) or '-'}.")
-        write_audit_log("request_rejected", requester, approver, device_name, {
+        write_audit_log("request_approved", requester, approver, device_name, {
             "request_id": request_id,
             "fields": {
                 "ip": {"from": original_ip, "to": proposed_ip},
                 "categories": {"from": original_categories, "to": proposed_categories},
             },
         })
+        session["dashboard_info"] = f"Approved request #{request_id}."
+        return redirect(url_for("dashboard"))
+
+    with db_conn() as conn:
+        update_rejected = conn.execute(
+            "UPDATE pending_device_requests SET status = 'rejected', approver_username = ?, decided_at = ? WHERE id = ? AND status = 'pending'",
+            (approver, now, request_id),
+        )
+    if update_rejected.rowcount == 0:
+        session["dashboard_error"] = "Request already decided by another Senior user."
+        return redirect(url_for("dashboard"))
+
+    notify_user(
+        requester,
+        f"Your request #{request_id} for device '{device_name}' was rejected. "
+        f"Requested IP: {original_ip} → {proposed_ip}; categories: {', '.join(original_categories) or '-'} → {', '.join(proposed_categories) or '-'}.",
+    )
+    write_audit_log("request_rejected", requester, approver, device_name, {
+        "request_id": request_id,
+        "fields": {
+            "ip": {"from": original_ip, "to": proposed_ip},
+            "categories": {"from": original_categories, "to": proposed_categories},
+        },
+    })
 
     session["dashboard_info"] = f"Rejected request #{request_id}."
     return redirect(url_for("dashboard"))
@@ -2160,8 +2184,6 @@ def dashboard() -> Any:
     role = current_user_role()
     unread_notifications = load_unread_notifications(current_username)
     pending_requests = load_pending_device_requests() if role == "senior" else []
-    closed_requests = load_pending_device_requests("closed") if role == "senior" else []
-
     pending_request_ids: set[int] = set()
     if role == "senior":
         pending_request_ids = {int(item.get("id", 0)) for item in pending_requests}
@@ -2193,7 +2215,6 @@ def dashboard() -> Any:
         run_history=session.get("run_history", []),
         current_user_role=role,
         pending_requests=pending_requests,
-        closed_requests=closed_requests,
         unread_notifications=unread_notifications,
         unread_notifications_count=len(unread_notifications),
     )
