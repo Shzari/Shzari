@@ -758,7 +758,7 @@ def is_senior_user() -> bool:
 
 
 def notify_user(username: str, message: str) -> None:
-    target = str(username or "").strip()
+    target = str(username or "").strip().lower()
     if not target or not message:
         return
     with db_conn() as conn:
@@ -795,13 +795,23 @@ def notify_seniors_new_pending_request(request_id: int, requester_username: str,
         notify_user(senior_username, message)
 
 
+def clear_senior_pending_request_notifications(request_id: int) -> None:
+    if request_id <= 0:
+        return
+    with db_conn() as conn:
+        conn.execute(
+            "DELETE FROM user_notifications WHERE message LIKE ?",
+            (f"%pending request #{int(request_id)}%",),
+        )
+
+
 def load_unread_notifications(username: str) -> list[dict[str, Any]]:
-    target = str(username or "").strip()
+    target = str(username or "").strip().lower()
     if not target:
         return []
     with db_conn() as conn:
         rows = conn.execute(
-            "SELECT id, message, created_at FROM user_notifications WHERE username = ? AND is_read = 0 ORDER BY id DESC",
+            "SELECT id, message, created_at FROM user_notifications WHERE lower(username) = lower(?) AND is_read = 0 ORDER BY id DESC",
             (target,),
         ).fetchall()
     return [
@@ -811,25 +821,25 @@ def load_unread_notifications(username: str) -> list[dict[str, Any]]:
 
 
 def mark_notifications_read(username: str, notification_ids: list[int] | None = None) -> None:
-    target = str(username or "").strip()
+    target = str(username or "").strip().lower()
     if not target:
         return
     with db_conn() as conn:
         if notification_ids:
             conn.executemany(
-                "UPDATE user_notifications SET is_read = 1 WHERE username = ? AND id = ?",
+                "UPDATE user_notifications SET is_read = 1 WHERE lower(username) = lower(?) AND id = ?",
                 [(target, int(item)) for item in notification_ids],
             )
         else:
-            conn.execute("UPDATE user_notifications SET is_read = 1 WHERE username = ?", (target,))
+            conn.execute("UPDATE user_notifications SET is_read = 1 WHERE lower(username) = lower(?)", (target,))
 
 
 def delete_notification(username: str, notification_id: int) -> None:
-    target = str(username or "").strip()
+    target = str(username or "").strip().lower()
     if not target:
         return
     with db_conn() as conn:
-        conn.execute("DELETE FROM user_notifications WHERE username = ? AND id = ?", (target, int(notification_id)))
+        conn.execute("DELETE FROM user_notifications WHERE lower(username) = lower(?) AND id = ?", (target, int(notification_id)))
 
 
 def write_audit_log(action: str, requester: str, approver: str, device_name: str, details: dict[str, Any]) -> None:
@@ -2128,6 +2138,7 @@ def pending_requests_action() -> Any:
                 "categories": {"from": original_categories, "to": proposed_categories},
             },
         })
+        clear_senior_pending_request_notifications(request_id)
         session["dashboard_info"] = f"Approved request #{request_id}."
         return redirect(url_for("dashboard"))
 
@@ -2153,6 +2164,7 @@ def pending_requests_action() -> Any:
         },
     })
 
+    clear_senior_pending_request_notifications(request_id)
     session["dashboard_info"] = f"Rejected request #{request_id}."
     return redirect(url_for("dashboard"))
 
