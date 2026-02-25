@@ -55,8 +55,8 @@ A web-based network engineering app to authenticate users, select routers/switch
   - set ISE login/SSH username + password + enable password used by RUN device connections
   - device credentials are stored per logged-in account (each user must set their own)
 - Data/security storage:
-  - local users, devices, categories, and per-user device credentials are stored in SQLite (`app_data.db`)
-  - legacy `users.json` / `devices_web.json` / `device_credentials.json` are auto-migrated to DB on startup
+  - local users, super-admin credential, ISE settings/keys, devices, categories, and per-user device credentials are stored in SQLite (`app_data.db`)
+  - legacy `users.json` / `super_admin.json` / `ise_settings.json` / `devices_web.json` / `device_credentials.json` are auto-migrated to DB on startup
   - sensitive saved secrets (ISE shared secrets and stored device passwords) are encrypted before writing to disk
 - Command workflow:
   - two in-panel modes: Show Commands and Config Commands (no popup)
@@ -88,5 +88,5 @@ python3 app.py
 
 ## Security Notes
 - Set `APP_SECRET_KEY`.
-- Protect `super_admin.json` and `ise_settings.json` permissions.
+- Protect `app_data.db` permissions (plus any legacy JSON files kept for migration history).
 - Use HTTPS/reverse-proxy in production.

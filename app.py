@@ -152,6 +152,31 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS super_admin (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                username TEXT NOT NULL DEFAULT '',
+                salt TEXT NOT NULL DEFAULT '',
+                password_hash TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ise_settings (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                primary_server TEXT NOT NULL DEFAULT '',
+                primary_port INTEGER NOT NULL DEFAULT 1812,
+                primary_shared_secret TEXT NOT NULL DEFAULT '',
+                secondary_server TEXT NOT NULL DEFAULT '',
+                secondary_port INTEGER NOT NULL DEFAULT 1812,
+                secondary_shared_secret TEXT NOT NULL DEFAULT '',
+                timeout INTEGER NOT NULL DEFAULT 5,
+                nas_ip TEXT NOT NULL DEFAULT '127.0.0.1'
+            )
+            """
+        )
     migrate_legacy_json_to_db()
 
 
@@ -228,30 +253,78 @@ def migrate_legacy_json_to_db() -> None:
                         ),
                     )
 
+        super_admin_count = conn.execute("SELECT COUNT(*) FROM super_admin").fetchone()[0]
+        if super_admin_count == 0 and SUPER_ADMIN_FILE.exists():
+            try:
+                data = json.loads(SUPER_ADMIN_FILE.read_text(encoding="utf-8"))
+            except Exception:
+                data = {}
+            if isinstance(data, dict):
+                username = str(data.get("username", "")).strip()
+                salt = str(data.get("salt", ""))
+                password_hash = str(data.get("password_hash", ""))
+                if username and salt and password_hash:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO super_admin(id, username, salt, password_hash) VALUES (1, ?, ?, ?)",
+                        (username, salt, password_hash),
+                    )
+
+        ise_count = conn.execute("SELECT COUNT(*) FROM ise_settings").fetchone()[0]
+        if ise_count == 0 and ISE_SETTINGS_FILE.exists():
+            try:
+                data = json.loads(ISE_SETTINGS_FILE.read_text(encoding="utf-8"))
+            except Exception:
+                data = {}
+            if isinstance(data, dict):
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO ise_settings(
+                        id, primary_server, primary_port, primary_shared_secret,
+                        secondary_server, secondary_port, secondary_shared_secret,
+                        timeout, nas_ip
+                    ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        str(data.get("primary_server", "")).strip(),
+                        int(data.get("primary_port", 1812) or 1812),
+                        encrypt_secret(decrypt_secret(str(data.get("primary_shared_secret", "")))),
+                        str(data.get("secondary_server", "")).strip(),
+                        int(data.get("secondary_port", 1812) or 1812),
+                        encrypt_secret(decrypt_secret(str(data.get("secondary_shared_secret", "")))),
+                        int(data.get("timeout", 5) or 5),
+                        str(data.get("nas_ip", "127.0.0.1")).strip(),
+                    ),
+                )
+
 
 init_db()
 
 
 def super_admin_exists() -> bool:
-    return SUPER_ADMIN_FILE.exists()
+    with db_conn() as conn:
+        row = conn.execute("SELECT username FROM super_admin WHERE id = 1").fetchone()
+    return bool(row and str(row["username"]).strip())
 
 
 def load_super_admin() -> dict[str, Any]:
-    if not SUPER_ADMIN_FILE.exists():
+    with db_conn() as conn:
+        row = conn.execute("SELECT username, salt, password_hash FROM super_admin WHERE id = 1").fetchone()
+    if not row:
         return {}
-    with SUPER_ADMIN_FILE.open("r", encoding="utf-8") as f:
-        return json.load(f)
+    return {
+        "username": str(row["username"] or "").strip(),
+        "salt": str(row["salt"] or ""),
+        "password_hash": str(row["password_hash"] or ""),
+    }
 
 
 def save_super_admin(username: str, password: str) -> None:
     salt = secrets.token_hex(16)
-    payload = {
-        "username": username.strip(),
-        "salt": salt,
-        "password_hash": _hash_password(password, salt),
-    }
-    with SUPER_ADMIN_FILE.open("w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2)
+    with db_conn() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO super_admin(id, username, salt, password_hash) VALUES (1, ?, ?, ?)",
+            (username.strip(), salt, _hash_password(password, salt)),
+        )
 
 
 def verify_super_admin(username: str, password: str) -> bool:
@@ -793,30 +866,54 @@ def default_ise_settings() -> dict[str, Any]:
 
 
 def load_ise_settings() -> dict[str, Any]:
-    if not ISE_SETTINGS_FILE.exists():
-        return default_ise_settings()
-    with ISE_SETTINGS_FILE.open("r", encoding="utf-8") as f:
-        data = json.load(f)
     defaults = default_ise_settings()
-    defaults.update(data)
-    defaults["primary_shared_secret"] = decrypt_secret(defaults.get("primary_shared_secret", ""))
-    defaults["secondary_shared_secret"] = decrypt_secret(defaults.get("secondary_shared_secret", ""))
+    with db_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT primary_server, primary_port, primary_shared_secret,
+                   secondary_server, secondary_port, secondary_shared_secret,
+                   timeout, nas_ip
+            FROM ise_settings WHERE id = 1
+            """
+        ).fetchone()
+
+    if not row:
+        return defaults
+
+    defaults.update({
+        "primary_server": str(row["primary_server"] or "").strip(),
+        "primary_port": int(row["primary_port"] or 1812),
+        "primary_shared_secret": decrypt_secret(str(row["primary_shared_secret"] or "")),
+        "secondary_server": str(row["secondary_server"] or "").strip(),
+        "secondary_port": int(row["secondary_port"] or 1812),
+        "secondary_shared_secret": decrypt_secret(str(row["secondary_shared_secret"] or "")),
+        "timeout": int(row["timeout"] or 5),
+        "nas_ip": str(row["nas_ip"] or "127.0.0.1").strip(),
+    })
     return defaults
 
 
 def save_ise_settings(settings: dict[str, Any]) -> None:
-    payload = {
-        "primary_server": str(settings.get("primary_server", "")).strip(),
-        "primary_port": int(settings.get("primary_port", 1812) or 1812),
-        "primary_shared_secret": encrypt_secret(str(settings.get("primary_shared_secret", ""))),
-        "secondary_server": str(settings.get("secondary_server", "")).strip(),
-        "secondary_port": int(settings.get("secondary_port", 1812) or 1812),
-        "secondary_shared_secret": encrypt_secret(str(settings.get("secondary_shared_secret", ""))),
-        "timeout": int(settings.get("timeout", 5) or 5),
-        "nas_ip": str(settings.get("nas_ip", "127.0.0.1")).strip(),
-    }
-    with ISE_SETTINGS_FILE.open("w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2)
+    with db_conn() as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO ise_settings(
+                id, primary_server, primary_port, primary_shared_secret,
+                secondary_server, secondary_port, secondary_shared_secret,
+                timeout, nas_ip
+            ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(settings.get("primary_server", "")).strip(),
+                int(settings.get("primary_port", 1812) or 1812),
+                encrypt_secret(str(settings.get("primary_shared_secret", ""))),
+                str(settings.get("secondary_server", "")).strip(),
+                int(settings.get("secondary_port", 1812) or 1812),
+                encrypt_secret(str(settings.get("secondary_shared_secret", ""))),
+                int(settings.get("timeout", 5) or 5),
+                str(settings.get("nas_ip", "127.0.0.1")).strip(),
+            ),
+        )
 
 
 def _radius_attr(attr_type: int, value: bytes) -> bytes:
