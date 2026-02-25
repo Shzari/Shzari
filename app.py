@@ -1574,6 +1574,7 @@ def dashboard() -> Any:
         user_admin_permissions=sorted(user_admin_permissions(current_username, auth_mode)),
         selected_modal=request.args.get("modal", ""),
         session_timeout_seconds=max(60, int(load_session_settings().get("idle_timeout_minutes", 15)) * 60),
+        run_history=session.get("run_history", []),
     )
 
 
@@ -2045,6 +2046,54 @@ def run_commands_api() -> Any:
         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         "command": command,
         "results": [asdict(result) for result in results],
+    }
+    run_history = session.get("run_history", [])
+    run_history.append(run_entry)
+    session["run_history"] = run_history[-50:]
+
+    return jsonify({"ok": True, "timestamp": run_entry["timestamp"], "command": command, "results": run_entry["results"]})
+
+
+@app.route("/run-session-api", methods=["POST"])
+def run_session_command_api() -> Any:
+    if "creds" not in session:
+        return jsonify({"ok": False, "error": "Please login first."}), 401
+
+    device_name = request.form.get("device_name", "").strip()
+    command = request.form.get("command", "").strip()
+
+    if not device_name:
+        return jsonify({"ok": False, "error": "Select a device session first."}), 400
+
+    if not command:
+        return jsonify({"ok": False, "error": "Command is required."}), 400
+
+    all_devices = load_devices()
+    current_username = str(session.get("creds", {}).get("username", ""))
+    auth_mode = str(session.get("auth_mode", "local"))
+    devices = filter_devices_for_user(all_devices, current_username, auth_mode)
+    target_device = next((device for device in devices if str(device.get("name", "")).strip() == device_name), None)
+
+    if target_device is None:
+        return jsonify({"ok": False, "error": "Device session is not available for your account."}), 404
+
+    dashboard_creds = session.get("creds", {})
+    device_creds = session.get("device_creds", {})
+    creds = {
+        "username": str(device_creds.get("username", "")).strip() or str(dashboard_creds.get("username", "")).strip(),
+        "password": str(device_creds.get("password", "")) or str(dashboard_creds.get("password", "")),
+        "timeout": int(dashboard_creds.get("timeout", 8) or 8),
+        "enable_password": str(device_creds.get("enable_password", "")),
+    }
+
+    if not creds["username"] or not creds["password"]:
+        return jsonify({"ok": False, "error": "Set device SSH credentials first from the dashboard user-strip button."}), 400
+
+    result = execute_for_device(target_device, creds, command)
+    run_entry = {
+        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        "command": command,
+        "results": [asdict(result)],
     }
     run_history = session.get("run_history", [])
     run_history.append(run_entry)

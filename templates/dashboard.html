@@ -13,6 +13,7 @@
     const USER_ADMIN_PERMISSIONS = new Set({{ user_admin_permissions|tojson }});
     const SESSION_TIMEOUT_SECONDS = {{ session_timeout_seconds|tojson }};
     const SELECTED_MODAL = {{ selected_modal|tojson }};
+    const RUN_HISTORY_DATA = {{ run_history|tojson }};
     let inactivityDeadline = Date.now() + (SESSION_TIMEOUT_SECONDS * 1000);
 
     function renderGroups() {
@@ -268,6 +269,28 @@
     const RUN_SESSIONS = {};
     let ACTIVE_RUN_SESSION = '';
 
+    function hydrateRunSessionsFromHistory() {
+      if (!Array.isArray(RUN_HISTORY_DATA)) return;
+      RUN_HISTORY_DATA.forEach((entry) => {
+        const timestamp = entry.timestamp || new Date().toISOString();
+        const command = entry.command || '';
+        const results = Array.isArray(entry.results) ? entry.results : [];
+        results.forEach((result) => {
+          const deviceName = result.device || 'Unknown Device';
+          if (!RUN_SESSIONS[deviceName]) {
+            RUN_SESSIONS[deviceName] = { entries: [] };
+          }
+          RUN_SESSIONS[deviceName].entries.push({
+            timestamp,
+            command,
+            status: result.status || 'UNKNOWN',
+            output: result.output || '',
+          });
+          RUN_SESSIONS[deviceName].entries = RUN_SESSIONS[deviceName].entries.slice(-100);
+        });
+      });
+    }
+
     function setRunStatus(message, isError = false) {
       const box = document.getElementById('runStatusMessage');
       if (!box) return;
@@ -308,6 +331,11 @@
         };
         wrap.appendChild(btn);
       });
+
+      const activeLabel = document.getElementById('activeSessionDeviceLabel');
+      if (activeLabel) {
+        activeLabel.textContent = ACTIVE_RUN_SESSION || 'No session selected';
+      }
 
       renderRunOutput();
     }
@@ -377,6 +405,47 @@ ${entry.output}
         }
         appendRunResults(payload);
         setRunStatus(`Run completed for ${payload.results.length} device(s).`, false);
+      } catch (error) {
+        setRunStatus(`Run request failed: ${error}`, true);
+      }
+      return false;
+    }
+
+    async function handleSessionCommandSubmit(event) {
+      event.preventDefault();
+      const form = document.getElementById('sessionCommandForm');
+      const input = document.getElementById('sessionCommandInput');
+      if (!form || !input) return false;
+
+      if (!ACTIVE_RUN_SESSION) {
+        setRunStatus('Select or create a device session first.', true);
+        return false;
+      }
+
+      const command = input.value.trim();
+      if (!command) {
+        setRunStatus('Type a command for this device session.', true);
+        return false;
+      }
+
+      const formData = new FormData();
+      formData.append('device_name', ACTIVE_RUN_SESSION);
+      formData.append('command', command);
+
+      setRunStatus(`Running command on ${ACTIVE_RUN_SESSION} ...`, false);
+      try {
+        const response = await fetch("{{ url_for('run_session_command_api') }}", {
+          method: 'POST',
+          body: formData,
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) {
+          setRunStatus(payload.error || 'Run failed.', true);
+          return false;
+        }
+        appendRunResults(payload);
+        input.value = '';
+        setRunStatus(`Command completed on ${ACTIVE_RUN_SESSION}.`, false);
       } catch (error) {
         setRunStatus(`Run request failed: ${error}`, true);
       }
@@ -556,6 +625,9 @@ ${entry.output}
       if (editCommandSelector) {
         editCommandSelector.addEventListener('change', syncEditCommandField);
       }
+
+      hydrateRunSessionsFromHistory();
+      renderRunTabs();
     });
   </script>
 </head>
@@ -637,6 +709,13 @@ ${entry.output}
       </div>
       <div id="runStatusMessage" class="info" style="display:none;"></div>
       <div id="runSessionTabs" class="mode-tabs"></div>
+      <form id="sessionCommandForm" class="submenu-form" onsubmit="return handleSessionCommandSubmit(event)">
+        <label>Active session device: <b id="activeSessionDeviceLabel">No session selected</b></label>
+        <textarea id="sessionCommandInput" rows="3" placeholder="Type command for this device session and press Send"></textarea>
+        <div class="action-row">
+          <button class="btn" type="submit">Send to Session</button>
+        </div>
+      </form>
       <pre id="runSessionOutput" class="ping-output-screen" style="max-height: 320px; overflow:auto;"></pre>
     </div>
   </div>
