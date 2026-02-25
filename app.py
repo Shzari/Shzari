@@ -1156,8 +1156,8 @@ def default_buttons() -> list[dict[str, Any]]:
         {"id": "show-arp", "label": "Show ARP", "command": "show arp", "mode": "show", "categories": []},
         {"id": "show-cdp", "label": "CDP Neighbors", "command": "show cdp neighbors", "mode": "show", "categories": []},
         {"id": "show-route", "label": "IP Route", "command": "show ip route", "mode": "show", "categories": []},
-        {"id": "config-hostname", "label": "Set Hostname", "command": "configure terminal ; hostname NEW-HOSTNAME", "mode": "config", "categories": []},
-        {"id": "config-int-desc", "label": "Interface Description", "command": "configure terminal ; interface Gi0/1 ; description UPDATED_BY_TOOL", "mode": "config", "categories": []},
+        {"id": "config-hostname", "label": "Set Hostname", "command": "configure terminal\nhostname NEW-HOSTNAME", "mode": "config", "categories": []},
+        {"id": "config-int-desc", "label": "Interface Description", "command": "configure terminal\ninterface Gi0/1\ndescription UPDATED_BY_TOOL", "mode": "config", "categories": []},
         {"id": "config-save", "label": "Save Config", "command": "write memory", "mode": "config", "categories": []},
     ]
 
@@ -1185,6 +1185,8 @@ def normalize_buttons(raw_buttons: Any) -> list[dict[str, Any]]:
         if isinstance(categories_raw, list):
             categories = [str(cat).strip() for cat in categories_raw if str(cat).strip()]
 
+        if mode == "config":
+            command = normalize_config_command_text(command)
         normalized.append({
             "id": button_id,
             "label": label,
@@ -1540,8 +1542,20 @@ def _read_shell_output(channel: Any, timeout_seconds: int) -> str:
     return "".join(chunks).strip()
 
 
-def run_ssh_commands_shell(host: str, port: int, username: str, password: str, commands: list[str], timeout: int) -> tuple[str, str]:
+def run_config_commands(
+    host: str,
+    port: int,
+    username: str,
+    password: str,
+    command_text: str,
+    timeout: int,
+    enable_password: str = "",
+) -> tuple[str, str]:
     import paramiko
+
+    commands = split_cli_commands(command_text)
+    if not commands:
+        return "FAIL", "No command provided."
 
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -1558,17 +1572,36 @@ def run_ssh_commands_shell(host: str, port: int, username: str, password: str, c
             auth_timeout=timeout,
         )
         channel = client.invoke_shell(width=180, height=40)
-        time.sleep(0.2)
+        time.sleep(0.25)
         while channel.recv_ready():
             channel.recv(4096)
 
-        chunks: list[str] = []
+        output_parts: list[str] = []
+
+        channel.send("terminal length 0\n")
+        text = _read_shell_output(channel, timeout)
+        if text:
+            output_parts.append(text)
+
+        lower_cmds = [cmd.strip().lower() for cmd in commands]
+        if any(cmd.startswith(("configure terminal", "conf t", "interface ")) for cmd in lower_cmds):
+            channel.send("enable\n")
+            enable_prompt = _read_shell_output(channel, timeout)
+            if enable_prompt:
+                output_parts.append(enable_prompt)
+                if "password" in enable_prompt.lower() and enable_password:
+                    channel.send(enable_password + "\n")
+                    post_enable = _read_shell_output(channel, timeout)
+                    if post_enable:
+                        output_parts.append(post_enable)
+
         for cmd in commands:
             channel.send(cmd + "\n")
-            output = _read_shell_output(channel, timeout)
-            if output:
-                chunks.append(output)
-        return "PASS", "\n".join(chunks).strip() or "(no output)"
+            text = _read_shell_output(channel, timeout)
+            if text:
+                output_parts.append(text)
+
+        return "PASS", "\n".join(output_parts).strip() or "(no output)"
     except Exception as exc:
         return "FAIL", str(exc)
     finally:
@@ -1578,13 +1611,30 @@ def run_ssh_commands_shell(host: str, port: int, username: str, password: str, c
             pass
 
 
-def run_ssh_command(host: str, port: int, username: str, password: str, command: str, timeout: int, command_mode: str = "show") -> tuple[str, str]:
+def run_ssh_command(
+    host: str,
+    port: int,
+    username: str,
+    password: str,
+    command: str,
+    timeout: int,
+    command_mode: str = "show",
+    enable_password: str = "",
+) -> tuple[str, str]:
     import paramiko
 
     commands = split_cli_commands(command)
     mode = str(command_mode or "show").strip().lower()
-    if mode == "config" or len(commands) > 1:
-        return run_ssh_commands_shell(host, port, username, password, commands, timeout)
+    if mode == "config":
+        return run_config_commands(
+            host=host,
+            port=port,
+            username=username,
+            password=password,
+            command_text=command,
+            timeout=timeout,
+            enable_password=enable_password,
+        )
 
     if not commands:
         return "FAIL", "No command provided."
@@ -1623,6 +1673,7 @@ def execute_for_device(device: dict[str, Any], creds: dict[str, Any], command: s
         command=command,
         timeout=int(creds.get("timeout", 8)),
         command_mode=command_mode,
+        enable_password=str(creds.get("enable_password", "")),
     )
     return SSHResult(device=device["name"], host=device["host"], status=status, output=output)
 
