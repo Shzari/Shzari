@@ -879,13 +879,13 @@ def validate_local_user(username: str, password: str) -> tuple[bool, str, str]:
     return True, "", user_role
 
 
-def upsert_user(username: str) -> tuple[bool, str]:
+def upsert_user(username: str, role: str = "junior") -> tuple[bool, str]:
     users = load_users()
     if find_user(users, username) is not None:
         return False, "User already exists."
     users.append({
         "username": username.strip(),
-        "role": "junior",
+        "role": normalize_role(role),
         "salt": "",
         "password_hash": "",
         "must_change_password": True,
@@ -1854,14 +1854,15 @@ def manage_users() -> Any:
 
     if action == "create":
         username = request.form.get("new_username", "").strip()
+        create_role = normalize_role(request.form.get("create_role", "junior"))
         if not username:
             session["settings_error"] = "Username is required to create user."
         elif load_super_admin().get("username", "").strip().lower() == username.lower():
             session["settings_error"] = "This username is reserved for super admin."
         else:
-            ok, message = upsert_user(username)
+            ok, message = upsert_user(username, create_role)
             if ok:
-                session["settings_info"] = message
+                session["settings_info"] = f"{message} Role set to '{create_role}'."
             else:
                 session["settings_error"] = message
 
