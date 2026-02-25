@@ -1,0 +1,13 @@
+[
+  {
+    "name": "localhost",
+    "host": "127.0.0.1",
+    "dns_name": "localhost",
+    "ports": [22, 80, 443]
+  },
+  {
+    "name": "dns-google",
+    "host": "8.8.8.8",
+    "ports": [53]
+  }
+]

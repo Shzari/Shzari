@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Network Tool - Login</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="page-bg"></div>
+  <div class="card narrow glass">
+    <h1>Network Automation Login</h1>
+    <p>Authenticate with local credentials or Cisco ISE (RADIUS).</p>
+
+    <div class="action-row">
+      <a class="btn" href="{{ url_for('verify_super_admin_route') }}">Settings (Super Admin)</a>
+    </div>
+    {% if info %}<div class="info">{{ info }}</div>{% endif %}
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+    <form method="post" id="loginForm">
+      <label>Auth Mode</label>
+      <select name="auth_mode">
+        <option value="local">Local Device Login</option>
+        <option value="ise">ISE Credentials (RADIUS)</option>
+      </select>
+
+      <label>Username</label>
+      <input id="loginUsername" name="username" type="text" required>
+
+      <label>Password</label>
+      <input name="password" type="password" placeholder="Leave blank only for first-time local user setup">
+
+      <label>SSH Timeout (seconds)</label>
+      <input name="timeout" type="number" value="8" min="3" max="30">
+
+      <button class="btn run" type="submit">Login</button>
+    </form>
+  </div>
+  <script>
+    const LAST_USERNAME_KEY = "nettool_last_username";
+
+    window.addEventListener("DOMContentLoaded", () => {
+      const usernameInput = document.getElementById("loginUsername");
+      const form = document.getElementById("loginForm");
+      if (!usernameInput || !form) return;
+
+      const remembered = localStorage.getItem(LAST_USERNAME_KEY) || "";
+      if (remembered && !usernameInput.value) {
+        usernameInput.value = remembered;
+      }
+
+      form.addEventListener("submit", () => {
+        const value = usernameInput.value.trim();
+        if (value) localStorage.setItem(LAST_USERNAME_KEY, value);
+      });
+    });
+  </script>
+</body>
+</html>
