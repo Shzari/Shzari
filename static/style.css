@@ -209,6 +209,23 @@ pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; white-
 }
 
 
+
+.modal-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.modal-title-row h3 {
+  margin: 0;
+}
+
+.modal-close-top {
+  padding: 6px 12px;
+}
+
 .mode-tabs {
   display: flex;
   gap: 8px;

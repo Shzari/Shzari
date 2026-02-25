@@ -725,7 +725,10 @@ ${entry.output}
 
   <dialog id="deviceSettingsModal" class="device-modal">
     <div class="command-settings-body">
-      <h3>Device & Category Settings</h3>
+      <div class="modal-title-row">
+        <h3>Device & Category Settings</h3>
+        <button class="btn ghost modal-close-top" type="button" onclick="closeDeviceSettingsModal()">Close</button>
+      </div>
 
       <form method="post" action="{{ url_for('manage_devices') }}" class="submenu-form" onsubmit="return requireSuperAdminPassword(event)">
         <input type="hidden" name="action" value="add">
@@ -813,9 +816,6 @@ ${entry.output}
         <button class="btn ghost" type="submit">Delete Device</button>
       </form>
 
-      <div class="action-row">
-        <button class="btn ghost" type="button" onclick="closeDeviceSettingsModal()">Close</button>
-      </div>
     </div>
   </dialog>
 
@@ -845,7 +845,10 @@ ${entry.output}
 
   <dialog id="commandSettingsModal" class="device-modal">
     <div class="command-settings-body">
-      <h3>Command Button Settings</h3>
+      <div class="modal-title-row">
+        <h3>Command Button Settings</h3>
+        <button class="btn ghost modal-close-top" type="button" onclick="closeCommandSettingsModal()">Close</button>
+      </div>
       <p>Add, rename, delete, and edit command buttons by mode.</p>
 
       <form method="post" action="{{ url_for('buttons_menu') }}" class="submenu-form">
@@ -909,9 +912,6 @@ show ip interface brief"></textarea>
         <button class="btn ghost" type="submit">Clear Output History</button>
       </form>
 
-      <div class="action-row">
-        <button class="btn ghost" type="button" onclick="closeCommandSettingsModal()">Close</button>
-      </div>
     </div>
   </dialog>
 
