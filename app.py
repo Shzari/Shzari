@@ -1213,20 +1213,18 @@ def run_runtime_device_command(runtime_id: str, device: dict[str, Any], creds: d
         return "FAIL", "SSH channel is not available."
 
     try:
-        channel.send(command + "\n")
         timeout = max(2, int(creds.get("timeout", 8)))
-        end_at = time.time() + timeout
+        commands = split_cli_commands(command)
+        if not commands:
+            return "FAIL", "No command provided."
         output_parts: list[str] = []
-        while time.time() < end_at:
-            time.sleep(0.15)
-            any_data = False
-            while channel.recv_ready():
-                any_data = True
-                output_parts.append(channel.recv(4096).decode("utf-8", errors="replace"))
-            if not any_data and output_parts:
-                break
-        text = "".join(output_parts).strip()
-        return "PASS", text or "(no output)"
+        for cmd in commands:
+            channel.send(cmd + "\n")
+            text = _read_shell_output(channel, timeout)
+            if text:
+                output_parts.append(text)
+        joined = "\n".join(output_parts).strip()
+        return "PASS", joined or "(no output)"
     except Exception as exc:
         with RUNTIME_SSH_LOCK:
             runtime_store = RUNTIME_SSH_SESSIONS.get(runtime_id, {})
@@ -1240,7 +1238,32 @@ def run_runtime_device_command(runtime_id: str, device: dict[str, Any], creds: d
         return "FAIL", str(exc)
 
 
-def run_ssh_command(host: str, port: int, username: str, password: str, command: str, timeout: int) -> tuple[str, str]:
+def split_cli_commands(command: str) -> list[str]:
+    text = str(command or "").replace("\r", "\n")
+    segments: list[str] = []
+    for line in text.split("\n"):
+        for part in line.split(";"):
+            candidate = part.strip()
+            if candidate:
+                segments.append(candidate)
+    return segments
+
+
+def _read_shell_output(channel: Any, timeout_seconds: int) -> str:
+    end_at = time.time() + max(2, timeout_seconds)
+    chunks: list[str] = []
+    while time.time() < end_at:
+        time.sleep(0.15)
+        got_data = False
+        while channel.recv_ready():
+            got_data = True
+            chunks.append(channel.recv(4096).decode("utf-8", errors="replace"))
+        if chunks and not got_data:
+            break
+    return "".join(chunks).strip()
+
+
+def run_ssh_commands_shell(host: str, port: int, username: str, password: str, commands: list[str], timeout: int) -> tuple[str, str]:
     import paramiko
 
     client = paramiko.SSHClient()
@@ -1257,7 +1280,53 @@ def run_ssh_command(host: str, port: int, username: str, password: str, command:
             banner_timeout=timeout,
             auth_timeout=timeout,
         )
-        _, stdout, stderr = client.exec_command(command, timeout=timeout)
+        channel = client.invoke_shell(width=180, height=40)
+        time.sleep(0.2)
+        while channel.recv_ready():
+            channel.recv(4096)
+
+        chunks: list[str] = []
+        for cmd in commands:
+            channel.send(cmd + "\n")
+            output = _read_shell_output(channel, timeout)
+            if output:
+                chunks.append(output)
+        return "PASS", "\n".join(chunks).strip() or "(no output)"
+    except Exception as exc:
+        return "FAIL", str(exc)
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
+
+
+def run_ssh_command(host: str, port: int, username: str, password: str, command: str, timeout: int, command_mode: str = "show") -> tuple[str, str]:
+    import paramiko
+
+    commands = split_cli_commands(command)
+    mode = str(command_mode or "show").strip().lower()
+    if mode == "config" or len(commands) > 1:
+        return run_ssh_commands_shell(host, port, username, password, commands, timeout)
+
+    if not commands:
+        return "FAIL", "No command provided."
+
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        client.connect(
+            hostname=host,
+            port=port,
+            username=username,
+            password=password,
+            look_for_keys=False,
+            allow_agent=False,
+            timeout=timeout,
+            banner_timeout=timeout,
+            auth_timeout=timeout,
+        )
+        _, stdout, stderr = client.exec_command(commands[0], timeout=timeout)
         out = stdout.read().decode("utf-8", errors="replace")
         err = stderr.read().decode("utf-8", errors="replace")
         text = out if out.strip() else err
@@ -1268,7 +1337,7 @@ def run_ssh_command(host: str, port: int, username: str, password: str, command:
         client.close()
 
 
-def execute_for_device(device: dict[str, Any], creds: dict[str, Any], command: str) -> SSHResult:
+def execute_for_device(device: dict[str, Any], creds: dict[str, Any], command: str, command_mode: str = "show") -> SSHResult:
     status, output = run_ssh_command(
         host=device["host"],
         port=int(device.get("port", 22)),
@@ -1276,6 +1345,7 @@ def execute_for_device(device: dict[str, Any], creds: dict[str, Any], command: s
         password=creds["password"],
         command=command,
         timeout=int(creds.get("timeout", 8)),
+        command_mode=command_mode,
     )
     return SSHResult(device=device["name"], host=device["host"], status=status, output=output)
 
@@ -2105,6 +2175,7 @@ def run_commands() -> Any:
     selected_names = request.form.getlist("selected_devices")
     manual_command = request.form.get("manual_command", "").strip()
     selected_command = request.form.get("selected_command", "").strip()
+    command_mode = str(request.form.get("command_mode", "show")).strip().lower() or "show"
 
     command = manual_command or selected_command
     if not command:
@@ -2133,7 +2204,7 @@ def run_commands() -> Any:
     results: list[SSHResult] = []
 
     with ThreadPoolExecutor(max_workers=min(20, max(1, len(selected_devices)))) as executor:
-        futures = [executor.submit(execute_for_device, device, creds, command) for device in selected_devices]
+        futures = [executor.submit(execute_for_device, device, creds, command, command_mode) for device in selected_devices]
         for future in as_completed(futures):
             results.append(future.result())
 
@@ -2163,6 +2234,7 @@ def run_commands_api() -> Any:
     selected_names = request.form.getlist("selected_devices")
     manual_command = request.form.get("manual_command", "").strip()
     selected_command = request.form.get("selected_command", "").strip()
+    command_mode = str(request.form.get("command_mode", "show")).strip().lower() or "show"
 
     command = manual_command or selected_command
     if not command:
@@ -2186,7 +2258,7 @@ def run_commands_api() -> Any:
 
     results: list[SSHResult] = []
     with ThreadPoolExecutor(max_workers=min(20, max(1, len(selected_devices)))) as executor:
-        futures = [executor.submit(execute_for_device, device, creds, command) for device in selected_devices]
+        futures = [executor.submit(execute_for_device, device, creds, command, command_mode) for device in selected_devices]
         for future in as_completed(futures):
             results.append(future.result())
 
