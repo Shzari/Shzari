@@ -932,6 +932,9 @@ ${entry.output}
   <div class="user-strip">
     <div class="chip center-chip"><span id="dashboardClock">--</span></div>
     <button class="btn" type="button" onclick="openNotificationsModal()">🔔 Notifications ({{ unread_notifications_count }})</button>
+    {% if current_user_role == 'senior' %}
+      <button class="btn" type="button" onclick="openNotificationsModal()">Pending Requests ({{ pending_requests|length }})</button>
+    {% endif %}
     <button class="btn" type="button" onclick="openDeviceCredsModal()">Device Credentials</button>
     <div class="chip">👤 User: <b>{{ current_user or 'Unknown' }}</b></div>
     <div class="chip">🔐 Mode: <b>{{ auth_mode|upper }}</b></div>
@@ -1023,6 +1026,38 @@ ${entry.output}
         <h3>Notifications</h3>
         <button class="btn ghost modal-close-top" type="button" onclick="closeNotificationsModal()">Close</button>
       </div>
+
+      {% if current_user_role == 'senior' %}
+        <div class="submenu-form" style="margin-bottom:14px;">
+          <h4>Pending Requests</h4>
+          {% if pending_requests %}
+            {% for req in pending_requests %}
+              <div class="submenu-form" style="margin-bottom:10px;">
+                <div><b>#{{ req.id }}</b> • {{ req.created_at }}</div>
+                <div>Requester: <b>{{ req.requester_username }}</b> ({{ req.requester_role|upper }})</div>
+                <div>Device: <b>{{ req.device_name }}</b></div>
+                <div>IP: {{ req.original_ip }} → {{ req.proposed_ip }}</div>
+                <div>Categories: {{ req.original_categories|join(', ') }} → {{ req.proposed_categories|join(', ') }}</div>
+                <div class="action-row">
+                  <form method="post" action="{{ url_for('pending_requests_action') }}">
+                    <input type="hidden" name="action" value="approve">
+                    <input type="hidden" name="request_id" value="{{ req.id }}">
+                    <button class="btn" type="submit">Approve</button>
+                  </form>
+                  <form method="post" action="{{ url_for('pending_requests_action') }}">
+                    <input type="hidden" name="action" value="reject">
+                    <input type="hidden" name="request_id" value="{{ req.id }}">
+                    <button class="btn ghost" type="submit">Reject</button>
+                  </form>
+                </div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="muted-note">No pending requests.</div>
+          {% endif %}
+        </div>
+      {% endif %}
+
       <div class="action-row">
         <form method="post" action="{{ url_for('mark_notifications_read_route') }}">
           <button class="btn" type="submit">Mark All Read</button>
@@ -1055,6 +1090,7 @@ ${entry.output}
         <button class="btn ghost modal-close-top" type="button" onclick="closeDeviceSettingsModal()">Close</button>
       </div>
 
+      {% if current_user_role == 'senior' %}
       <form method="post" action="{{ url_for('manage_devices') }}" class="submenu-form" onsubmit="return validateOnly(event, 'newDeviceIpAddress', 'newDeviceIpValidation', true)">
         <input type="hidden" name="action" value="add">
         <label>Hostname</label>
@@ -1081,6 +1117,11 @@ ${entry.output}
         <input name="category_name" type="text" placeholder="e.g., datacenter-switches">
         <button class="btn" type="submit">Create Category</button>
       </form>
+      {% else %}
+      <div class="submenu-form">
+        <div class="muted-note">Only Senior users can add devices and create categories.</div>
+      </div>
+      {% endif %}
 
       <form method="post" action="{{ url_for('manage_categories') }}" class="submenu-form" onsubmit="return true">
         <input type="hidden" name="action" value="assign_device">
