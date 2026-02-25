@@ -2000,6 +2000,59 @@ def run_commands() -> Any:
     return render_template("output.html", run_history=session.get("run_history", []), error="")
 
 
+@app.route("/run-api", methods=["POST"])
+def run_commands_api() -> Any:
+    if "creds" not in session:
+        return jsonify({"ok": False, "error": "Please login first."}), 401
+
+    all_devices = load_devices()
+    current_username = str(session.get("creds", {}).get("username", ""))
+    auth_mode = str(session.get("auth_mode", "local"))
+    devices = filter_devices_for_user(all_devices, current_username, auth_mode)
+    by_name = {device["name"]: device for device in devices}
+    selected_names = request.form.getlist("selected_devices")
+    manual_command = request.form.get("manual_command", "").strip()
+    selected_command = request.form.get("selected_command", "").strip()
+
+    command = manual_command or selected_command
+    if not command:
+        return jsonify({"ok": False, "error": "No command provided."}), 400
+
+    selected_devices = [by_name[name] for name in selected_names if name in by_name]
+    if not selected_devices:
+        return jsonify({"ok": False, "error": "No devices selected."}), 400
+
+    dashboard_creds = session.get("creds", {})
+    device_creds = session.get("device_creds", {})
+    creds = {
+        "username": str(device_creds.get("username", "")).strip() or str(dashboard_creds.get("username", "")).strip(),
+        "password": str(device_creds.get("password", "")) or str(dashboard_creds.get("password", "")),
+        "timeout": int(dashboard_creds.get("timeout", 8) or 8),
+        "enable_password": str(device_creds.get("enable_password", "")),
+    }
+
+    if not creds["username"] or not creds["password"]:
+        return jsonify({"ok": False, "error": "Set device SSH credentials first from the dashboard user-strip button."}), 400
+
+    results: list[SSHResult] = []
+    with ThreadPoolExecutor(max_workers=min(20, max(1, len(selected_devices)))) as executor:
+        futures = [executor.submit(execute_for_device, device, creds, command) for device in selected_devices]
+        for future in as_completed(futures):
+            results.append(future.result())
+
+    results.sort(key=lambda result: result.device)
+    run_entry = {
+        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        "command": command,
+        "results": [asdict(result) for result in results],
+    }
+    run_history = session.get("run_history", [])
+    run_history.append(run_entry)
+    session["run_history"] = run_history[-50:]
+
+    return jsonify({"ok": True, "timestamp": run_entry["timestamp"], "command": command, "results": run_entry["results"]})
+
+
 @app.context_processor
 def inject_common_context() -> dict[str, Any]:
     creds = session.get("creds", {})

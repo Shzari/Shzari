@@ -265,16 +265,124 @@
       return true;
     }
 
-    function handleRunSubmit() {
-      const form = document.getElementById('runForm');
-      const key = 'output_window_opened';
-      const targetName = 'network_output_window';
-      if (!sessionStorage.getItem(key)) {
-        window.open('', targetName);
-        sessionStorage.setItem(key, '1');
+    const RUN_SESSIONS = {};
+    let ACTIVE_RUN_SESSION = '';
+
+    function setRunStatus(message, isError = false) {
+      const box = document.getElementById('runStatusMessage');
+      if (!box) return;
+      box.textContent = message || '';
+      box.className = isError ? 'error' : 'info';
+      box.style.display = message ? 'block' : 'none';
+    }
+
+    function renderRunTabs() {
+      const wrap = document.getElementById('runSessionTabs');
+      if (!wrap) return;
+      wrap.innerHTML = '';
+
+      const names = Object.keys(RUN_SESSIONS).sort();
+      if (!names.length) {
+        const note = document.createElement('div');
+        note.className = 'muted-note';
+        note.textContent = 'No session yet. Run a command to create device sessions.';
+        wrap.appendChild(note);
+        const out = document.getElementById('runSessionOutput');
+        if (out) out.textContent = '';
+        return;
       }
-      form.target = targetName;
-      return true;
+
+      if (!ACTIVE_RUN_SESSION || !RUN_SESSIONS[ACTIVE_RUN_SESSION]) {
+        ACTIVE_RUN_SESSION = names[0];
+      }
+
+      names.forEach((name) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn' + (name === ACTIVE_RUN_SESSION ? ' active' : '');
+        btn.textContent = name;
+        btn.onclick = () => {
+          ACTIVE_RUN_SESSION = name;
+          renderRunTabs();
+          renderRunOutput();
+        };
+        wrap.appendChild(btn);
+      });
+
+      renderRunOutput();
+    }
+
+    function renderRunOutput() {
+      const out = document.getElementById('runSessionOutput');
+      if (!out) return;
+      const data = RUN_SESSIONS[ACTIVE_RUN_SESSION];
+      if (!data) {
+        out.textContent = '';
+        return;
+      }
+      const chunks = data.entries.map((entry) => {
+        return `[${entry.timestamp}] ${entry.status} | ${entry.command}
+${entry.output}
+`;
+      });
+      out.textContent = chunks.join('
+----------------------------------------
+');
+    }
+
+    function appendRunResults(payload) {
+      const timestamp = payload.timestamp || new Date().toISOString();
+      const command = payload.command || '';
+      const results = Array.isArray(payload.results) ? payload.results : [];
+
+      results.forEach((result) => {
+        const deviceName = result.device || 'Unknown Device';
+        if (!RUN_SESSIONS[deviceName]) {
+          RUN_SESSIONS[deviceName] = { entries: [] };
+        }
+        RUN_SESSIONS[deviceName].entries.push({
+          timestamp,
+          command,
+          status: result.status || 'UNKNOWN',
+          output: result.output || '',
+        });
+        RUN_SESSIONS[deviceName].entries = RUN_SESSIONS[deviceName].entries.slice(-100);
+      });
+
+      if (results.length && !ACTIVE_RUN_SESSION) {
+        ACTIVE_RUN_SESSION = results[0].device;
+      }
+
+      renderRunTabs();
+    }
+
+    async function handleRunSubmit(event) {
+      event.preventDefault();
+      const form = document.getElementById('runForm');
+      if (!form) return false;
+
+      const formData = new FormData(form);
+      const selected = Array.from(document.querySelectorAll('#deviceDragList option:checked')).map((item) => item.value);
+      formData.delete('selected_devices');
+      selected.forEach((name) => formData.append('selected_devices', name));
+
+      setRunStatus('Running command...', false);
+      try {
+        const response = await fetch("{{ url_for('run_commands_api') }}", {
+          method: 'POST',
+          body: formData,
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) {
+          setRunStatus(payload.error || 'Run failed.', true);
+          return false;
+        }
+        appendRunResults(payload);
+        setRunStatus(`Run completed for ${payload.results.length} device(s).`, false);
+      } catch (error) {
+        setRunStatus(`Run request failed: ${error}`, true);
+      }
+      return false;
     }
 
     async function pingSelectedDevices() {
@@ -501,7 +609,7 @@
         <h3>Commands</h3>
         <button class="icon-btn" type="button" onclick="openCommandSettingsModal()" title="Command Button Settings" aria-label="Command Button Settings">⚙️</button>
       </div>
-      <form method="post" action="{{ url_for('run_commands') }}" id="runForm" onsubmit="return handleRunSubmit()">
+      <form method="post" action="{{ url_for('run_commands') }}" id="runForm" onsubmit="return handleRunSubmit(event)">
         <div class="mode-tabs">
           <button class="btn" type="button" data-command-mode-tab="show" onclick="setCommandMode('show')">Show Commands</button>
           <button class="btn" type="button" data-command-mode-tab="config" onclick="setCommandMode('config')">Config Commands</button>
@@ -523,6 +631,15 @@
           <button class="btn run" type="submit">RUN</button>
         </div>
       </form>
+    </div>
+
+    <div class="card glass">
+      <div class="card-head">
+        <h3>Device Sessions</h3>
+      </div>
+      <div id="runStatusMessage" class="info" style="display:none;"></div>
+      <div id="runSessionTabs" class="mode-tabs"></div>
+      <pre id="runSessionOutput" class="ping-output-screen" style="max-height: 320px; overflow:auto;"></pre>
     </div>
   </div>
 

@@ -69,8 +69,8 @@ A web-based network engineering app to authenticate users, select routers/switch
   - add-button command and manual command support multiple lines
   - Ping button (in Devices panel) runs 5 ICMP probes for selected devices and shows CMD-style popup output (`!` success, `.` loss)
   - RUN button
-  - output window opens first run, then reuses
-  - output history appends down page
+  - output is shown inside dashboard Device Sessions panel (SecureCRT-like per-device tabs/sessions)
+  - same device reuses same session and appends new command output in that session
 
 ## First-Time Setup
 1. Start app.
