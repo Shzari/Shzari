@@ -1069,6 +1069,18 @@ ${entry.output}
             <div><b>{{ item.created_at }}</b></div>
             <div>{{ item.message }}</div>
             <div class="action-row">
+              {% if current_user_role == 'senior' and item.pending_request_actionable %}
+                <form method="post" action="{{ url_for('pending_requests_action') }}">
+                  <input type="hidden" name="action" value="approve">
+                  <input type="hidden" name="request_id" value="{{ item.pending_request_id }}">
+                  <button class="btn" type="submit">Approve</button>
+                </form>
+                <form method="post" action="{{ url_for('pending_requests_action') }}">
+                  <input type="hidden" name="action" value="reject">
+                  <input type="hidden" name="request_id" value="{{ item.pending_request_id }}">
+                  <button class="btn ghost" type="submit">Reject</button>
+                </form>
+              {% endif %}
               <form method="post" action="{{ url_for('delete_notification_route') }}">
                 <input type="hidden" name="notification_id" value="{{ item.id }}">
                 <button class="btn ghost" type="submit">Delete</button>

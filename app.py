@@ -2102,7 +2102,7 @@ def pending_requests_action() -> Any:
             target["host"] = proposed_ip
             target["groups"] = [str(g).strip() for g in proposed_categories if str(g).strip()]
             save_devices(devices)
-            notify_user(requester, f"Your request #{request_id} for device '{device_name}' was approved.")
+            notify_user(requester, f"Your request #{request_id} for device '{device_name}' was approved. Requested IP: {original_ip} → {proposed_ip}; categories: {', '.join(original_categories) or '-'} → {', '.join(proposed_categories) or '-'}.")
             write_audit_log("request_approved", requester, approver, device_name, {
                 "request_id": request_id,
                 "fields": {
@@ -2120,7 +2120,7 @@ def pending_requests_action() -> Any:
         if update_rejected.rowcount == 0:
             session["dashboard_error"] = "Request already decided by another Senior user."
             return redirect(url_for("dashboard"))
-        notify_user(requester, f"Your request #{request_id} for device '{device_name}' was rejected.")
+        notify_user(requester, f"Your request #{request_id} for device '{device_name}' was rejected. Requested IP: {original_ip} → {proposed_ip}; categories: {', '.join(original_categories) or '-'} → {', '.join(proposed_categories) or '-'}.")
         write_audit_log("request_rejected", requester, approver, device_name, {
             "request_id": request_id,
             "fields": {
@@ -2161,6 +2161,22 @@ def dashboard() -> Any:
     unread_notifications = load_unread_notifications(current_username)
     pending_requests = load_pending_device_requests() if role == "senior" else []
     closed_requests = load_pending_device_requests("closed") if role == "senior" else []
+
+    pending_request_ids: set[int] = set()
+    if role == "senior":
+        pending_request_ids = {int(item.get("id", 0)) for item in pending_requests}
+        for item in unread_notifications:
+            item["pending_request_id"] = 0
+            item["pending_request_actionable"] = False
+            msg = str(item.get("message", ""))
+            match = re.search(r"request\s*#(\d+)", msg, flags=re.IGNORECASE)
+            if not match:
+                continue
+            req_id = int(match.group(1) or 0)
+            if req_id <= 0:
+                continue
+            item["pending_request_id"] = req_id
+            item["pending_request_actionable"] = req_id in pending_request_ids
     return render_template(
         "dashboard.html",
         devices=devices,
