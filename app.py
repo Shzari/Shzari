@@ -203,6 +203,50 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pending_device_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                requester_username TEXT NOT NULL,
+                requester_role TEXT NOT NULL,
+                device_name TEXT NOT NULL,
+                original_hostname TEXT NOT NULL,
+                original_ip TEXT NOT NULL,
+                original_categories TEXT NOT NULL,
+                proposed_hostname TEXT NOT NULL,
+                proposed_ip TEXT NOT NULL,
+                proposed_categories TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                approver_username TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                decided_at TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                message TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                is_read INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                action TEXT NOT NULL,
+                requester TEXT NOT NULL,
+                approver TEXT NOT NULL,
+                device_name TEXT NOT NULL,
+                details_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
     migrate_legacy_json_to_db()
 
 
@@ -388,14 +432,14 @@ def load_users() -> list[dict[str, Any]]:
             admin_permissions = []
         user: dict[str, Any] = {
             "username": row["username"],
-            "role": row["role"],
+            "role": normalize_role(str(row["role"])),
             "salt": row["salt"],
             "password_hash": row["password_hash"],
             "must_change_password": bool(row["must_change_password"]),
             "allowed_categories": allowed_categories,
             "admin_permissions": admin_permissions,
         }
-        user.setdefault("role", "operator")
+        user["role"] = normalize_role(str(user.get("role", "junior")))
         user.setdefault("salt", "")
         user.setdefault("password_hash", "")
         user.setdefault("must_change_password", True)
@@ -416,7 +460,7 @@ def save_users(users: list[dict[str, Any]]) -> None:
                 """,
                 (
                     str(user.get("username", "")).strip(),
-                    str(user.get("role", "operator")),
+                    normalize_role(str(user.get("role", "junior"))),
                     str(user.get("salt", "")),
                     str(user.get("password_hash", "")),
                     1 if bool(user.get("must_change_password", True)) else 0,
@@ -685,6 +729,130 @@ def is_current_session_super_admin() -> bool:
     return bool(current_username and super_username and current_username == super_username)
 
 
+def normalize_role(role: str) -> str:
+    raw = str(role or "").strip().lower()
+    if raw in {"senior", "junior", "helpdesk"}:
+        return raw
+    if raw in {"super_admin", "admin"}:
+        return "senior"
+    return "junior"
+
+
+def current_user_role() -> str:
+    if is_current_session_super_admin():
+        return "senior"
+    if str(session.get("auth_mode", "local")) != "local":
+        return "junior"
+    username = str(session.get("creds", {}).get("username", "")).strip()
+    users = load_users()
+    user = find_user(users, username)
+    if not user:
+        return "junior"
+    return normalize_role(str(user.get("role", "junior")))
+
+
+def is_senior_user() -> bool:
+    return current_user_role() == "senior"
+
+
+def notify_user(username: str, message: str) -> None:
+    target = str(username or "").strip()
+    if not target or not message:
+        return
+    with db_conn() as conn:
+        conn.execute(
+            "INSERT INTO user_notifications(username, message, created_at, is_read) VALUES (?, ?, ?, 0)",
+            (target, str(message), datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")),
+        )
+
+
+def pop_user_notifications(username: str) -> list[str]:
+    target = str(username or "").strip()
+    if not target:
+        return []
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, message FROM user_notifications WHERE username = ? AND is_read = 0 ORDER BY id",
+            (target,),
+        ).fetchall()
+        ids = [int(row["id"]) for row in rows]
+        if ids:
+            conn.executemany("UPDATE user_notifications SET is_read = 1 WHERE id = ?", [(item,) for item in ids])
+    return [str(row["message"]) for row in rows]
+
+
+def write_audit_log(action: str, requester: str, approver: str, device_name: str, details: dict[str, Any]) -> None:
+    with db_conn() as conn:
+        conn.execute(
+            "INSERT INTO audit_logs(action, requester, approver, device_name, details_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                str(action),
+                str(requester or ""),
+                str(approver or ""),
+                str(device_name or ""),
+                json.dumps(details),
+                datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+            ),
+        )
+
+
+def create_pending_device_request(*, requester_username: str, requester_role: str, original_device: dict[str, Any], proposed_hostname: str, proposed_ip: str, proposed_categories: list[str]) -> None:
+    with db_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO pending_device_requests(
+                requester_username, requester_role, device_name,
+                original_hostname, original_ip, original_categories,
+                proposed_hostname, proposed_ip, proposed_categories,
+                status, approver_username, created_at, decided_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', ?, '')
+            """,
+            (
+                str(requester_username),
+                normalize_role(requester_role),
+                str(original_device.get("name", "")),
+                str(original_device.get("name", "")),
+                str(original_device.get("host", "")),
+                json.dumps([str(g).strip() for g in original_device.get("groups", []) if str(g).strip()]),
+                str(proposed_hostname),
+                str(proposed_ip),
+                json.dumps([str(g).strip() for g in proposed_categories if str(g).strip()]),
+                datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+            ),
+        )
+
+
+def load_pending_device_requests() -> list[dict[str, Any]]:
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM pending_device_requests WHERE status = 'pending' ORDER BY id DESC"
+        ).fetchall()
+    pending: list[dict[str, Any]] = []
+    for row in rows:
+        try:
+            original_categories = json.loads(str(row["original_categories"] or "[]"))
+        except Exception:
+            original_categories = []
+        try:
+            proposed_categories = json.loads(str(row["proposed_categories"] or "[]"))
+        except Exception:
+            proposed_categories = []
+        pending.append({
+            "id": int(row["id"]),
+            "requester_username": str(row["requester_username"]),
+            "requester_role": normalize_role(str(row["requester_role"])),
+            "device_name": str(row["device_name"]),
+            "original_hostname": str(row["original_hostname"]),
+            "original_ip": str(row["original_ip"]),
+            "original_categories": original_categories,
+            "proposed_hostname": str(row["proposed_hostname"]),
+            "proposed_ip": str(row["proposed_ip"]),
+            "proposed_categories": proposed_categories,
+            "created_at": str(row["created_at"]),
+        })
+    return pending
+
+
 def validate_local_user(username: str, password: str) -> tuple[bool, str, str]:
     if verify_super_admin(username, password):
         return True, "", "super_admin"
@@ -717,7 +885,7 @@ def upsert_user(username: str) -> tuple[bool, str]:
         return False, "User already exists."
     users.append({
         "username": username.strip(),
-        "role": "operator",
+        "role": "junior",
         "salt": "",
         "password_hash": "",
         "must_change_password": True,
@@ -799,6 +967,8 @@ def user_allowed_categories(username: str, auth_mode: str) -> list[str] | None:
     user = find_user(users, username)
     if user is None:
         return None
+    if normalize_role(str(user.get("role", "junior"))) == "senior":
+        return None
 
     allowed = user.get("allowed_categories")
     if allowed is None:
@@ -867,6 +1037,8 @@ def current_user_has_admin_permission(permission_name: str) -> bool:
     auth_mode = str(session.get("auth_mode", "local")).strip().lower()
     if not username:
         return False
+    if current_user_role() == "senior":
+        return True
     return permission_name in user_admin_permissions(username, auth_mode)
 
 def default_buttons() -> list[dict[str, Any]]:
@@ -1725,6 +1897,17 @@ def manage_users() -> Any:
             save_users(users)
             session["settings_info"] = f"User '{username}' will be forced to change password at next login."
 
+    elif action == "set_role":
+        username = request.form.get("selected_username", "").strip()
+        role_value = normalize_role(request.form.get("role_value", "junior"))
+        user = find_user(users, username)
+        if user is None:
+            session["settings_error"] = "User not found."
+        else:
+            user["role"] = role_value
+            save_users(users)
+            session["settings_info"] = f"Updated role for '{username}' to '{role_value}'."
+
     elif action == "set_user_rights":
         username = request.form.get("selected_username", "").strip()
         selected_categories = [c.strip() for c in request.form.getlist("allowed_categories") if c.strip()]
@@ -1744,6 +1927,94 @@ def manage_users() -> Any:
             session["settings_info"] = f"Updated user rights for '{username}'."
 
     return redirect(url_for("ise_settings_page", modal="users"))
+
+
+@app.route("/pending-requests", methods=["POST"])
+def pending_requests_action() -> Any:
+    if "creds" not in session:
+        return redirect(url_for("login"))
+    if not is_senior_user():
+        session["dashboard_error"] = "Only Senior users can review pending requests."
+        return redirect(url_for("dashboard"))
+
+    action = request.form.get("action", "").strip().lower()
+    request_id = int(request.form.get("request_id", "0") or 0)
+    if request_id <= 0 or action not in {"approve", "reject"}:
+        session["dashboard_error"] = "Invalid pending request action."
+        return redirect(url_for("dashboard"))
+
+    with db_conn() as conn:
+        row = conn.execute("SELECT * FROM pending_device_requests WHERE id = ? AND status = 'pending'", (request_id,)).fetchone()
+        if not row:
+            session["dashboard_error"] = "Pending request not found."
+            return redirect(url_for("dashboard"))
+
+        requester = str(row["requester_username"])
+        device_name = str(row["device_name"])
+        original_ip = str(row["original_ip"])
+        proposed_ip = str(row["proposed_ip"])
+        try:
+            original_categories = json.loads(str(row["original_categories"] or "[]"))
+        except Exception:
+            original_categories = []
+        try:
+            proposed_categories = json.loads(str(row["proposed_categories"] or "[]"))
+        except Exception:
+            proposed_categories = []
+
+        approver = str(session.get("creds", {}).get("username", ""))
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+        if action == "approve":
+            devices = load_devices()
+            target = next((d for d in devices if str(d.get("name", "")).strip() == device_name), None)
+            if target is None:
+                conn.execute(
+                    "UPDATE pending_device_requests SET status = 'rejected', approver_username = ?, decided_at = ? WHERE id = ?",
+                    (approver, now, request_id),
+                )
+                notify_user(requester, f"Your request #{request_id} was rejected because device no longer exists.")
+                write_audit_log("request_rejected", requester, approver, device_name, {
+                    "request_id": request_id,
+                    "reason": "device_missing",
+                })
+                session["dashboard_error"] = "Device not found. Request rejected."
+                return redirect(url_for("dashboard"))
+
+            target["name"] = str(row["proposed_hostname"])
+            target["host"] = proposed_ip
+            target["groups"] = [str(g).strip() for g in proposed_categories if str(g).strip()]
+            save_devices(devices)
+            conn.execute(
+                "UPDATE pending_device_requests SET status = 'approved', approver_username = ?, decided_at = ? WHERE id = ?",
+                (approver, now, request_id),
+            )
+            notify_user(requester, f"Your request #{request_id} for device '{device_name}' was approved.")
+            write_audit_log("request_approved", requester, approver, device_name, {
+                "request_id": request_id,
+                "fields": {
+                    "ip": {"from": original_ip, "to": proposed_ip},
+                    "categories": {"from": original_categories, "to": proposed_categories},
+                },
+            })
+            session["dashboard_info"] = f"Approved request #{request_id}."
+            return redirect(url_for("dashboard"))
+
+        conn.execute(
+            "UPDATE pending_device_requests SET status = 'rejected', approver_username = ?, decided_at = ? WHERE id = ?",
+            (approver, now, request_id),
+        )
+        notify_user(requester, f"Your request #{request_id} for device '{device_name}' was rejected.")
+        write_audit_log("request_rejected", requester, approver, device_name, {
+            "request_id": request_id,
+            "fields": {
+                "ip": {"from": original_ip, "to": proposed_ip},
+                "categories": {"from": original_categories, "to": proposed_categories},
+            },
+        })
+
+    session["dashboard_info"] = f"Rejected request #{request_id}."
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/logout")
@@ -1770,6 +2041,12 @@ def dashboard() -> Any:
     categories = all_categories(devices)
     info = session.pop("dashboard_info", "")
     error = session.pop("dashboard_error", "")
+    role = current_user_role()
+    notices = pop_user_notifications(current_username)
+    if notices:
+        joined = " | ".join(notices)
+        info = f"{info} | {joined}".strip(" |")
+    pending_requests = load_pending_device_requests() if role == "senior" else []
     return render_template(
         "dashboard.html",
         devices=devices,
@@ -1784,6 +2061,8 @@ def dashboard() -> Any:
         selected_modal=request.args.get("modal", ""),
         session_timeout_seconds=max(60, int(load_session_settings().get("idle_timeout_minutes", 15)) * 60),
         run_history=session.get("run_history", []),
+        current_user_role=role,
+        pending_requests=pending_requests,
     )
 
 
@@ -1800,16 +2079,13 @@ def manage_devices() -> Any:
 
     if action == "add":
         hostname = request.form.get("hostname", "").strip()
+        if not is_senior_user():
+            session["dashboard_error"] = "Only Senior users can add new devices."
+            return redirect(dashboard_modal_url)
         ip_address = request.form.get("ip_address", "").strip()
         selected_categories = [c.strip() for c in request.form.getlist("new_device_categories") if c.strip()]
         if not selected_categories:
             selected_categories = [DEFAULT_CATEGORY]
-        admin_password = request.form.get("super_admin_password", "")
-
-        if not is_current_session_super_admin() and not is_super_admin_password(admin_password):
-            session["dashboard_error"] = "Saving devices requires valid super admin password."
-            return redirect(dashboard_modal_url)
-
         if not user_can_assign_categories(selected_categories, current_username, auth_mode):
             session["dashboard_error"] = "You can only add devices to categories you are allowed to access."
             return redirect(dashboard_modal_url)
@@ -1840,12 +2116,6 @@ def manage_devices() -> Any:
         requested_name = request.form.get("edit_hostname", "").strip()
         requested_ip = request.form.get("edit_ip_address", "").strip()
         new_categories = [c.strip() for c in request.form.getlist("edit_device_categories") if c.strip()]
-        admin_password = request.form.get("super_admin_password", "")
-
-        if not current_user_has_admin_permission("edit_device") and not is_super_admin_password(admin_password):
-            session["dashboard_error"] = "Editing devices requires valid super admin password."
-            return redirect(dashboard_modal_url)
-
         if not original_name:
             session["dashboard_error"] = "Select a device to edit."
             return redirect(dashboard_modal_url)
@@ -1879,6 +2149,23 @@ def manage_devices() -> Any:
 
         if not user_can_assign_categories(new_categories, current_username, auth_mode):
             session["dashboard_error"] = "You can only assign categories you are allowed to access."
+            return redirect(dashboard_modal_url)
+
+        original_ip = str(target.get("host", "")).strip()
+        original_categories = [str(g).strip() for g in target.get("groups", []) if str(g).strip()]
+        ip_changed = new_ip != original_ip
+        categories_changed = sorted(new_categories) != sorted(original_categories)
+        role = current_user_role()
+        if role != "senior" and (ip_changed or categories_changed):
+            create_pending_device_request(
+                requester_username=current_username,
+                requester_role=role,
+                original_device=target,
+                proposed_hostname=new_name,
+                proposed_ip=new_ip,
+                proposed_categories=new_categories,
+            )
+            session["dashboard_info"] = "Your IP/category edit request was submitted for Senior approval."
             return redirect(dashboard_modal_url)
 
         for device in devices:
@@ -1944,9 +2231,8 @@ def manage_categories() -> Any:
     dashboard_modal_url = url_for("dashboard", modal="device_settings")
 
     if action == "create_category":
-        admin_password = request.form.get("super_admin_password", "")
-        if not current_user_has_admin_permission("create_category") and not is_super_admin_password(admin_password):
-            session["dashboard_error"] = "Creating categories requires valid super admin password."
+        if not is_senior_user():
+            session["dashboard_error"] = "Only Senior users can create categories."
             return redirect(dashboard_modal_url)
 
         category_name = request.form.get("category_name", "").strip()
@@ -1957,21 +2243,32 @@ def manage_categories() -> Any:
             save_devices(devices)
 
     elif action == "assign_device":
-        admin_password = request.form.get("super_admin_password", "")
-        can_move = current_user_has_admin_permission("edit_device") and current_user_has_admin_permission("move_device_category")
-        if not can_move and not is_super_admin_password(admin_password):
-            session["dashboard_error"] = "Moving devices between categories requires valid super admin password."
-            return redirect(dashboard_modal_url)
-
         device_name = request.form.get("device_name", "").strip()
         category_name = request.form.get("target_category", "").strip()
         if device_name and category_name:
-            for device in devices:
-                if device.get("name") == device_name:
-                    groups = device.setdefault("groups", [])
-                    if category_name not in groups:
-                        groups.append(category_name)
-                    break
+            target = next((d for d in devices if str(d.get("name", "")).strip() == device_name), None)
+            if target is None:
+                session["dashboard_error"] = "Device not found for category update."
+                return redirect(dashboard_modal_url)
+
+            groups = [str(g).strip() for g in target.get("groups", []) if str(g).strip()]
+            if category_name not in groups:
+                groups.append(category_name)
+
+            if current_user_role() != "senior":
+                requester = str(session.get("creds", {}).get("username", "")).strip()
+                create_pending_device_request(
+                    requester_username=requester,
+                    requester_role=current_user_role(),
+                    original_device=target,
+                    proposed_hostname=str(target.get("name", "")),
+                    proposed_ip=str(target.get("host", "")),
+                    proposed_categories=groups,
+                )
+                session["dashboard_info"] = "Category update submitted for Senior approval."
+                return redirect(dashboard_modal_url)
+
+            target["groups"] = groups
             save_devices(devices)
 
     elif action == "delete_category":

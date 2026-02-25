@@ -11,6 +11,7 @@
     let activeCommandMode = 'show';
     const IS_SUPER_ADMIN_SESSION = {{ is_super_admin_session|tojson }};
     const USER_ADMIN_PERMISSIONS = new Set({{ user_admin_permissions|tojson }});
+    const CURRENT_USER_ROLE = {{ current_user_role|tojson }};
     const SESSION_TIMEOUT_SECONDS = {{ session_timeout_seconds|tojson }};
     const SELECTED_MODAL = {{ selected_modal|tojson }};
     const RUN_HISTORY_DATA = {{ run_history|tojson }};
@@ -336,13 +337,13 @@
       }
     }
 
-    function validateAndRequireSuperAdmin(event, ipInputId, ipMessageId, required = true) {
+    function validateOnly(event, ipInputId, ipMessageId, required = true) {
       const ok = validateIpv4Field(ipInputId, ipMessageId, required);
       if (!ok) {
         event.preventDefault();
         return false;
       }
-      return requireSuperAdminPassword(event);
+      return true;
     }
 
     async function testNewDeviceConnectivity() {
@@ -919,6 +920,7 @@ ${entry.output}
     <button class="btn" type="button" onclick="openDeviceCredsModal()">Device Credentials</button>
     <div class="chip">👤 User: <b>{{ current_user or 'Unknown' }}</b></div>
     <div class="chip">🔐 Mode: <b>{{ auth_mode|upper }}</b></div>
+    <div class="chip">🛡️ Role: <b>{{ current_user_role|upper }}</b></div>
     <a class="logout-link" href="{{ url_for('logout') }}">Logout</a>
   </div>
 
@@ -1000,6 +1002,36 @@ ${entry.output}
     </div>
   </div>
 
+  {% if current_user_role == 'senior' %}
+  <div class="card glass" style="margin-top:12px;">
+    <div class="card-head">
+      <h3>Pending Requests</h3>
+    </div>
+    {% if pending_requests %}
+      {% for req in pending_requests %}
+        <div class="submenu-form" style="margin-bottom:10px;">
+          <div><b>#{{ req.id }}</b> {{ req.requester_username }} requested changes for <b>{{ req.device_name }}</b> at {{ req.created_at }}</div>
+          <div>IP: {{ req.original_ip }} → {{ req.proposed_ip }}</div>
+          <div>Categories: {{ req.original_categories|join(', ') if req.original_categories else 'None' }} → {{ req.proposed_categories|join(', ') if req.proposed_categories else 'None' }}</div>
+          <div class="action-row">
+            <form method="post" action="{{ url_for('pending_requests_action') }}">
+              <input type="hidden" name="request_id" value="{{ req.id }}">
+              <input type="hidden" name="action" value="approve">
+              <button class="btn" type="submit">Approve</button>
+            </form>
+            <form method="post" action="{{ url_for('pending_requests_action') }}">
+              <input type="hidden" name="request_id" value="{{ req.id }}">
+              <input type="hidden" name="action" value="reject">
+              <button class="btn ghost" type="submit">Reject</button>
+            </form>
+          </div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="muted-note">No pending requests.</div>
+    {% endif %}
+  </div>
+  {% endif %}
 
 
 
@@ -1010,7 +1042,7 @@ ${entry.output}
         <button class="btn ghost modal-close-top" type="button" onclick="closeDeviceSettingsModal()">Close</button>
       </div>
 
-      <form method="post" action="{{ url_for('manage_devices') }}" class="submenu-form" onsubmit="return validateAndRequireSuperAdmin(event, 'newDeviceIpAddress', 'newDeviceIpValidation', true)">
+      <form method="post" action="{{ url_for('manage_devices') }}" class="submenu-form" onsubmit="return validateOnly(event, 'newDeviceIpAddress', 'newDeviceIpValidation', true)">
         <input type="hidden" name="action" value="add">
         <label>Hostname</label>
         <input name="hostname" type="text" placeholder="e.g., branch-rtr-02">
@@ -1030,14 +1062,14 @@ ${entry.output}
         <button class="btn" type="submit">Save Device</button>
       </form>
 
-      <form method="post" action="{{ url_for('manage_categories') }}" class="submenu-form" onsubmit="return requireSuperAdminPassword(event)">
+      <form method="post" action="{{ url_for('manage_categories') }}" class="submenu-form" onsubmit="return true">
         <input type="hidden" name="action" value="create_category">
         <label>Create new category</label>
         <input name="category_name" type="text" placeholder="e.g., datacenter-switches">
         <button class="btn" type="submit">Create Category</button>
       </form>
 
-      <form method="post" action="{{ url_for('manage_categories') }}" class="submenu-form" onsubmit="return requireSuperAdminPassword(event)">
+      <form method="post" action="{{ url_for('manage_categories') }}" class="submenu-form" onsubmit="return true">
         <input type="hidden" name="action" value="assign_device">
         <label>Select device</label>
         <select name="device_name">
@@ -1065,7 +1097,7 @@ ${entry.output}
         <button class="btn ghost" type="submit">Delete Category</button>
       </form>
 
-      <form method="post" action="{{ url_for('manage_devices') }}" class="submenu-form" onsubmit="return validateAndRequireSuperAdmin(event, 'editIpInput', 'editDeviceIpValidation', true)">
+      <form method="post" action="{{ url_for('manage_devices') }}" class="submenu-form" onsubmit="return validateOnly(event, 'editIpInput', 'editDeviceIpValidation', true)">
         <input type="hidden" name="action" value="edit">
         <label>Edit device (select existing)</label>
         <select id="editDeviceSelect" name="original_device_name">

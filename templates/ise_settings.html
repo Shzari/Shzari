@@ -13,6 +13,10 @@
       acc[user.username] = Array.isArray(user.admin_permissions) ? user.admin_permissions : [];
       return acc;
     }, {});
+    const USER_ROLE_MAP = {{ users|tojson }}.reduce((acc, user) => {
+      acc[user.username] = String(user.role || 'junior').toLowerCase();
+      return acc;
+    }, {});
 
     function openIseModal() {
       const modal = document.getElementById('iseConfigModal');
@@ -120,6 +124,8 @@
         note.textContent = 'Reset selected user password to blank and force set on next login.';
       } else if (action === 'force_change') {
         note.textContent = 'Keep current password but force user to change on next login.';
+      } else if (action === 'set_role') {
+        note.textContent = 'Set role group for this user (Helpdesk / Junior / Senior).';
       } else if (action === 'set_user_rights') {
         note.textContent = 'Set user rights: category access + operation access. Move category requires both Edit Devices + Move Device Category.';
       }
@@ -156,6 +162,14 @@
       });
     }
 
+    
+    function syncUserRoleSelection() {
+      const username = document.getElementById('userEditUsername').value;
+      const roleSelect = document.getElementById('userRoleValue');
+      if (!roleSelect) return;
+      roleSelect.value = USER_ROLE_MAP[username] || 'junior';
+    }
+
     function syncUserOperationPermissionsSelection() {
       const userSelect = document.getElementById('userEditUsername');
       const checkboxes = Array.from(document.querySelectorAll('.operation-permission-checkbox'));
@@ -170,6 +184,7 @@
 
     window.addEventListener('DOMContentLoaded', () => {
       updateEditActionLabel();
+      syncUserRoleSelection();
       syncUserCategoriesSelection();
       syncUserOperationPermissionsSelection();
 
@@ -305,6 +320,12 @@
         <input type="hidden" name="action" value="create">
         <label>New Username</label>
         <input name="new_username" type="text" placeholder="e.g., noc-operator-1">
+        <label>Role</label>
+        <select name="create_role">
+          <option value="helpdesk">Helpdesk</option>
+          <option value="junior" selected>Junior</option>
+          <option value="senior">Senior</option>
+        </select>
         <button class="btn" type="submit">Add User</button>
       </form>
 
@@ -313,7 +334,7 @@
         {% if users %}
           {% for user in users %}
             <div class="device-item">
-              <span>{{ user.username }}</span>
+              <span>{{ user.username }} <small>(role: {{ user.role|upper }})</small></span>
               <small>
                 {% if user.password_hash %}
                   password set
@@ -354,7 +375,7 @@
     <form method="post" action="{{ url_for('manage_users') }}">
       <h3>Edit User</h3>
       <label>Select User</label>
-      <select id="userEditUsername" name="selected_username" onchange="syncUserCategoriesSelection(); syncUserOperationPermissionsSelection()" required>
+      <select id="userEditUsername" name="selected_username" onchange="syncUserRoleSelection(); syncUserCategoriesSelection(); syncUserOperationPermissionsSelection()" required>
         <option value="" selected>-- Select User --</option>
         {% for user in users %}
           <option value="{{ user.username }}">{{ user.username }}</option>
@@ -367,6 +388,7 @@
         <option value="reset_password">Reset Password (blank + force set next login)</option>
         <option value="force_change">Force Change Password on Next Login</option>
         <option value="delete">Delete User</option>
+        <option value="set_role">Set Role</option>
         <option value="set_user_rights">User Rights</option>
       </select>
 
