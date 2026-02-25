@@ -11,6 +11,7 @@ import secrets
 import socket
 import sqlite3
 import struct
+import threading
 import subprocess
 import time
 from base64 import urlsafe_b64decode, urlsafe_b64encode
@@ -47,6 +48,8 @@ ATTR_NAS_PORT = 5
 ATTR_SERVICE_TYPE = 6
 SERVICE_TYPE_LOGIN = 1
 DEFAULT_CATEGORY = "Uncategorized"
+RUNTIME_SSH_SESSIONS: dict[str, dict[str, dict[str, Any]]] = {}
+RUNTIME_SSH_LOCK = threading.Lock()
 
 
 @dataclass
@@ -1103,6 +1106,122 @@ def authenticate_with_ise(username: str, password: str, settings: dict[str, Any]
     return False, message
 
 
+def runtime_session_id() -> str:
+    sid = str(session.get("runtime_session_id", "")).strip()
+    if sid:
+        return sid
+    sid = secrets.token_hex(16)
+    session["runtime_session_id"] = sid
+    return sid
+
+
+def close_runtime_ssh_sessions(runtime_id: str) -> None:
+    if not runtime_id:
+        return
+    with RUNTIME_SSH_LOCK:
+        sessions = RUNTIME_SSH_SESSIONS.pop(runtime_id, {})
+    for item in sessions.values():
+        client = item.get("client")
+        try:
+            if client:
+                client.close()
+        except Exception:
+            pass
+
+
+def get_runtime_device_session(runtime_id: str, device_name: str) -> dict[str, Any] | None:
+    with RUNTIME_SSH_LOCK:
+        return RUNTIME_SSH_SESSIONS.get(runtime_id, {}).get(device_name)
+
+
+def open_runtime_device_session(runtime_id: str, device: dict[str, Any], creds: dict[str, Any]) -> tuple[bool, str]:
+    import paramiko
+
+    existing = get_runtime_device_session(runtime_id, str(device.get("name", "")))
+    if existing is not None:
+        return True, "session already active"
+
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    timeout = int(creds.get("timeout", 8))
+    try:
+        client.connect(
+            hostname=str(device.get("host", "")),
+            port=int(device.get("port", 22)),
+            username=str(creds.get("username", "")),
+            password=str(creds.get("password", "")),
+            look_for_keys=False,
+            allow_agent=False,
+            timeout=timeout,
+            banner_timeout=timeout,
+            auth_timeout=timeout,
+        )
+        channel = client.invoke_shell(width=180, height=40)
+        time.sleep(0.2)
+        warmup = ""
+        while channel.recv_ready():
+            warmup += channel.recv(4096).decode("utf-8", errors="replace")
+
+        with RUNTIME_SSH_LOCK:
+            runtime_store = RUNTIME_SSH_SESSIONS.setdefault(runtime_id, {})
+            runtime_store[str(device.get("name", ""))] = {
+                "client": client,
+                "channel": channel,
+                "host": str(device.get("host", "")),
+                "port": int(device.get("port", 22)),
+                "opened_at": time.time(),
+            }
+        return True, warmup.strip() or "SSH shell connected"
+    except Exception as exc:
+        try:
+            client.close()
+        except Exception:
+            pass
+        return False, str(exc)
+
+
+def run_runtime_device_command(runtime_id: str, device: dict[str, Any], creds: dict[str, Any], command: str) -> tuple[str, str]:
+    device_name = str(device.get("name", ""))
+    ok, message = open_runtime_device_session(runtime_id, device, creds)
+    if not ok:
+        return "FAIL", message
+
+    runtime = get_runtime_device_session(runtime_id, device_name)
+    if runtime is None:
+        return "FAIL", "SSH session is not available."
+
+    channel = runtime.get("channel")
+    if channel is None:
+        return "FAIL", "SSH channel is not available."
+
+    try:
+        channel.send(command + "\n")
+        timeout = max(2, int(creds.get("timeout", 8)))
+        end_at = time.time() + timeout
+        output_parts: list[str] = []
+        while time.time() < end_at:
+            time.sleep(0.15)
+            any_data = False
+            while channel.recv_ready():
+                any_data = True
+                output_parts.append(channel.recv(4096).decode("utf-8", errors="replace"))
+            if not any_data and output_parts:
+                break
+        text = "".join(output_parts).strip()
+        return "PASS", text or "(no output)"
+    except Exception as exc:
+        with RUNTIME_SSH_LOCK:
+            runtime_store = RUNTIME_SSH_SESSIONS.get(runtime_id, {})
+            runtime_item = runtime_store.pop(device_name, None)
+        client = runtime_item.get("client") if runtime_item else None
+        try:
+            if client:
+                client.close()
+        except Exception:
+            pass
+        return "FAIL", str(exc)
+
+
 def run_ssh_command(host: str, port: int, username: str, password: str, command: str, timeout: int) -> tuple[str, str]:
     import paramiko
 
@@ -1542,6 +1661,8 @@ def manage_users() -> Any:
 @app.route("/logout")
 def logout() -> Any:
     expired = request.args.get("expired") == "1"
+    rid = str(session.get("runtime_session_id", ""))
+    close_runtime_ssh_sessions(rid)
     session.clear()
     if expired:
         session["login_info"] = "Session expired due to inactivity. Please log in again."
@@ -2054,6 +2175,59 @@ def run_commands_api() -> Any:
     return jsonify({"ok": True, "timestamp": run_entry["timestamp"], "command": command, "results": run_entry["results"]})
 
 
+@app.route("/ssh-session-open", methods=["POST"])
+def open_ssh_sessions_api() -> Any:
+    if "creds" not in session:
+        return jsonify({"ok": False, "error": "Please login first."}), 401
+
+    payload = request.get_json(silent=True) or {}
+    selected_names = payload.get("selected_devices") or []
+    if not isinstance(selected_names, list):
+        selected_names = []
+    selected_names = [str(name).strip() for name in selected_names if str(name).strip()]
+    if not selected_names:
+        return jsonify({"ok": False, "error": "No devices selected."}), 400
+
+    all_devices = load_devices()
+    current_username = str(session.get("creds", {}).get("username", ""))
+    auth_mode = str(session.get("auth_mode", "local"))
+    devices = filter_devices_for_user(all_devices, current_username, auth_mode)
+    by_name = {str(device.get("name", "")).strip(): device for device in devices}
+
+    dashboard_creds = session.get("creds", {})
+    device_creds = session.get("device_creds", {})
+    creds = {
+        "username": str(device_creds.get("username", "")).strip() or str(dashboard_creds.get("username", "")).strip(),
+        "password": str(device_creds.get("password", "")) or str(dashboard_creds.get("password", "")),
+        "timeout": int(dashboard_creds.get("timeout", 8) or 8),
+        "enable_password": str(device_creds.get("enable_password", "")),
+    }
+
+    if not creds["username"] or not creds["password"]:
+        return jsonify({"ok": False, "error": "Set device SSH credentials first from the dashboard user-strip button."}), 400
+
+    rid = runtime_session_id()
+    opened: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
+    for name in selected_names:
+        device = by_name.get(name)
+        if device is None:
+            failed.append({"device": name, "error": "Not found or not allowed."})
+            continue
+        ok, message = open_runtime_device_session(rid, device, creds)
+        if ok:
+            opened.append({"device": name, "message": message})
+        else:
+            failed.append({"device": name, "error": message})
+
+    return jsonify({
+        "ok": bool(opened),
+        "opened": opened,
+        "failed": failed,
+        "error": "Could not open SSH session for selected devices." if not opened else "",
+    })
+
+
 @app.route("/run-session-api", methods=["POST"])
 def run_session_command_api() -> Any:
     if "creds" not in session:
@@ -2089,7 +2263,9 @@ def run_session_command_api() -> Any:
     if not creds["username"] or not creds["password"]:
         return jsonify({"ok": False, "error": "Set device SSH credentials first from the dashboard user-strip button."}), 400
 
-    result = execute_for_device(target_device, creds, command)
+    rid = runtime_session_id()
+    status, output = run_runtime_device_command(rid, target_device, creds, command)
+    result = SSHResult(device=target_device["name"], host=target_device["host"], status=status, output=output)
     run_entry = {
         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         "command": command,

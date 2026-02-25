@@ -75,37 +75,55 @@
     }
 
 
-    function openSshSessionsForSelectedDevices() {
+    async function openSshSessionsForSelectedDevices() {
       const selected = Array.from(document.querySelectorAll('#deviceDragList option:checked')).map((item) => item.value);
       if (!selected.length) {
         setRunStatus('Select at least one device first.', true);
         return;
       }
 
-      let createdCount = 0;
-      selected.forEach((deviceName) => {
+      setRunStatus('Opening SSH session(s)...', false);
+      let payload;
+      try {
+        const response = await fetch("{{ url_for('open_ssh_sessions_api') }}", {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ selected_devices: selected })
+        });
+        payload = await response.json();
+        if (!response.ok || !payload.ok) {
+          setRunStatus(payload.error || 'Could not open SSH sessions.', true);
+          return;
+        }
+      } catch (error) {
+        setRunStatus(`SSH session request failed: ${error}`, true);
+        return;
+      }
+
+      const opened = Array.isArray(payload.opened) ? payload.opened : [];
+      const failed = Array.isArray(payload.failed) ? payload.failed : [];
+
+      opened.forEach((item) => {
+        const deviceName = String(item.device || '').trim();
+        if (!deviceName) return;
         if (!RUN_SESSIONS[deviceName]) {
           RUN_SESSIONS[deviceName] = { entries: [] };
-          createdCount += 1;
         }
         if (!SESSION_DRAFTS[deviceName]) {
           SESSION_DRAFTS[deviceName] = '';
         }
       });
 
-      if (!ACTIVE_RUN_SESSION && selected.length) {
-        ACTIVE_RUN_SESSION = selected[0];
+      if (opened.length) {
+        ACTIVE_RUN_SESSION = String(opened[opened.length - 1].device || ACTIVE_RUN_SESSION);
       }
-      if (selected.length) {
-        ACTIVE_RUN_SESSION = selected[selected.length - 1];
-      }
-
       renderRunTabs();
       renderRunOutput();
-      if (createdCount > 0) {
-        setRunStatus(`SSH session ready for ${selected.length} device(s).`, false);
+
+      if (failed.length) {
+        setRunStatus(`SSH ready for ${opened.length} device(s). Failed for ${failed.length}.`, opened.length === 0);
       } else {
-        setRunStatus('SSH session already exists for selected device(s).', false);
+        setRunStatus(`SSH session ready for ${opened.length} device(s).`, false);
       }
     }
 
