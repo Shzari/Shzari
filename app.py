@@ -147,7 +147,8 @@ def init_db() -> None:
                 must_change_password INTEGER NOT NULL DEFAULT 1,
                 allowed_categories TEXT,
                 admin_permissions TEXT,
-                category_panel_access TEXT
+                category_panel_access TEXT,
+                account_privileges TEXT
             )
             """
         )
@@ -157,6 +158,10 @@ def init_db() -> None:
             pass
         try:
             conn.execute("ALTER TABLE users ADD COLUMN category_panel_access TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN account_privileges TEXT")
         except sqlite3.OperationalError:
             pass
         conn.execute(
@@ -291,8 +296,8 @@ def migrate_legacy_json_to_db() -> None:
                         continue
                     conn.execute(
                         """
-                        INSERT OR REPLACE INTO users(username, role, salt, password_hash, must_change_password, allowed_categories, admin_permissions, category_panel_access)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        INSERT OR REPLACE INTO users(username, role, salt, password_hash, must_change_password, allowed_categories, admin_permissions, category_panel_access, account_privileges)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             username,
@@ -303,6 +308,7 @@ def migrate_legacy_json_to_db() -> None:
                             json.dumps(item.get("allowed_categories")),
                             json.dumps(item.get("admin_permissions", [])),
                             json.dumps(item.get("category_panel_access", {})),
+                            json.dumps(item.get("account_privileges", ["devices", "ip_addressing"])),
                         ),
                     )
 
@@ -441,7 +447,7 @@ def load_users() -> list[dict[str, Any]]:
     normalized: list[dict[str, Any]] = []
     with db_conn() as conn:
         rows = conn.execute(
-            "SELECT username, role, salt, password_hash, must_change_password, allowed_categories, admin_permissions, category_panel_access FROM users ORDER BY username"
+            "SELECT username, role, salt, password_hash, must_change_password, allowed_categories, admin_permissions, category_panel_access, account_privileges FROM users ORDER BY username"
         ).fetchall()
 
     for row in rows:
@@ -460,6 +466,11 @@ def load_users() -> list[dict[str, Any]]:
             category_panel_access = json.loads(panel_raw) if panel_raw else {}
         except Exception:
             category_panel_access = {}
+        account_raw = row["account_privileges"] if "account_privileges" in row.keys() else None
+        try:
+            account_privileges = json.loads(account_raw) if account_raw else ["devices", "ip_addressing"]
+        except Exception:
+            account_privileges = ["devices", "ip_addressing"]
         user: dict[str, Any] = {
             "username": row["username"],
             "role": normalize_role(str(row["role"])),
@@ -469,6 +480,7 @@ def load_users() -> list[dict[str, Any]]:
             "allowed_categories": allowed_categories,
             "admin_permissions": admin_permissions,
             "category_panel_access": category_panel_access,
+            "account_privileges": [str(item).strip() for item in account_privileges if str(item).strip()],
         }
         user["role"] = normalize_role(str(user.get("role", "junior")))
         user.setdefault("salt", "")
@@ -477,6 +489,7 @@ def load_users() -> list[dict[str, Any]]:
         user.setdefault("allowed_categories", None)
         user.setdefault("admin_permissions", [])
         user.setdefault("category_panel_access", {})
+        user.setdefault("account_privileges", ["devices", "ip_addressing"])
         normalized.append(user)
     return normalized
 
@@ -487,8 +500,8 @@ def save_users(users: list[dict[str, Any]]) -> None:
         for user in users:
             conn.execute(
                 """
-                INSERT INTO users(username, role, salt, password_hash, must_change_password, allowed_categories, admin_permissions, category_panel_access)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO users(username, role, salt, password_hash, must_change_password, allowed_categories, admin_permissions, category_panel_access, account_privileges)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     str(user.get("username", "")).strip(),
@@ -499,6 +512,7 @@ def save_users(users: list[dict[str, Any]]) -> None:
                     json.dumps(user.get("allowed_categories")),
                     json.dumps(user.get("admin_permissions", [])),
                     json.dumps(user.get("category_panel_access", {})),
+                    json.dumps(user.get("account_privileges", ["devices", "ip_addressing"])),
                 ),
             )
 
@@ -1091,6 +1105,7 @@ def upsert_user(username: str, role: str = "junior") -> tuple[bool, str]:
         "allowed_categories": None,
         "admin_permissions": [],
         "category_panel_access": {},
+        "account_privileges": ["devices", "ip_addressing"],
     })
     save_users(users)
     return True, f"User '{username}' created. Password will be set on first login."
@@ -1233,28 +1248,34 @@ def filter_devices_for_user(devices: list[dict[str, Any]], username: str, auth_m
 
 
 
-def user_allowed_categories_by_panel(username: str, auth_mode: str, panel_name: str) -> list[str] | None:
+def user_has_panel_access(username: str, auth_mode: str, panel_name: str) -> bool:
     if auth_mode != "local":
-        return None
-    users = load_users()
-    user = find_user(users, username)
+        return True
+
+    super_admin_username = str(load_super_admin().get("username", "")).strip().lower()
+    if username.strip().lower() == super_admin_username:
+        return True
+
+    user = find_user(load_users(), username)
     if user is None:
-        return None
+        return True
+
     if normalize_role(str(user.get("role", "junior"))) == "senior":
-        return None
+        return True
 
-    mapping = user.get("category_panel_access", {})
-    if isinstance(mapping, dict) and mapping:
-        panel = str(panel_name or "devices").strip().lower()
-        allowed: list[str] = []
-        for category, panels in mapping.items():
-            if not isinstance(panels, list):
-                continue
-            normalized = {str(item).strip().lower() for item in panels}
-            if panel in normalized:
-                allowed.append(str(category).strip())
-        return allowed
+    privileges = user.get("account_privileges")
+    if not isinstance(privileges, list):
+        privileges = ["devices", "ip_addressing"]
 
+    panel = str(panel_name or "devices").strip().lower()
+    normalized = {str(item).strip().lower() for item in privileges if str(item).strip()}
+    return panel in normalized
+
+
+
+def user_allowed_categories_by_panel(username: str, auth_mode: str, panel_name: str) -> list[str] | None:
+    if not user_has_panel_access(username, auth_mode, panel_name):
+        return []
     return user_allowed_categories(username, auth_mode)
 
 def user_can_access_device(device: dict[str, Any], username: str, auth_mode: str) -> bool:
@@ -2304,8 +2325,9 @@ def manage_users() -> Any:
     elif action == "set_user_rights":
         username = request.form.get("selected_username", "").strip()
         selected_categories = [c.strip() for c in request.form.getlist("allowed_categories") if c.strip()]
-        panel_devices_categories = [c.strip() for c in request.form.getlist("panel_devices_categories") if c.strip()]
-        panel_ip_categories = [c.strip() for c in request.form.getlist("panel_ip_categories") if c.strip()]
+        selected_account_privileges = [p.strip() for p in request.form.getlist("account_privileges") if p.strip()]
+        allowed_account_privileges = {"devices", "ip_addressing"}
+        selected_account_privileges = [p for p in selected_account_privileges if p in allowed_account_privileges]
         selected_permissions = [p.strip() for p in request.form.getlist("admin_permissions") if p.strip()]
         allowed_permissions = {"create_category", "edit_device", "move_device_category", "delete_device", "delete_category"}
         selected_permissions = [p for p in selected_permissions if p in allowed_permissions]
@@ -2317,16 +2339,8 @@ def manage_users() -> Any:
             session["settings_error"] = "User not found."
         else:
             user["allowed_categories"] = selected_categories
-            panel_access: dict[str, list[str]] = {}
-            categories_union = set(selected_categories) | set(panel_devices_categories) | set(panel_ip_categories)
-            for category in categories_union:
-                panels: list[str] = []
-                if category in panel_devices_categories:
-                    panels.append("devices")
-                if category in panel_ip_categories:
-                    panels.append("ip_addressing")
-                panel_access[category] = panels
-            user["category_panel_access"] = panel_access
+            user["category_panel_access"] = {}
+            user["account_privileges"] = selected_account_privileges
             user["admin_permissions"] = selected_permissions
             save_users(users)
             session["settings_info"] = f"Updated user rights for '{username}'."
@@ -2678,15 +2692,20 @@ def ip_addressing_dashboard() -> Any:
 
     current_username = str(session.get("creds", {}).get("username", ""))
     auth_mode = str(session.get("auth_mode", "local"))
+    if not user_has_panel_access(current_username, auth_mode, "ip_addressing"):
+        if user_has_panel_access(current_username, auth_mode, "devices"):
+            session["dashboard_error"] = "You do not have access to the IP Addressing panel."
+            return redirect(url_for("dashboard"))
+        session.clear()
+        session["login_error"] = "Your account has no panel access configured."
+        return redirect(url_for("login"))
     branches = load_ip_branches()
-    devices = filter_devices_for_user(load_devices(), current_username, auth_mode)
     return render_template(
         "ip_addressing.html",
         current_user=current_username,
         current_user_role=current_user_role(),
         auth_mode=auth_mode,
         branches=branches,
-        devices=devices,
         info=session.pop("dashboard_info", ""),
         error=session.pop("dashboard_error", ""),
         unread_notifications_count=len(load_unread_notifications(current_username)),
@@ -2739,6 +2758,13 @@ def dashboard() -> Any:
     all_devices = load_devices()
     current_username = str(session.get("creds", {}).get("username", ""))
     auth_mode = str(session.get("auth_mode", "local"))
+    if not user_has_panel_access(current_username, auth_mode, "devices"):
+        if user_has_panel_access(current_username, auth_mode, "ip_addressing"):
+            session["dashboard_error"] = "You do not have access to the Devices panel."
+            return redirect(url_for("ip_addressing_dashboard"))
+        session.clear()
+        session["login_error"] = "Your account has no panel access configured."
+        return redirect(url_for("login"))
     devices = filter_devices_for_user(all_devices, current_username, auth_mode)
     groups = grouped_devices(devices)
     categories = all_categories(devices)
@@ -3189,6 +3215,13 @@ def ping_selected_devices() -> Any:
     all_devices = load_devices()
     current_username = str(session.get("creds", {}).get("username", ""))
     auth_mode = str(session.get("auth_mode", "local"))
+    if not user_has_panel_access(current_username, auth_mode, "devices"):
+        if user_has_panel_access(current_username, auth_mode, "ip_addressing"):
+            session["dashboard_error"] = "You do not have access to the Devices panel."
+            return redirect(url_for("ip_addressing_dashboard"))
+        session.clear()
+        session["login_error"] = "Your account has no panel access configured."
+        return redirect(url_for("login"))
     devices = filter_devices_for_user(all_devices, current_username, auth_mode)
     by_name = {str(device.get("name", "")): device for device in devices}
 
@@ -3220,6 +3253,13 @@ def run_commands() -> Any:
     all_devices = load_devices()
     current_username = str(session.get("creds", {}).get("username", ""))
     auth_mode = str(session.get("auth_mode", "local"))
+    if not user_has_panel_access(current_username, auth_mode, "devices"):
+        if user_has_panel_access(current_username, auth_mode, "ip_addressing"):
+            session["dashboard_error"] = "You do not have access to the Devices panel."
+            return redirect(url_for("ip_addressing_dashboard"))
+        session.clear()
+        session["login_error"] = "Your account has no panel access configured."
+        return redirect(url_for("login"))
     devices = filter_devices_for_user(all_devices, current_username, auth_mode)
     by_name = {device["name"]: device for device in devices}
     selected_names = request.form.getlist("selected_devices")
@@ -3293,6 +3333,13 @@ def run_commands_api() -> Any:
     all_devices = load_devices()
     current_username = str(session.get("creds", {}).get("username", ""))
     auth_mode = str(session.get("auth_mode", "local"))
+    if not user_has_panel_access(current_username, auth_mode, "devices"):
+        if user_has_panel_access(current_username, auth_mode, "ip_addressing"):
+            session["dashboard_error"] = "You do not have access to the Devices panel."
+            return redirect(url_for("ip_addressing_dashboard"))
+        session.clear()
+        session["login_error"] = "Your account has no panel access configured."
+        return redirect(url_for("login"))
     devices = filter_devices_for_user(all_devices, current_username, auth_mode)
     by_name = {device["name"]: device for device in devices}
     selected_names = request.form.getlist("selected_devices")
@@ -3370,6 +3417,13 @@ def open_ssh_sessions_api() -> Any:
     all_devices = load_devices()
     current_username = str(session.get("creds", {}).get("username", ""))
     auth_mode = str(session.get("auth_mode", "local"))
+    if not user_has_panel_access(current_username, auth_mode, "devices"):
+        if user_has_panel_access(current_username, auth_mode, "ip_addressing"):
+            session["dashboard_error"] = "You do not have access to the Devices panel."
+            return redirect(url_for("ip_addressing_dashboard"))
+        session.clear()
+        session["login_error"] = "Your account has no panel access configured."
+        return redirect(url_for("login"))
     devices = filter_devices_for_user(all_devices, current_username, auth_mode)
     by_name = {str(device.get("name", "")).strip(): device for device in devices}
 
@@ -3424,6 +3478,13 @@ def run_session_command_api() -> Any:
     all_devices = load_devices()
     current_username = str(session.get("creds", {}).get("username", ""))
     auth_mode = str(session.get("auth_mode", "local"))
+    if not user_has_panel_access(current_username, auth_mode, "devices"):
+        if user_has_panel_access(current_username, auth_mode, "ip_addressing"):
+            session["dashboard_error"] = "You do not have access to the Devices panel."
+            return redirect(url_for("ip_addressing_dashboard"))
+        session.clear()
+        session["login_error"] = "Your account has no panel access configured."
+        return redirect(url_for("login"))
     devices = filter_devices_for_user(all_devices, current_username, auth_mode)
     target_device = next((device for device in devices if str(device.get("name", "")).strip() == device_name), None)
 
