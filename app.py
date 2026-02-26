@@ -2585,6 +2585,21 @@ def logout() -> Any:
     return redirect(url_for("login"))
 
 
+@app.route("/ip-addressing", methods=["GET"])
+def ip_addressing_dashboard() -> Any:
+    if "creds" not in session:
+        return redirect(url_for("login"))
+
+    current_username = str(session.get("creds", {}).get("username", ""))
+    return render_template(
+        "ip_addressing.html",
+        current_user=current_username,
+        current_user_role=current_user_role(),
+        auth_mode=str(session.get("auth_mode", "local")),
+        unread_notifications_count=len(load_unread_notifications(current_username)),
+    )
+
+
 @app.route("/dashboard", methods=["GET"])
 def dashboard() -> Any:
     if "creds" not in session:

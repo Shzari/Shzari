@@ -938,6 +938,12 @@ ${entry.output}
     <a class="logout-link" href="{{ url_for('logout') }}">Logout</a>
   </div>
 
+
+  <div class="view-switch" style="display:flex; gap:10px; justify-content:flex-start; margin:10px 0;">
+    <a class="btn" href="{{ url_for('dashboard') }}">Devices</a>
+    <a class="btn ghost" href="{{ url_for('ip_addressing_dashboard') }}">IP-Addressing</a>
+  </div>
+
   <div class="topbar glass">
     <h2>⚡ Network SSH Troubleshooting Dashboard</h2>
     <p>Fast operations for routers and switches.</p>

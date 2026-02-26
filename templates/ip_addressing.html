@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>IP Addressing Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background:#0f172a; color:#e2e8f0; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 20px; }
+    .user-strip { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:14px; }
+    .chip { background:#1e293b; border:1px solid #334155; border-radius:999px; padding:6px 12px; }
+    .btn { display:inline-block; background:#2563eb; color:white; border-radius:8px; padding:8px 12px; text-decoration:none; border:1px solid #1d4ed8; }
+    .btn.ghost { background:transparent; border-color:#64748b; color:#e2e8f0; }
+    .top { display:flex; gap:10px; justify-content:flex-start; margin-bottom:16px; }
+    .card { background:#111827; border:1px solid #334155; border-radius:12px; padding:16px; }
+    .logout-link { color:#93c5fd; margin-left:auto; }
+    h2 { margin-top:0; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="user-strip">
+      <div class="chip">👤 User: <b>{{ current_user or 'Unknown' }}/{{ current_user_role|upper }}</b></div>
+      <div class="chip">🔐 Mode: <b>{{ auth_mode|upper }}</b></div>
+      <div class="chip">🔔 Notifications: <b>{{ unread_notifications_count }}</b></div>
+      <a class="logout-link" href="{{ url_for('logout') }}">Logout</a>
+    </div>
+
+    <div class="top">
+      <a class="btn ghost" href="{{ url_for('dashboard') }}">Devices</a>
+      <a class="btn" href="{{ url_for('ip_addressing_dashboard') }}">IP-Addressing</a>
+    </div>
+
+    <div class="card">
+      <h2>IP Addressing Dashboard</h2>
+      <p>This is a dedicated dashboard area for IP addressing management workflows.</p>
+      <p>You can keep this screen for IP planning, subnet tracking, and address management features.</p>
+    </div>
+  </div>
+</body>
+</html>
