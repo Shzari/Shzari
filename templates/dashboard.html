@@ -1055,9 +1055,9 @@ ${entry.output}
                   <button class="btn" type="submit">Run command</button>
                 </form>
                 <form method="post" action="{{ url_for('pending_command_decision') }}">
-                  <input type="hidden" name="action" value="discard">
+                  <input type="hidden" name="action" value="reject">
                   <input type="hidden" name="request_id" value="{{ item.pending_request_id }}">
-                  <button class="btn ghost" type="submit">Discard</button>
+                  <button class="btn ghost" type="submit">Reject</button>
                 </form>
               {% endif %}
               <form method="post" action="{{ url_for('delete_notification_route') }}">

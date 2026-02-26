@@ -2462,7 +2462,7 @@ def pending_command_decision() -> Any:
 
     action = request.form.get("action", "").strip().lower()
     request_id = int(request.form.get("request_id", "0") or 0)
-    if action not in {"run", "discard"} or request_id <= 0:
+    if action not in {"run", "discard", "reject"} or request_id <= 0:
         session["dashboard_error"] = "Invalid command decision."
         return redirect(url_for("dashboard"))
 
@@ -2482,7 +2482,7 @@ def pending_command_decision() -> Any:
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
-    if action == "discard":
+    if action in {"discard", "reject"}:
         with db_conn() as conn:
             updated = conn.execute(
                 "UPDATE pending_command_requests SET status = 'discarded', decided_at = ? WHERE id = ? AND status = 'approved'",
@@ -2623,7 +2623,11 @@ def dashboard() -> Any:
             else:
                 item["pending_request_actionable"] = req_id in pending_request_ids
         else:
-            is_approved_notice = "was approved" in msg.lower() and "critical command request" in msg.lower()
+            lower_msg = msg.lower()
+            is_approved_notice = (
+                "was approved" in lower_msg
+                and ("critical command request" in lower_msg or "command request" in lower_msg)
+            )
             if is_approved_notice:
                 item["junior_command_actionable"] = req_id in approved_command_request_ids
     return render_template(
