@@ -31,6 +31,7 @@
   <script>
     let branches = [];
     let selectedBranchId = null;
+    let detailsEditEnabled = false;
     const STORE_KEY = 'ipam_branches_v2';
 
     function nowStamp(){ return new Date().toLocaleString(); }
@@ -92,12 +93,20 @@
       <td><span class="track"><span class="fill ${utilClass(u)}" style="width:${u}%"></span></span><b>${u}%</b></td><td>${b.updatedAt}</td></tr>`; }).join('');
     }
 
-    function openDetails(id){ selectedBranchId=id; document.getElementById('listView').classList.add('hidden'); document.getElementById('detailsView').classList.remove('hidden'); renderDetails(); }
-    function backToList(){ selectedBranchId=null; document.getElementById('detailsView').classList.add('hidden'); document.getElementById('listView').classList.remove('hidden'); renderList(); }
+    function openDetails(id){ selectedBranchId=id; detailsEditEnabled=false; document.getElementById('listView').classList.add('hidden'); document.getElementById('detailsView').classList.remove('hidden'); renderDetails(); }
+    function backToList(){ selectedBranchId=null; detailsEditEnabled=false; document.getElementById('detailsView').classList.add('hidden'); document.getElementById('listView').classList.remove('hidden'); renderList(); }
+
+    
+    function toggleDetailsEdit(){
+      detailsEditEnabled = !detailsEditEnabled;
+      const btn=document.getElementById('detailsEditBtn');
+      if(btn) btn.textContent = detailsEditEnabled ? 'Lock Editing' : 'Settings';
+      renderDetails();
+    }
 
     function updateRowStatus(row){ row.status=(row.hostname.trim()||row.enduser.trim())?'ASSIGNED':'FREE'; }
-    function onEditRow(idx,key,val){ const b=branches.find(x=>x.id===selectedBranchId); if(!b) return; b.ipRows[idx][key]=val; updateRowStatus(b.ipRows[idx]); b.updatedAt=nowStamp(); saveBranches(); renderDetails(); renderList(); }
-    function clearRow(idx){ const b=branches.find(x=>x.id===selectedBranchId); if(!b) return; b.ipRows[idx].hostname=''; b.ipRows[idx].enduser=''; b.ipRows[idx].status='FREE'; b.updatedAt=nowStamp(); saveBranches(); renderDetails(); renderList(); }
+    function onEditRow(idx,key,val){ if(!detailsEditEnabled) return; const b=branches.find(x=>x.id===selectedBranchId); if(!b) return; b.ipRows[idx][key]=val; updateRowStatus(b.ipRows[idx]); b.updatedAt=nowStamp(); saveBranches(); renderDetails(); renderList(); }
+    function clearRow(idx){ if(!detailsEditEnabled) return; const b=branches.find(x=>x.id===selectedBranchId); if(!b) return; b.ipRows[idx].hostname=''; b.ipRows[idx].enduser=''; b.ipRows[idx].status='FREE'; b.updatedAt=nowStamp(); saveBranches(); renderDetails(); renderList(); }
 
     function renderDetails(){
       const b=branches.find(x=>x.id===selectedBranchId); if(!b) return;
@@ -105,14 +114,15 @@
       document.getElementById('dName').textContent=b.name; document.getElementById('dSite').textContent=b.site;
       document.getElementById('dNet').textContent=`${b.networkBase}/${b.cidr}`; document.getElementById('dMask').textContent=b.subnetMask;
       document.getElementById('dGateway').textContent=b.gateway; document.getElementById('dBroadcast').textContent=b.broadcast; document.getElementById('dUtil').textContent=`${calcUtil(b)}%`;
+      const editBtn=document.getElementById('detailsEditBtn'); if(editBtn) editBtn.textContent = detailsEditEnabled ? 'Lock Editing' : 'Settings';
       const q=String(document.getElementById('detailsSearch').value||'').toLowerCase();
       const rows=b.ipRows.map((r,i)=>({...r,_i:i})).filter(r=>`${r.ip} ${r.hostname} ${r.enduser}`.toLowerCase().includes(q));
       document.getElementById('detailsBody').innerHTML=rows.map(r=>`<tr>
       <td>${b.networkBase}</td><td>/${b.cidr}</td><td>${b.subnetMask}</td><td>${r.ip}</td>
-      <td><input class="input" value="${r.hostname}" oninput="onEditRow(${r._i},'hostname', this.value)"></td>
-      <td><input class="input" value="${r.enduser}" oninput="onEditRow(${r._i},'enduser', this.value)"></td>
+      <td><input class="input" value="${r.hostname}" ${detailsEditEnabled ? "" : "readonly"} oninput="onEditRow(${r._i},'hostname', this.value)"></td>
+      <td><input class="input" value="${r.enduser}" ${detailsEditEnabled ? "" : "readonly"} oninput="onEditRow(${r._i},'enduser', this.value)"></td>
       <td><span class="status ${r.status==='ASSIGNED'?'assigned':'free'}">${r.status}</span></td>
-      <td><button class="btn" type="button" onclick="clearRow(${r._i})">Clear</button></td>
+      <td><button class="btn" type="button" ${detailsEditEnabled ? "" : "disabled"} onclick="clearRow(${r._i})">Clear</button></td>
       </tr>`).join('');
     }
 
@@ -151,7 +161,7 @@
 
         <section id="detailsView" class="panel hidden">
           <div id="detailsBreadcrumb" class="breadcrumb">IP Addressing > Branches</div>
-          <div class="toolbar"><h1 class="title">Branch Details</h1><button class="btn" onclick="backToList()">← Back to Branches</button></div>
+          <div class="toolbar"><h1 class="title">Branch Details</h1><div class="right"><button class="btn" onclick="backToList()">← Back to Branches</button><button id="detailsEditBtn" class="btn" type="button" onclick="toggleDetailsEdit()">Settings</button></div></div>
           <div class="summary"><div><b>Branch Name</b><span id="dName">-</span></div><div><b>City/Site</b><span id="dSite">-</span></div><div><b>Network</b><span id="dNet">-</span></div><div><b>Subnet Mask</b><span id="dMask">-</span></div><div><b>Gateway</b><span id="dGateway">-</span></div><div><b>Broadcast</b><span id="dBroadcast">-</span></div><div><b>Utilization</b><span id="dUtil">0%</span></div></div>
           <div class="left"><input id="detailsSearch" class="input" placeholder="Search by IP/hostname/enduser..."></div>
           <div class="table-wrap"><table><thead><tr><th>Network Base</th><th>/CIDR</th><th>Subnet Mask</th><th>Host IP</th><th>Hostname</th><th>Enduser</th><th>Status</th><th>Action</th></tr></thead><tbody id="detailsBody"></tbody></table></div>
