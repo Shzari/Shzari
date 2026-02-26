@@ -82,6 +82,7 @@
   <script>
     let branchesData = [];
     let selectedBranchId = null;
+    let isBranchEditMode = false;
     const GLOBAL_PARENT_NETWORK = '10.10.10.0';
     const GLOBAL_CIDR = 27;
 
@@ -172,16 +173,43 @@
       document.getElementById('summaryGateway').textContent = branch.gateway;
 
       const q = String(document.getElementById('detailsSearch').value || '').toLowerCase();
-      const rows = branch.assignments.filter((a) => (`${a.hostIp} ${a.hostname} ${a.enduser}`).toLowerCase().includes(q));
       const tbody = document.getElementById('branchDetailsBody');
-      tbody.innerHTML = rows.map((a) => `<tr>
-        <td>${branch.networkBase}</td>
-        <td>/${branch.cidr}</td>
-        <td>${branch.gateway}</td>
-        <td>${a.hostIp}</td>
-        <td>${a.hostname}</td>
-        <td>${a.enduser}</td>
-      </tr>`).join('');
+      const sourceRows = isBranchEditMode ? branch.assignments.map((a, idx) => ({...a, _idx: idx})) : branch.assignments
+        .map((a, idx) => ({...a, _idx: idx}))
+        .filter((a) => (`${a.hostIp} ${a.hostname} ${a.enduser}`).toLowerCase().includes(q));
+
+      if (isBranchEditMode) {
+        document.getElementById('summaryName').innerHTML = `<input id="editSummaryName" class="input" value="${branch.name}">`;
+        document.getElementById('summarySite').innerHTML = `<input id="editSummarySite" class="input" value="${branch.site}">`;
+        document.getElementById('summarySubnet').innerHTML = `<div style="display:flex; gap:6px;"><input id="editSummaryBase" class="input" value="${branch.networkBase}"><input id="editSummaryCidr" class="input" value="${branch.cidr}" style="width:70px"></div>`;
+        document.getElementById('summaryGateway').innerHTML = `<input id="editSummaryGateway" class="input" value="${branch.gateway}">`;
+      } else {
+        document.getElementById('summaryName').textContent = branch.name;
+        document.getElementById('summarySite').textContent = branch.site;
+        document.getElementById('summarySubnet').textContent = `${branch.networkBase}/${branch.cidr}`;
+        document.getElementById('summaryGateway').textContent = branch.gateway;
+      }
+
+      tbody.innerHTML = sourceRows.map((a) => {
+        if (!isBranchEditMode) {
+          return `<tr>
+            <td>${branch.networkBase}</td>
+            <td>/${branch.cidr}</td>
+            <td>${branch.gateway}</td>
+            <td>${a.hostIp}</td>
+            <td>${a.hostname}</td>
+            <td>${a.enduser}</td>
+          </tr>`;
+        }
+        return `<tr data-row-index="${a._idx}">
+          <td><input class="input" data-col="networkBase" value="${branch.networkBase}"></td>
+          <td><input class="input" data-col="cidr" value="${branch.cidr}" style="width:80px"></td>
+          <td><input class="input" data-col="gateway" value="${branch.gateway}"></td>
+          <td><input class="input" data-col="hostIp" value="${a.hostIp}"></td>
+          <td><input class="input" data-col="hostname" value="${a.hostname}"></td>
+          <td><input class="input" data-col="enduser" value="${a.enduser}"></td>
+        </tr>`;
+      }).join('');
     }
 
     function openBranchDetails(branchId) {
@@ -193,8 +221,61 @@
 
     function backToBranches() {
       selectedBranchId = null;
+      isBranchEditMode = false;
+      const btn = document.getElementById('branchEditBtn');
+      if (btn) btn.textContent = "Settings";
       document.getElementById('viewDetails').classList.add('hidden');
       document.getElementById('viewBranches').classList.remove('hidden');
+      renderBranchesList();
+    }
+
+
+    function toggleBranchEditMode() {
+      if (!selectedBranchId) return;
+      if (!isBranchEditMode) {
+        isBranchEditMode = true;
+        const btn = document.getElementById('branchEditBtn');
+        if (btn) btn.textContent = 'Save Settings';
+        renderBranchDetails();
+        return;
+      }
+
+      const branch = branchesData.find((x) => x.id === selectedBranchId);
+      if (!branch) return;
+      const nameEl = document.getElementById('editSummaryName');
+      const siteEl = document.getElementById('editSummarySite');
+      const baseEl = document.getElementById('editSummaryBase');
+      const cidrEl = document.getElementById('editSummaryCidr');
+      const gwEl = document.getElementById('editSummaryGateway');
+      if (nameEl) branch.name = String(nameEl.value || '').trim() || branch.name;
+      if (siteEl) branch.site = String(siteEl.value || '').trim() || branch.site;
+      if (baseEl) branch.networkBase = String(baseEl.value || '').trim() || branch.networkBase;
+      if (cidrEl) branch.cidr = Number(String(cidrEl.value || '').replace('/', '').trim()) || branch.cidr;
+      if (gwEl) branch.gateway = String(gwEl.value || '').trim() || branch.gateway;
+      branch.subnet = `${branch.networkBase}/${branch.cidr}`;
+
+      document.querySelectorAll('#branchDetailsBody tr[data-row-index]').forEach((tr) => {
+        const idx = Number(tr.getAttribute('data-row-index'));
+        if (!Number.isInteger(idx) || !branch.assignments[idx]) return;
+        const row = branch.assignments[idx];
+        tr.querySelectorAll('input[data-col]').forEach((inp) => {
+          const col = inp.getAttribute('data-col');
+          const val = String(inp.value || '').trim();
+          if (!col || !val) return;
+          if (col === 'hostIp') row.hostIp = val;
+          else if (col === 'hostname') row.hostname = val;
+          else if (col === 'enduser') row.enduser = val;
+          else if (col === 'networkBase') branch.networkBase = val;
+          else if (col === 'cidr') branch.cidr = Number(val.replace('/', '')) || branch.cidr;
+          else if (col === 'gateway') branch.gateway = val;
+        });
+      });
+
+      branch.subnet = `${branch.networkBase}/${branch.cidr}`;
+      isBranchEditMode = false;
+      const btn = document.getElementById('branchEditBtn');
+      if (btn) btn.textContent = 'Settings';
+      renderBranchDetails();
       renderBranchesList();
     }
 
@@ -285,6 +366,7 @@
           <div class="toolbar">
             <h1 class="title" id="detailsTitle">Branch</h1>
             <button class="btn back" type="button" onclick="backToBranches()">← Back to Branches</button>
+            <button id="branchEditBtn" class="btn" type="button" onclick="toggleBranchEditMode()">Settings</button>
           </div>
           <div class="summary-card">
             <div class="summary-item"><b>Branch</b><span id="summaryName">-</span></div>
