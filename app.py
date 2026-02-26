@@ -1004,8 +1004,11 @@ def clear_senior_command_request_notifications(request_id: int) -> None:
         return
     with db_conn() as conn:
         conn.execute(
-            "DELETE FROM user_notifications WHERE message LIKE ?",
-            (f"%approval request #{int(request_id)}%",),
+            "DELETE FROM user_notifications WHERE message LIKE ? OR message LIKE ?",
+            (
+                f"%pending request #{int(request_id)}%",
+                f"%approval request #{int(request_id)}%",
+            ),
         )
 
 
@@ -2395,6 +2398,7 @@ def pending_requests_action() -> Any:
                 "request_id": request_id,
                 "reason": "device_missing",
             })
+            clear_senior_pending_request_notifications(request_id)
             session["dashboard_error"] = "Device not found. Request rejected."
             return redirect(url_for("dashboard"))
 
