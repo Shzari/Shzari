@@ -9,6 +9,10 @@
       acc[user.username] = Array.isArray(user.allowed_categories) ? user.allowed_categories : null;
       return acc;
     }, {});
+    const USER_CATEGORY_PANEL_MAP = {{ users|tojson }}.reduce((acc, user) => {
+      acc[user.username] = user.category_panel_access && typeof user.category_panel_access === "object" ? user.category_panel_access : {};
+      return acc;
+    }, {});
     const USER_OPERATION_PERMISSIONS_MAP = {{ users|tojson }}.reduce((acc, user) => {
       acc[user.username] = Array.isArray(user.admin_permissions) ? user.admin_permissions : [];
       return acc;
@@ -127,7 +131,7 @@
       } else if (action === 'set_role') {
         note.textContent = 'Set role group for this user (Helpdesk / Junior / Senior).';
       } else if (action === 'set_user_rights') {
-        note.textContent = 'Set user rights: category access + operation access. Move category requires both Edit Devices + Move Device Category.';
+        note.textContent = 'Set user rights: category access + operation access + panel access (Devices / IP Addressing / both). Move category requires both Edit Devices + Move Device Category.';
       }
     }
 
@@ -140,25 +144,36 @@
     function syncUserCategoriesSelection() {
       const userSelect = document.getElementById('userEditUsername');
       const checkboxes = Array.from(document.querySelectorAll('.category-access-checkbox'));
+      const panelDevices = Array.from(document.querySelectorAll('.panel-devices-checkbox'));
+      const panelIp = Array.from(document.querySelectorAll('.panel-ip-checkbox'));
       if (!userSelect || !checkboxes.length) return;
 
       const username = userSelect.value;
       const allowedCategories = USER_CATEGORY_MAP[username];
+      const panelMap = USER_CATEGORY_PANEL_MAP[username] || {};
 
-      checkboxes.forEach((item) => {
-        item.checked = false;
-      });
+      checkboxes.forEach((item) => { item.checked = false; });
+      panelDevices.forEach((item) => { item.checked = false; });
+      panelIp.forEach((item) => { item.checked = false; });
 
       if (allowedCategories === null) {
         setAllCategoryCheckboxes(true);
-        return;
+      } else {
+        const allowedSet = new Set(allowedCategories || []);
+        checkboxes.forEach((item) => {
+          if (allowedSet.has(item.value)) item.checked = true;
+        });
       }
 
-      const allowedSet = new Set(allowedCategories || []);
-      checkboxes.forEach((item) => {
-        if (allowedSet.has(item.value)) {
-          item.checked = true;
-        }
+      panelDevices.forEach((item) => {
+        const category = item.dataset.category || '';
+        const panels = Array.isArray(panelMap[category]) ? panelMap[category] : [];
+        item.checked = panels.includes('devices');
+      });
+      panelIp.forEach((item) => {
+        const category = item.dataset.category || '';
+        const panels = Array.isArray(panelMap[category]) ? panelMap[category] : [];
+        item.checked = panels.includes('ip_addressing');
       });
     }
 
@@ -356,6 +371,11 @@
                 {% else %}
                   | operation access: none
                 {% endif %}
+                {% if user.category_panel_access %}
+                  | panel access: {{ user.category_panel_access }}
+                {% else %}
+                  | panel access: default (devices)
+                {% endif %}
               </small>
             </div>
           {% endfor %}
@@ -412,6 +432,13 @@
             <span>{{ category }}</span>
             <input class="category-access-checkbox" type="checkbox" name="allowed_categories" value="{{ category }}">
           </label>
+          <div class="category-access-row" style="padding-left:14px;">
+            <span style="font-size:12px; color:#666;">Panel Access</span>
+            <span style="display:flex; gap:10px; align-items:center;">
+              <label><input class="panel-devices-checkbox" data-category="{{ category }}" type="checkbox" name="panel_devices_categories" value="{{ category }}"> Devices</label>
+              <label><input class="panel-ip-checkbox" data-category="{{ category }}" type="checkbox" name="panel_ip_categories" value="{{ category }}"> IP Addressing</label>
+            </span>
+          </div>
         {% endfor %}
         {% if not available_categories %}
           <div class="category-access-empty">No categories found yet.</div>

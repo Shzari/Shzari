@@ -146,12 +146,17 @@ def init_db() -> None:
                 password_hash TEXT NOT NULL DEFAULT '',
                 must_change_password INTEGER NOT NULL DEFAULT 1,
                 allowed_categories TEXT,
-                admin_permissions TEXT
+                admin_permissions TEXT,
+                category_panel_access TEXT
             )
             """
         )
         try:
             conn.execute("ALTER TABLE users ADD COLUMN admin_permissions TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN category_panel_access TEXT")
         except sqlite3.OperationalError:
             pass
         conn.execute(
@@ -286,8 +291,8 @@ def migrate_legacy_json_to_db() -> None:
                         continue
                     conn.execute(
                         """
-                        INSERT OR REPLACE INTO users(username, role, salt, password_hash, must_change_password, allowed_categories, admin_permissions)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        INSERT OR REPLACE INTO users(username, role, salt, password_hash, must_change_password, allowed_categories, admin_permissions, category_panel_access)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             username,
@@ -297,6 +302,7 @@ def migrate_legacy_json_to_db() -> None:
                             1 if bool(item.get("must_change_password", True)) else 0,
                             json.dumps(item.get("allowed_categories")),
                             json.dumps(item.get("admin_permissions", [])),
+                            json.dumps(item.get("category_panel_access", {})),
                         ),
                     )
 
@@ -435,7 +441,7 @@ def load_users() -> list[dict[str, Any]]:
     normalized: list[dict[str, Any]] = []
     with db_conn() as conn:
         rows = conn.execute(
-            "SELECT username, role, salt, password_hash, must_change_password, allowed_categories, admin_permissions FROM users ORDER BY username"
+            "SELECT username, role, salt, password_hash, must_change_password, allowed_categories, admin_permissions, category_panel_access FROM users ORDER BY username"
         ).fetchall()
 
     for row in rows:
@@ -449,6 +455,11 @@ def load_users() -> list[dict[str, Any]]:
             admin_permissions = json.loads(admin_raw) if admin_raw else []
         except Exception:
             admin_permissions = []
+        panel_raw = row["category_panel_access"] if "category_panel_access" in row.keys() else None
+        try:
+            category_panel_access = json.loads(panel_raw) if panel_raw else {}
+        except Exception:
+            category_panel_access = {}
         user: dict[str, Any] = {
             "username": row["username"],
             "role": normalize_role(str(row["role"])),
@@ -457,6 +468,7 @@ def load_users() -> list[dict[str, Any]]:
             "must_change_password": bool(row["must_change_password"]),
             "allowed_categories": allowed_categories,
             "admin_permissions": admin_permissions,
+            "category_panel_access": category_panel_access,
         }
         user["role"] = normalize_role(str(user.get("role", "junior")))
         user.setdefault("salt", "")
@@ -464,6 +476,7 @@ def load_users() -> list[dict[str, Any]]:
         user.setdefault("must_change_password", True)
         user.setdefault("allowed_categories", None)
         user.setdefault("admin_permissions", [])
+        user.setdefault("category_panel_access", {})
         normalized.append(user)
     return normalized
 
@@ -474,8 +487,8 @@ def save_users(users: list[dict[str, Any]]) -> None:
         for user in users:
             conn.execute(
                 """
-                INSERT INTO users(username, role, salt, password_hash, must_change_password, allowed_categories, admin_permissions)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO users(username, role, salt, password_hash, must_change_password, allowed_categories, admin_permissions, category_panel_access)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     str(user.get("username", "")).strip(),
@@ -485,6 +498,7 @@ def save_users(users: list[dict[str, Any]]) -> None:
                     1 if bool(user.get("must_change_password", True)) else 0,
                     json.dumps(user.get("allowed_categories")),
                     json.dumps(user.get("admin_permissions", [])),
+                    json.dumps(user.get("category_panel_access", {})),
                 ),
             )
 
@@ -1076,6 +1090,7 @@ def upsert_user(username: str, role: str = "junior") -> tuple[bool, str]:
         "must_change_password": True,
         "allowed_categories": None,
         "admin_permissions": [],
+        "category_panel_access": {},
     })
     save_users(users)
     return True, f"User '{username}' created. Password will be set on first login."
@@ -1203,7 +1218,7 @@ def user_allowed_categories(username: str, auth_mode: str) -> list[str] | None:
 
 
 def filter_devices_for_user(devices: list[dict[str, Any]], username: str, auth_mode: str) -> list[dict[str, Any]]:
-    allowed = user_allowed_categories(username, auth_mode)
+    allowed = user_allowed_categories_by_panel(username, auth_mode, "devices")
     if allowed is None:
         return devices
 
@@ -1216,8 +1231,34 @@ def filter_devices_for_user(devices: list[dict[str, Any]], username: str, auth_m
     return filtered
 
 
+
+
+def user_allowed_categories_by_panel(username: str, auth_mode: str, panel_name: str) -> list[str] | None:
+    if auth_mode != "local":
+        return None
+    users = load_users()
+    user = find_user(users, username)
+    if user is None:
+        return None
+    if normalize_role(str(user.get("role", "junior"))) == "senior":
+        return None
+
+    mapping = user.get("category_panel_access", {})
+    if isinstance(mapping, dict) and mapping:
+        panel = str(panel_name or "devices").strip().lower()
+        allowed: list[str] = []
+        for category, panels in mapping.items():
+            if not isinstance(panels, list):
+                continue
+            normalized = {str(item).strip().lower() for item in panels}
+            if panel in normalized:
+                allowed.append(str(category).strip())
+        return allowed
+
+    return user_allowed_categories(username, auth_mode)
+
 def user_can_access_device(device: dict[str, Any], username: str, auth_mode: str) -> bool:
-    allowed = user_allowed_categories(username, auth_mode)
+    allowed = user_allowed_categories_by_panel(username, auth_mode, "devices")
     if allowed is None:
         return True
 
@@ -2263,6 +2304,8 @@ def manage_users() -> Any:
     elif action == "set_user_rights":
         username = request.form.get("selected_username", "").strip()
         selected_categories = [c.strip() for c in request.form.getlist("allowed_categories") if c.strip()]
+        panel_devices_categories = [c.strip() for c in request.form.getlist("panel_devices_categories") if c.strip()]
+        panel_ip_categories = [c.strip() for c in request.form.getlist("panel_ip_categories") if c.strip()]
         selected_permissions = [p.strip() for p in request.form.getlist("admin_permissions") if p.strip()]
         allowed_permissions = {"create_category", "edit_device", "move_device_category", "delete_device", "delete_category"}
         selected_permissions = [p for p in selected_permissions if p in allowed_permissions]
@@ -2274,6 +2317,16 @@ def manage_users() -> Any:
             session["settings_error"] = "User not found."
         else:
             user["allowed_categories"] = selected_categories
+            panel_access: dict[str, list[str]] = {}
+            categories_union = set(selected_categories) | set(panel_devices_categories) | set(panel_ip_categories)
+            for category in categories_union:
+                panels: list[str] = []
+                if category in panel_devices_categories:
+                    panels.append("devices")
+                if category in panel_ip_categories:
+                    panels.append("ip_addressing")
+                panel_access[category] = panels
+            user["category_panel_access"] = panel_access
             user["admin_permissions"] = selected_permissions
             save_users(users)
             session["settings_info"] = f"Updated user rights for '{username}'."
