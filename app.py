@@ -2500,10 +2500,25 @@ def pending_command_decision() -> Any:
     auth_mode = str(session.get("auth_mode", "local"))
     allowed_devices = filter_devices_for_user(all_devices, current_username, auth_mode)
     allowed_by_name = {str(device.get("name", "")).strip(): device for device in allowed_devices}
-    target_devices = [allowed_by_name[name] for name in request_item.get("target_devices", []) if name in allowed_by_name]
+    requested_device_names = [str(name).strip() for name in request_item.get("target_devices", []) if str(name).strip()]
+    target_devices: list[dict[str, Any]] = []
+    missing_or_denied: list[str] = []
+    for name in requested_device_names:
+        matched = allowed_by_name.get(name)
+        if matched is None:
+            missing_or_denied.append(name)
+            continue
+        target_devices.append(matched)
 
-    if not target_devices:
-        session["dashboard_error"] = "No allowed target devices found for this approved command."
+    if not requested_device_names:
+        session["dashboard_error"] = "Approved command request has no target devices."
+        return redirect(url_for("dashboard"))
+
+    if missing_or_denied:
+        session["dashboard_error"] = (
+            "Approved command can only run on the originally requested devices. "
+            f"Unavailable/unauthorized: {', '.join(missing_or_denied)}."
+        )
         return redirect(url_for("dashboard"))
 
     dashboard_creds = session.get("creds", {})
