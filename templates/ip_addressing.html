@@ -75,6 +75,9 @@
     .modal-title { margin:0 0 10px; font-size:22px; }
     .modal-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:14px; }
     .hidden { display:none !important; }
+    .round-check { width:18px; height:18px; appearance:none; -webkit-appearance:none; border:2px solid #8ea2be; border-radius:50%; background:#fff; cursor:pointer; display:inline-block; vertical-align:middle; }
+    .round-check:checked { background:#2f6fec; border-color:#2f6fec; box-shadow: inset 0 0 0 3px #fff; }
+
     .flash-info,.flash-error { padding:10px 12px; border-radius:10px; font-size:14px; font-weight:600; }
     .flash-info { background:#d8ebff; color:#1b4d85; border:1px solid #b7d8ff; }
     .flash-error { background:#ffe2e2; color:#892222; border:1px solid #ffc3c3; }
@@ -110,6 +113,16 @@
     }
 
     function utilizationClass(v){ if(v>85) return 'red'; if(v>=70) return 'yellow'; return 'green'; }
+    function recalcBranchUtilization(branch) {
+      const total = Array.isArray(branch.assignments) ? branch.assignments.length : 0;
+      if (!total) {
+        branch.utilization = 0;
+        return;
+      }
+      const used = branch.assignments.filter((item) => Boolean(item.used)).length;
+      branch.utilization = Math.round((used / total) * 100);
+    }
+
 
     function buildBranchObject(index, name, site) {
       const parentBase = ipToInt(GLOBAL_PARENT_NETWORK);
@@ -118,9 +131,9 @@
       const networkBase = intToIp(subnetBaseInt);
       const gateway = intToIp(subnetBaseInt + 1);
       const assignments = [
-        { hostIp: intToIp(subnetBaseInt + 2), hostname: `HR-LT-${String(index+2).padStart(3,'0')}`, enduser: 'Sarah Ahmed' },
-        { hostIp: intToIp(subnetBaseInt + 3), hostname: `FIN-PC-${String(index+3).padStart(3,'0')}`, enduser: 'Omar Ali' },
-        { hostIp: intToIp(subnetBaseInt + 4), hostname: `POS-TERM-${String(index+4).padStart(3,'0')}`, enduser: 'Store Team' }
+        { hostIp: intToIp(subnetBaseInt + 2), hostname: `HR-LT-${String(index+2).padStart(3,'0')}`, enduser: 'Sarah Ahmed', used: false },
+        { hostIp: intToIp(subnetBaseInt + 3), hostname: `FIN-PC-${String(index+3).padStart(3,'0')}`, enduser: 'Omar Ali', used: false },
+        { hostIp: intToIp(subnetBaseInt + 4), hostname: `POS-TERM-${String(index+4).padStart(3,'0')}`, enduser: 'Store Team', used: false }
       ];
       return {
         id: `branch-${index+1}`,
@@ -151,6 +164,7 @@
         return hay.includes(q);
       });
       tbody.innerHTML = rows.map((b) => {
+        recalcBranchUtilization(b);
         const p = Number(b.utilization);
         return `<tr>
           <td><span class="clickable" onclick="openBranchDetails('${b.id}')">${b.name}</span></td>
@@ -199,6 +213,7 @@
             <td>${a.hostIp}</td>
             <td>${a.hostname}</td>
             <td>${a.enduser}</td>
+            <td><input class="round-check" type="checkbox" ${a.used ? "checked" : ""} onchange="toggleAssignmentUsed(${a._idx}, this.checked)"></td>
           </tr>`;
         }
         return `<tr data-row-index="${a._idx}">
@@ -208,8 +223,19 @@
           <td><input class="input" data-col="hostIp" value="${a.hostIp}"></td>
           <td><input class="input" data-col="hostname" value="${a.hostname}"></td>
           <td><input class="input" data-col="enduser" value="${a.enduser}"></td>
+          <td><input class="round-check" data-col="used" type="checkbox" ${a.used ? "checked" : ""}></td>
         </tr>`;
       }).join('');
+    }
+
+
+    function toggleAssignmentUsed(rowIndex, checked) {
+      const branch = branchesData.find((x) => x.id === selectedBranchId);
+      if (!branch || !branch.assignments[rowIndex]) return;
+      branch.assignments[rowIndex].used = Boolean(checked);
+      recalcBranchUtilization(branch);
+      renderBranchDetails();
+      renderBranchesList();
     }
 
     function openBranchDetails(branchId) {
@@ -260,8 +286,13 @@
         const row = branch.assignments[idx];
         tr.querySelectorAll('input[data-col]').forEach((inp) => {
           const col = inp.getAttribute('data-col');
+          if (!col) return;
+          if (col === 'used') {
+            row.used = Boolean(inp.checked);
+            return;
+          }
           const val = String(inp.value || '').trim();
-          if (!col || !val) return;
+          if (!val) return;
           if (col === 'hostIp') row.hostIp = val;
           else if (col === 'hostname') row.hostname = val;
           else if (col === 'enduser') row.enduser = val;
@@ -387,6 +418,7 @@
                   <th>Host IP</th>
                   <th>Hostname</th>
                   <th>Enduser</th>
+                  <th>Used</th>
                 </tr>
               </thead>
               <tbody id="branchDetailsBody"></tbody>
