@@ -2608,7 +2608,12 @@ def dashboard() -> Any:
         if req_id <= 0:
             continue
 
-        is_command_request = "critical command approval request" in msg.lower()
+        lower_msg = msg.lower()
+        is_command_request = (
+            "critical command approval request" in lower_msg
+            or "dangerous command approval" in lower_msg
+            or "critical command request" in lower_msg
+        )
         item["pending_request_id"] = req_id
         item["pending_request_type"] = "command" if is_command_request else "device"
 
