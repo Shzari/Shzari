@@ -1,40 +1,49 @@
 <!doctype html>
-<html lang="en">
+<html>
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>IP Addressing Dashboard</title>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 0; background:#0f172a; color:#e2e8f0; }
-    .wrap { max-width: 1100px; margin: 0 auto; padding: 20px; }
-    .user-strip { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:14px; }
-    .chip { background:#1e293b; border:1px solid #334155; border-radius:999px; padding:6px 12px; }
-    .btn { display:inline-block; background:#2563eb; color:white; border-radius:8px; padding:8px 12px; text-decoration:none; border:1px solid #1d4ed8; }
-    .btn.ghost { background:transparent; border-color:#64748b; color:#e2e8f0; }
-    .top { display:flex; gap:10px; justify-content:flex-start; margin-bottom:16px; }
-    .card { background:#111827; border:1px solid #334155; border-radius:12px; padding:16px; }
-    .logout-link { color:#93c5fd; margin-left:auto; }
-    h2 { margin-top:0; }
-  </style>
+  <title>Network Tool - IP Addressing Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script>
+    function updateClock() {
+      const clock = document.getElementById('dashboardClock');
+      if (!clock) return;
+      clock.textContent = new Date().toLocaleString();
+    }
+    document.addEventListener('DOMContentLoaded', () => {
+      updateClock();
+      setInterval(updateClock, 1000);
+    });
+  </script>
 </head>
 <body>
-  <div class="wrap">
-    <div class="user-strip">
-      <div class="chip">👤 User: <b>{{ current_user or 'Unknown' }}/{{ current_user_role|upper }}</b></div>
-      <div class="chip">🔐 Mode: <b>{{ auth_mode|upper }}</b></div>
-      <div class="chip">🔔 Notifications: <b>{{ unread_notifications_count }}</b></div>
-      <a class="logout-link" href="{{ url_for('logout') }}">Logout</a>
-    </div>
+  <div class="page-bg"></div>
 
-    <div class="top">
-      <a class="btn ghost" href="{{ url_for('dashboard') }}">Devices</a>
-      <a class="btn" href="{{ url_for('ip_addressing_dashboard') }}">IP-Addressing</a>
-    </div>
+  <div class="user-strip">
+    <div class="chip center-chip"><span id="dashboardClock">--</span></div>
+    <a class="btn" href="{{ url_for('dashboard', modal='notifications') }}">🔔 Notifications ({{ unread_notifications_count }})</a>
+    <a class="btn" href="{{ url_for('dashboard', modal='device_creds') }}">Device Credentials</a>
+    <div class="chip">👤 User: <b>{{ current_user or 'Unknown' }}/{{ current_user_role|upper }}</b></div>
+    <div class="chip">🔐 Mode: <b>{{ auth_mode|upper }}</b></div>
+    <a class="logout-link" href="{{ url_for('logout') }}">Logout</a>
+  </div>
 
-    <div class="card">
-      <h2>IP Addressing Dashboard</h2>
-      <p>This is a dedicated dashboard area for IP addressing management workflows.</p>
-      <p>You can keep this screen for IP planning, subnet tracking, and address management features.</p>
+  <div class="view-switch" style="display:flex; gap:10px; justify-content:flex-start; margin:10px 0;">
+    <a class="btn ghost" href="{{ url_for('dashboard') }}">Devices</a>
+    <a class="btn" href="{{ url_for('ip_addressing_dashboard') }}">IP-Addressing</a>
+  </div>
+
+  <div class="topbar glass">
+    <h2>🌐 IP Addressing Dashboard</h2>
+    <p>Manage IP planning and addressing operations with the same dashboard layout.</p>
+  </div>
+
+  <div class="grid">
+    <div class="card glass">
+      <div class="card-head">
+        <h3>IP Addressing</h3>
+      </div>
+      <div class="muted-note">This page is ready for IP management widgets while preserving the same top design and organization as Devices.</div>
     </div>
   </div>
 </body>

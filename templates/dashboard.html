@@ -910,6 +910,12 @@ ${entry.output}
       if (SELECTED_MODAL === 'device_settings') {
         openDeviceSettingsModal();
       }
+      if (SELECTED_MODAL === 'notifications') {
+        openNotificationsModal();
+      }
+      if (SELECTED_MODAL === 'device_creds') {
+        openDeviceCredsModal();
+      }
 
       setCommandMode('show');
       updateCommandPreview();
