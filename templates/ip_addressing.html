@@ -225,6 +225,29 @@
 
     .btn.icon-btn { width: 40px; padding: 10px 0; }
 
+    .flash-info,
+    .flash-error {
+      padding: 10px 12px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .flash-info { background: #d8ebff; color: #1b4d85; border: 1px solid #b7d8ff; }
+    .flash-error { background: #ffe2e2; color: #892222; border: 1px solid #ffc3c3; }
+
+    dialog.modal {
+      border: none;
+      border-radius: 14px;
+      width: min(460px, 92vw);
+      padding: 0;
+      box-shadow: var(--shadow);
+      background: #f5f8fc;
+    }
+    dialog.modal::backdrop { background: rgba(8, 20, 41, 0.55); }
+    .modal-body { padding: 20px; color: #20344e; }
+    .modal-title { margin: 0 0 10px; font-size: 22px; }
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; }
+
     .table-wrap {
       background: var(--panel-soft);
       border: 1px solid #d6deea;
@@ -317,6 +340,27 @@
       return 'green';
     }
 
+    function openBranchSettingsModal() {
+      const modal = document.getElementById('branchSettingsModal');
+      if (modal) modal.showModal();
+    }
+
+    function closeBranchSettingsModal() {
+      const modal = document.getElementById('branchSettingsModal');
+      if (modal) modal.close();
+    }
+
+    function openAddBranchModal() {
+      closeBranchSettingsModal();
+      const modal = document.getElementById('addBranchModal');
+      if (modal) modal.showModal();
+    }
+
+    function closeAddBranchModal() {
+      const modal = document.getElementById('addBranchModal');
+      if (modal) modal.close();
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
       updateClock();
       setInterval(updateClock, 1000);
@@ -328,6 +372,14 @@
         fill.style.width = `${Math.max(0, Math.min(100, n))}%`;
         fill.classList.add(utilizationClass(n));
       });
+
+      const deleteSelect = document.getElementById('deleteBranchSelect');
+      const applyDeleteBtn = document.getElementById('applyDeleteBranchBtn');
+      if (deleteSelect && applyDeleteBtn) {
+        const syncDeleteButton = () => { applyDeleteBtn.disabled = !deleteSelect.value; };
+        deleteSelect.addEventListener('change', syncDeleteButton);
+        syncDeleteButton();
+      }
     });
   </script>
 </head>
@@ -359,6 +411,8 @@
 
       <main class="content">
         <section class="panel">
+          {% if info %}<div class="flash-info">{{ info }}</div>{% endif %}
+          {% if error %}<div class="flash-error">{{ error }}</div>{% endif %}
           <div class="breadcrumb">IP Addressing &gt; Branches</div>
           <h1 class="title">Branches</h1>
 
@@ -373,7 +427,7 @@
               </select>
             </div>
             <div class="toolbar-right">
-              <button class="btn primary" type="button">+ Add Branch</button>
+              <button class="btn primary" type="button" onclick="openBranchSettingsModal()">Branch Settings</button>
               <button class="btn icon-btn" type="button" title="Import">⤓</button>
               <button class="btn icon-btn" type="button" title="Export">⤒</button>
             </div>
@@ -439,5 +493,47 @@
       </main>
     </div>
   </div>
+
+  <dialog id="branchSettingsModal" class="modal">
+    <div class="modal-body">
+      <h3 class="modal-title">Branch Settings</h3>
+      <div class="toolbar-left" style="margin-bottom: 12px;">
+        <button class="btn primary" type="button" onclick="openAddBranchModal()">Add Branch</button>
+      </div>
+      <form method="post" action="{{ url_for('manage_categories') }}">
+        <input type="hidden" name="action" value="delete_category">
+        <input type="hidden" name="next" value="ip_addressing">
+        <label>Select Branch to Delete</label>
+        <select id="deleteBranchSelect" class="select" name="delete_category_name" style="width:100%; margin-top: 8px;">
+          <option value="" selected>-- Select Branch --</option>
+          {% for branch in branches %}
+            <option value="{{ branch }}">{{ branch }}</option>
+          {% endfor %}
+        </select>
+        <div class="modal-actions">
+          <button class="btn" type="button" onclick="closeBranchSettingsModal()">Cancel</button>
+          <button id="applyDeleteBranchBtn" class="btn primary" type="submit">Apply Delete Branch</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog id="addBranchModal" class="modal">
+    <form class="modal-body" method="post" action="{{ url_for('manage_categories') }}">
+      <input type="hidden" name="action" value="create_category">
+      <input type="hidden" name="next" value="ip_addressing">
+      <h3 class="modal-title">Add Branch</h3>
+      <label>Branch Name</label>
+      <input class="input" name="category_name" type="text" placeholder="e.g., B902 - East Campus" style="width:100%; margin-top: 8px;" required>
+      <label style="margin-top: 12px; display:block;">City / Site</label>
+      <input class="input" type="text" placeholder="e.g., Kumanovo Regional Office" style="width:100%; margin-top: 8px;">
+      <label style="margin-top: 12px; display:block;">Addressing Notes</label>
+      <input class="input" type="text" placeholder="e.g., VLAN10 users, VLAN20 voice, /24 transit" style="width:100%; margin-top: 8px;">
+      <div class="modal-actions">
+        <button class="btn" type="button" onclick="closeAddBranchModal()">Cancel</button>
+        <button class="btn primary" type="submit">Apply Add Branch</button>
+      </div>
+    </form>
+  </dialog>
 </body>
 </html>

@@ -2591,11 +2591,17 @@ def ip_addressing_dashboard() -> Any:
         return redirect(url_for("login"))
 
     current_username = str(session.get("creds", {}).get("username", ""))
+    auth_mode = str(session.get("auth_mode", "local"))
+    devices = filter_devices_for_user(load_devices(), current_username, auth_mode)
+    branches = [item for item in all_categories(devices) if item != DEFAULT_CATEGORY]
     return render_template(
         "ip_addressing.html",
         current_user=current_username,
         current_user_role=current_user_role(),
-        auth_mode=str(session.get("auth_mode", "local")),
+        auth_mode=auth_mode,
+        branches=branches,
+        info=session.pop("dashboard_info", ""),
+        error=session.pop("dashboard_error", ""),
         unread_notifications_count=len(load_unread_notifications(current_username)),
     )
 
@@ -2693,7 +2699,8 @@ def manage_devices() -> Any:
 
     action = request.form.get("action", "add").strip()
     devices = load_devices()
-    dashboard_modal_url = url_for("dashboard", modal="device_settings")
+    next_page = str(request.form.get("next", "")).strip().lower()
+    dashboard_modal_url = url_for("ip_addressing_dashboard") if next_page == "ip_addressing" else url_for("dashboard", modal="device_settings")
     current_username = str(session.get("creds", {}).get("username", "")).strip()
     auth_mode = str(session.get("auth_mode", "local"))
 
@@ -2848,7 +2855,8 @@ def manage_categories() -> Any:
 
     action = request.form.get("action", "").strip()
     devices = load_devices()
-    dashboard_modal_url = url_for("dashboard", modal="device_settings")
+    next_page = str(request.form.get("next", "")).strip().lower()
+    dashboard_modal_url = url_for("ip_addressing_dashboard") if next_page == "ip_addressing" else url_for("dashboard", modal="device_settings")
 
     if action == "create_category":
         if not is_senior_user():
