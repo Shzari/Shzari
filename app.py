@@ -2626,12 +2626,14 @@ def ip_addressing_dashboard() -> Any:
     current_username = str(session.get("creds", {}).get("username", ""))
     auth_mode = str(session.get("auth_mode", "local"))
     branches = load_ip_branches()
+    devices = filter_devices_for_user(load_devices(), current_username, auth_mode)
     return render_template(
         "ip_addressing.html",
         current_user=current_username,
         current_user_role=current_user_role(),
         auth_mode=auth_mode,
         branches=branches,
+        devices=devices,
         info=session.pop("dashboard_info", ""),
         error=session.pop("dashboard_error", ""),
         unread_notifications_count=len(load_unread_notifications(current_username)),
