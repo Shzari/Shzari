@@ -33,6 +33,7 @@ DB_FILE = BASE_DIR / "app_data.db"
 USER_BUTTONS_FILE = BASE_DIR / "user_buttons.json"
 NTP_SETTINGS_FILE = BASE_DIR / "ntp_settings.json"
 SESSION_SETTINGS_FILE = BASE_DIR / "session_settings.json"
+IP_BRANCHES_FILE = BASE_DIR / "ip_branches.json"
 SECRET_KEY = os.environ.get("APP_SECRET_KEY", "dev-secret-change-me")
 
 app = Flask(__name__)
@@ -1078,6 +1079,38 @@ def upsert_user(username: str, role: str = "junior") -> tuple[bool, str]:
     })
     save_users(users)
     return True, f"User '{username}' created. Password will be set on first login."
+
+def default_ip_branches() -> list[str]:
+    return ["B701", "B702", "B703", "B704"]
+
+
+def load_ip_branches() -> list[str]:
+    if not IP_BRANCHES_FILE.exists():
+        branches = default_ip_branches()
+        IP_BRANCHES_FILE.write_text(json.dumps(branches, indent=2), encoding="utf-8")
+        return branches
+    try:
+        raw = json.loads(IP_BRANCHES_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return default_ip_branches()
+    if not isinstance(raw, list):
+        return default_ip_branches()
+    branches = [str(item).strip() for item in raw if str(item).strip()]
+    return branches or default_ip_branches()
+
+
+def save_ip_branches(branches: list[str]) -> None:
+    normalized = []
+    seen: set[str] = set()
+    for item in branches:
+        name = str(item).strip()
+        key = name.lower()
+        if not name or key in seen:
+            continue
+        seen.add(key)
+        normalized.append(name)
+    IP_BRANCHES_FILE.write_text(json.dumps(normalized, indent=2), encoding="utf-8")
+
 
 def load_devices() -> list[dict[str, Any]]:
     devices: list[dict[str, Any]] = []
@@ -2592,8 +2625,7 @@ def ip_addressing_dashboard() -> Any:
 
     current_username = str(session.get("creds", {}).get("username", ""))
     auth_mode = str(session.get("auth_mode", "local"))
-    devices = filter_devices_for_user(load_devices(), current_username, auth_mode)
-    branches = [item for item in all_categories(devices) if item != DEFAULT_CATEGORY]
+    branches = load_ip_branches()
     return render_template(
         "ip_addressing.html",
         current_user=current_username,
@@ -2604,6 +2636,44 @@ def ip_addressing_dashboard() -> Any:
         error=session.pop("dashboard_error", ""),
         unread_notifications_count=len(load_unread_notifications(current_username)),
     )
+
+
+@app.route("/ip-branches", methods=["POST"])
+def manage_ip_branches() -> Any:
+    if "creds" not in session:
+        return redirect(url_for("login"))
+
+    action = str(request.form.get("action", "")).strip().lower()
+    branches = load_ip_branches()
+
+    if action == "add":
+        branch_name = str(request.form.get("branch_name", "")).strip()
+        if not branch_name:
+            session["dashboard_error"] = "Branch name is required."
+            return redirect(url_for("ip_addressing_dashboard"))
+        if any(branch_name.lower() == item.lower() for item in branches):
+            session["dashboard_error"] = "Branch already exists."
+            return redirect(url_for("ip_addressing_dashboard"))
+        branches.append(branch_name)
+        save_ip_branches(branches)
+        session["dashboard_info"] = f"Branch '{branch_name}' added."
+        return redirect(url_for("ip_addressing_dashboard"))
+
+    if action == "delete":
+        branch_name = str(request.form.get("branch_name", "")).strip()
+        if not branch_name:
+            session["dashboard_error"] = "Select a branch to delete."
+            return redirect(url_for("ip_addressing_dashboard"))
+        updated = [item for item in branches if item.lower() != branch_name.lower()]
+        if len(updated) == len(branches):
+            session["dashboard_error"] = "Branch not found."
+            return redirect(url_for("ip_addressing_dashboard"))
+        save_ip_branches(updated)
+        session["dashboard_info"] = f"Branch '{branch_name}' deleted."
+        return redirect(url_for("ip_addressing_dashboard"))
+
+    session["dashboard_error"] = "Unknown branch action."
+    return redirect(url_for("ip_addressing_dashboard"))
 
 
 @app.route("/dashboard", methods=["GET"])

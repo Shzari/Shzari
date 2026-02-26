@@ -75,6 +75,9 @@
     .modal-title { margin:0 0 10px; font-size:22px; }
     .modal-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:14px; }
     .hidden { display:none !important; }
+    .flash-info,.flash-error { padding:10px 12px; border-radius:10px; font-size:14px; font-weight:600; }
+    .flash-info { background:#d8ebff; color:#1b4d85; border:1px solid #b7d8ff; }
+    .flash-error { background:#ffe2e2; color:#892222; border:1px solid #ffc3c3; }
   </style>
   <script>
     let branchesData = [];
@@ -200,58 +203,22 @@
     function openAddBranchModal(){ closeBranchSettingsModal(); document.getElementById('addBranchModal')?.showModal(); }
     function closeAddBranchModal(){ document.getElementById('addBranchModal')?.close(); }
 
-    function renderDeleteBranchOptions() {
-      const select = document.getElementById('deleteBranchSelect');
-      if (!select) return;
-      select.innerHTML = '<option value="" selected>-- Select Branch --</option>' + branchesData.map((b) => `<option value="${b.id}">${b.name} (${b.networkBase}/${b.cidr})</option>`).join('');
-      document.getElementById('applyDeleteBranchBtn').disabled = true;
-    }
 
-    function applyDeleteBranch() {
-      const select = document.getElementById('deleteBranchSelect');
-      if (!select || !select.value) return;
-      branchesData = branchesData.filter((b) => b.id !== select.value);
-      renderDeleteBranchOptions();
-      renderBranchesList();
-    }
-
-    function applyAddBranch(event) {
-      event.preventDefault();
-      const branchName = String(document.getElementById('addBranchName').value || '').trim();
-      const branchSite = String(document.getElementById('addBranchSite').value || '').trim() || 'New Site';
-      if (!branchName) return;
-      const idx = branchesData.length;
-      const b = buildBranchObject(idx, branchName, branchSite);
-      if (idx > 0) {
-        const prev = branchesData[idx - 1];
-        b.networkBase = nextSubnetBase(prev.networkBase, GLOBAL_CIDR);
-        b.gateway = intToIp(ipToInt(b.networkBase) + 1);
-        b.assignments = [
-          { hostIp: intToIp(ipToInt(b.networkBase) + 2), hostname: 'HR-LT-002', enduser: 'Sarah Ahmed' },
-          { hostIp: intToIp(ipToInt(b.networkBase) + 3), hostname: 'FIN-PC-003', enduser: 'Omar Ali' },
-          { hostIp: intToIp(ipToInt(b.networkBase) + 4), hostname: 'POS-TERM-004', enduser: 'Store Team' }
-        ];
-        b.subnet = `${b.networkBase}/${b.cidr}`;
-      }
-      branchesData.push(b);
-      closeAddBranchModal();
-      renderDeleteBranchOptions();
-      renderBranchesList();
-      document.getElementById('addBranchForm').reset();
-    }
 
     document.addEventListener('DOMContentLoaded', () => {
       updateClock();
       setInterval(updateClock, 1000);
       initBranches();
       renderBranchesList();
-      renderDeleteBranchOptions();
-      document.getElementById('branchListSearch').addEventListener('input', renderBranchesList);
+            document.getElementById('branchListSearch').addEventListener('input', renderBranchesList);
       document.getElementById('detailsSearch').addEventListener('input', renderBranchDetails);
-      document.getElementById('deleteBranchSelect').addEventListener('change', (e) => {
-        document.getElementById('applyDeleteBranchBtn').disabled = !e.target.value;
-      });
-      document.getElementById('addBranchForm').addEventListener('submit', applyAddBranch);
+      const deleteSelect = document.getElementById('deleteBranchSelect');
+      const deleteBtn = document.getElementById('applyDeleteBranchBtn');
+      if (deleteSelect && deleteBtn) {
+        const syncDelete = () => { deleteBtn.disabled = !deleteSelect.value; };
+        deleteSelect.addEventListener('change', syncDelete);
+        syncDelete();
+      }
     });
   </script>
 </head>
@@ -283,6 +250,8 @@
 
       <main class="content">
         <section class="panel" id="viewBranches">
+          {% if info %}<div class="flash-info">{{ info }}</div>{% endif %}
+          {% if error %}<div class="flash-error">{{ error }}</div>{% endif %}
           <div class="breadcrumb">IP Addressing &gt; Branches</div>
           <h1 class="title">Branches</h1>
           <div class="toolbar">
@@ -352,20 +321,29 @@
       <div class="toolbar-left" style="margin-bottom: 12px;">
         <button class="btn primary" type="button" onclick="openAddBranchModal()">Add Branch</button>
       </div>
-      <label>Select Branch to Delete</label>
-      <select id="deleteBranchSelect" class="select" style="width:100%; margin-top:8px;"></select>
-      <div class="modal-actions">
-        <button class="btn" type="button" onclick="closeBranchSettingsModal()">Cancel</button>
-        <button id="applyDeleteBranchBtn" class="btn primary" type="button" onclick="applyDeleteBranch()">Apply Delete Branch</button>
-      </div>
+      <form method="post" action="{{ url_for('manage_ip_branches') }}">
+        <input type="hidden" name="action" value="delete">
+        <label>Select Branch to Delete</label>
+        <select id="deleteBranchSelect" class="select" name="branch_name" style="width:100%; margin-top:8px;">
+          <option value="" selected>-- Select Branch --</option>
+          {% for branch in branches %}
+            <option value="{{ branch }}">{{ branch }}</option>
+          {% endfor %}
+        </select>
+        <div class="modal-actions">
+          <button class="btn" type="button" onclick="closeBranchSettingsModal()">Cancel</button>
+          <button id="applyDeleteBranchBtn" class="btn primary" type="submit">Apply Delete Branch</button>
+        </div>
+      </form>
     </div>
   </dialog>
 
   <dialog id="addBranchModal" class="modal">
-    <form id="addBranchForm" class="modal-body">
+    <form id="addBranchForm" class="modal-body" method="post" action="{{ url_for('manage_ip_branches') }}">
+      <input type="hidden" name="action" value="add">
       <h3 class="modal-title">Add Branch</h3>
       <label>Branch Name</label>
-      <input id="addBranchName" class="input" type="text" placeholder="e.g., B902" style="width:100%; margin-top:8px;" required>
+      <input id="addBranchName" class="input" name="branch_name" type="text" placeholder="e.g., B902" style="width:100%; margin-top:8px;" required>
       <label style="display:block; margin-top:12px;">City / Site</label>
       <input id="addBranchSite" class="input" type="text" placeholder="e.g., Kumanovo Regional Office" style="width:100%; margin-top:8px;">
       <div class="modal-actions">
