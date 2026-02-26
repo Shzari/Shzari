@@ -5,466 +5,159 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Network Tool - IP Addressing Dashboard</title>
   <style>
-    :root {
-      --bg-top: #081a36;
-      --bg-bottom: #123a72;
-      --nav-bg-1: #0b1f40;
-      --nav-bg-2: #0f2a57;
-      --sidebar-bg: #091a34;
-      --panel-bg: #edf1f6;
-      --panel-soft: #f8fafc;
-      --text-dark: #132238;
-      --text-muted: #5a6a81;
-      --primary: #2f6fec;
-      --success: #1fa266;
-      --warning: #d7a006;
-      --danger: #d24d57;
-      --shadow: 0 10px 30px rgba(6, 19, 44, 0.22);
-      --radius-lg: 18px;
-      --radius-md: 12px;
-      --space-1: 8px;
-      --space-2: 16px;
-      --space-3: 24px;
-    }
-    * { box-sizing: border-box; }
-    body { margin:0; min-height:100vh; font-family:"Segoe UI", Inter, Arial, sans-serif; color:#f7fbff; background:linear-gradient(180deg,var(--bg-top),var(--bg-bottom)); }
-    .app-shell { min-height:100vh; display:grid; grid-template-rows:auto 1fr; }
-    .top-nav { background:linear-gradient(120deg,var(--nav-bg-1),var(--nav-bg-2)); display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:var(--space-2); padding:12px 20px; box-shadow:var(--shadow); position:sticky; top:0; z-index:50; }
-    .date-pill { justify-self:center; background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.2); border-radius:999px; padding:8px 18px; font-size:14px; font-weight:600; }
-    .nav-actions { justify-self:end; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-    .nav-btn,.badge { border-radius:999px; border:1px solid rgba(255,255,255,.22); background:rgba(255,255,255,.12); color:#f4f8ff; padding:7px 14px; font-size:13px; font-weight:600; text-decoration:none; white-space:nowrap; }
-    .workspace { display:grid; grid-template-columns:auto 1fr; min-height:0; }
-    .sidebar { width:60px; background:var(--sidebar-bg); border-right:1px solid rgba(255,255,255,.08); padding:14px 10px; transition:width 300ms ease; overflow:hidden; }
-    .sidebar:hover,.sidebar.force-collapsed:hover { width:220px; }
-    .sidebar-list { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
-    .sidebar-item { display:flex; align-items:center; gap:10px; border-radius:10px; padding:10px 9px; color:#d9e6ff; text-decoration:none; font-size:14px; font-weight:600; }
-    .sidebar-item:hover { background:rgba(255,255,255,.1); }
-    .sidebar-item.active { background:rgba(47,111,236,.26); border:1px solid rgba(95,155,255,.35); color:#fff; }
-    .icon { width:24px; text-align:center; }
-    .label { opacity:0; transform:translateX(-4px); transition:opacity 220ms ease, transform 220ms ease; white-space:nowrap; }
-    .sidebar:hover .label { opacity:1; transform:translateX(0); }
-    .content { padding:var(--space-3); min-width:0; }
-    .panel { background:var(--panel-bg); border-radius:var(--radius-lg); box-shadow:var(--shadow); color:var(--text-dark); padding:var(--space-3); min-height:calc(100vh - 130px); display:flex; flex-direction:column; gap:var(--space-2); }
-    .breadcrumb { color:var(--text-muted); font-size:13px; font-weight:600; }
-    .title { margin:0; font-size:28px; }
-    .toolbar { display:flex; justify-content:space-between; gap:var(--space-2); flex-wrap:wrap; }
-    .toolbar-left,.toolbar-right { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-    .input,.select,.btn { border-radius:10px; border:1px solid #ccd5e1; background:#fff; color:#22324a; font-size:14px; padding:10px 12px; }
-    .btn { cursor:pointer; font-weight:600; box-shadow:0 2px 8px rgba(17,41,82,.08); }
-    .btn.primary { background:var(--primary); border-color:var(--primary); color:#fff; }
-    .btn.icon-btn { width:40px; padding:10px 0; }
-    .btn.back { background:#fff; }
-    .summary-card { background:#f7fafd; border:1px solid #d6deea; border-radius:12px; padding:14px 16px; display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; }
-    .summary-item b { display:block; color:#4f607a; font-size:12px; margin-bottom:4px; }
-    .summary-item span { font-weight:700; color:#24364f; }
-    .table-wrap { background:var(--panel-soft); border:1px solid #d6deea; border-radius:var(--radius-md); overflow:auto; }
-    table { width:100%; border-collapse:separate; border-spacing:0; min-width:900px; }
-    thead th { position:sticky; top:0; z-index:2; background:#e6edf7; color:#324760; text-align:left; font-size:13px; font-weight:700; padding:14px 16px; border-bottom:1px solid #cbd7e6; }
-    tbody td { padding:14px 16px; border-bottom:1px solid #dde5f1; font-size:14px; color:#253a53; background:#f9fbfd; }
-    tbody tr:hover td { background:#eef4ff; }
-    .clickable { color:#2b63d6; cursor:pointer; font-weight:700; text-decoration:underline; }
-    .progress-track { height:9px; border-radius:999px; background:#dbe4ef; overflow:hidden; width:150px; display:inline-block; margin-right:8px; vertical-align:middle; }
-    .progress-fill { height:100%; border-radius:999px; }
-    .progress-fill.green { background:var(--success); }
-    .progress-fill.yellow { background:var(--warning); }
-    .progress-fill.red { background:var(--danger); }
-    .util-value { font-size:13px; font-weight:700; color:#3b4f69; }
-    dialog.modal { border:none; border-radius:14px; width:min(460px,92vw); padding:0; box-shadow:var(--shadow); background:#f5f8fc; }
-    dialog.modal::backdrop { background:rgba(8,20,41,.55); }
-    .modal-body { padding:20px; color:#20344e; }
-    .modal-title { margin:0 0 10px; font-size:22px; }
-    .modal-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:14px; }
-    .hidden { display:none !important; }
-    .round-check { width:18px; height:18px; appearance:none; -webkit-appearance:none; border:2px solid #8ea2be; border-radius:50%; background:#fff; cursor:pointer; display:inline-block; vertical-align:middle; }
-    .round-check:checked { background:#2f6fec; border-color:#2f6fec; box-shadow: inset 0 0 0 3px #fff; }
-
-    .flash-info,.flash-error { padding:10px 12px; border-radius:10px; font-size:14px; font-weight:600; }
-    .flash-info { background:#d8ebff; color:#1b4d85; border:1px solid #b7d8ff; }
-    .flash-error { background:#ffe2e2; color:#892222; border:1px solid #ffc3c3; }
+    :root{--bg-top:#081a36;--bg-bottom:#123a72;--nav1:#0b1f40;--nav2:#0f2a57;--side:#091a34;--panel:#edf1f6;--soft:#f8fafc;--txt:#132238;--muted:#5a6a81;--pri:#2f6fec;--ok:#1fa266;--warn:#d7a006;--bad:#d24d57;--shadow:0 10px 30px rgba(6,19,44,.22)}
+    *{box-sizing:border-box} body{margin:0;min-height:100vh;font-family:"Segoe UI",Inter,Arial,sans-serif;color:#f7fbff;background:linear-gradient(180deg,var(--bg-top),var(--bg-bottom))}
+    .app{min-height:100vh;display:grid;grid-template-rows:auto 1fr}
+    .top{background:linear-gradient(120deg,var(--nav1),var(--nav2));display:grid;grid-template-columns:1fr auto 1fr;gap:16px;align-items:center;padding:12px 20px;box-shadow:var(--shadow)}
+    .pill{justify-self:center;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2);padding:8px 16px;border-radius:999px;font-weight:600}
+    .actions{justify-self:end;display:flex;gap:10px;flex-wrap:wrap}.chip,.btn-top{border-radius:999px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.12);padding:7px 14px;color:#f4f8ff;text-decoration:none;font-size:13px;font-weight:600}
+    .main{display:grid;grid-template-columns:auto 1fr}.side{width:60px;background:var(--side);padding:14px 10px;overflow:hidden;transition:width .3s ease}.side:hover{width:220px}
+    .nav{list-style:none;margin:0;padding:0;display:grid;gap:8px}.item{display:flex;gap:10px;align-items:center;padding:10px 9px;border-radius:10px;color:#d9e6ff;text-decoration:none;font-weight:600}.item:hover{background:rgba(255,255,255,.1)}.item.active{background:rgba(47,111,236,.26);border:1px solid rgba(95,155,255,.35)}
+    .lbl{opacity:0;transform:translateX(-4px);transition:.22s;white-space:nowrap}.side:hover .lbl{opacity:1;transform:none}
+    .content{padding:24px;min-width:0}.panel{background:var(--panel);color:var(--txt);border-radius:18px;box-shadow:var(--shadow);padding:24px;min-height:calc(100vh - 130px);display:flex;flex-direction:column;gap:14px}
+    .breadcrumb{color:var(--muted);font-size:13px;font-weight:600}.title{margin:0;font-size:28px}
+    .toolbar{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}.left,.right{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .input,.select,.btn{border:1px solid #ccd5e1;border-radius:10px;background:#fff;color:#22324a;padding:10px 12px;font-size:14px}.btn{font-weight:600;cursor:pointer}.btn.pri{background:var(--pri);border-color:var(--pri);color:#fff}
+    .inline-form{display:grid;grid-template-columns:1.3fr 1.2fr 1.2fr .8fr 1.2fr auto auto;gap:10px;align-items:end;background:var(--soft);border:1px solid #d6deea;border-radius:12px;padding:12px}
+    .inline-form .field{display:flex;flex-direction:column;gap:6px}.field label{font-size:12px;color:#4f607a;font-weight:700}.gw-read{background:#eef3fa}
+    .err{color:#9b1c1c;background:#ffe3e3;border:1px solid #ffc7c7;border-radius:10px;padding:8px 10px;font-weight:600;font-size:13px}
+    .table-wrap{background:var(--soft);border:1px solid #d6deea;border-radius:12px;overflow:auto}table{width:100%;border-collapse:separate;border-spacing:0;min-width:980px}
+    th{position:sticky;top:0;background:#e6edf7;color:#324760;text-align:left;padding:14px 16px;font-size:13px;border-bottom:1px solid #cbd7e6}td{padding:12px 16px;border-bottom:1px solid #dde5f1;background:#f9fbfd;color:#253a53}tbody tr:hover td{background:#eef4ff}
+    .click{color:#2b63d6;cursor:pointer;text-decoration:underline;font-weight:700}.track{height:9px;border-radius:999px;background:#dbe4ef;display:inline-block;width:150px;overflow:hidden;margin-right:8px;vertical-align:middle}.fill{height:100%}.g{background:var(--ok)}.y{background:var(--warn)}.r{background:var(--bad)}
+    .summary{background:#f7fafd;border:1px solid #d6deea;border-radius:12px;padding:14px 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}.summary b{display:block;font-size:12px;color:#4f607a}
+    .status{font-weight:700}.free{color:#3e6ea8}.assigned{color:#0c7a43}.hidden{display:none!important}
+    @media(max-width:1200px){.inline-form{grid-template-columns:repeat(2,minmax(180px,1fr))}}
   </style>
   <script>
-    let branchesData = [];
+    let branches = [];
     let selectedBranchId = null;
-    let isBranchEditMode = false;
-    const GLOBAL_PARENT_NETWORK = '10.10.10.0';
-    const GLOBAL_CIDR = 27;
+    const STORE_KEY = 'ipam_branches_v2';
 
-    function updateClock() {
-      const el = document.getElementById('clockPill');
-      if (el) el.textContent = new Date().toLocaleString();
+    function nowStamp(){ return new Date().toLocaleString(); }
+    function updateClock(){ const e=document.getElementById('clockPill'); if(e) e.textContent=nowStamp(); }
+    function ipToInt(ip){ const p=String(ip).split('.').map(Number); return (((p[0]<<24)>>>0)+((p[1]<<16)>>>0)+((p[2]<<8)>>>0)+(p[3]>>>0))>>>0; }
+    function intToIp(n){ n=Number(n)>>>0; return `${(n>>>24)&255}.${(n>>>16)&255}.${(n>>>8)&255}.${n&255}`; }
+    function cidrToMask(c){ const bits=(0xffffffff << (32-Number(c)))>>>0; return intToIp(bits); }
+    function blockSizeFromCidr(c){ return 2**(32-Number(c)); }
+    function isNetworkAligned(baseIp,cidr){ const i=ipToInt(baseIp); return i % blockSizeFromCidr(cidr)===0; }
+    function doesSubnetOverlap(existing, baseIp, cidr){ const s=ipToInt(baseIp), e=s+blockSizeFromCidr(cidr)-1; return existing.some(b=>{ const bs=ipToInt(b.networkBase), be=bs+blockSizeFromCidr(b.cidr)-1; return s<=be && bs<=e; }); }
+    function utilClass(v){ if(v>85)return'r'; if(v>=70)return'y'; return'g'; }
+
+    function makeIpRows(base,cidr){ const baseInt=ipToInt(base); const block=blockSizeFromCidr(cidr); const gateway=baseInt+1; const broadcast=baseInt+block-1; const rows=[]; for(let i=baseInt+2;i<=broadcast-1;i++){ rows.push({ip:intToIp(i),hostname:'',enduser:'',status:'FREE'}); } return {gateway:intToIp(gateway),broadcast:intToIp(broadcast),ipRows:rows}; }
+    function calcUtil(b){ const total=b.ipRows.length||1; const assigned=b.ipRows.filter(r=>r.status==='ASSIGNED').length; return Math.round((assigned/total)*100); }
+
+    function seedFromServer(){
+      const names={{ branches|tojson }}; if(!Array.isArray(names)||!names.length) return [];
+      const base='10.10.10.0'; const cidr=27; const block=blockSizeFromCidr(cidr); const start=ipToInt(base);
+      return names.map((n,idx)=>{ const nb=intToIp(start+idx*block); const gen=makeIpRows(nb,cidr); return {id:`b-${idx+1}`,name:n,site:'Site',networkBase:nb,cidr,subnetMask:cidrToMask(cidr),gateway:gen.gateway,broadcast:gen.broadcast,createdAt:nowStamp(),updatedAt:nowStamp(),ipRows:gen.ipRows}; });
+    }
+    function loadBranches(){
+      try{ const r=JSON.parse(localStorage.getItem(STORE_KEY)||'[]'); if(Array.isArray(r)&&r.length){ branches=r; return; } }catch(_e){}
+      branches=seedFromServer(); saveBranches();
+    }
+    function saveBranches(){ localStorage.setItem(STORE_KEY, JSON.stringify(branches)); }
+
+    function setGatewayPreview(){
+      const base=document.getElementById('addBase').value.trim();
+      const cidr=Number(String(document.getElementById('addCidr').value).replace('/',''));
+      const gw=document.getElementById('addGateway');
+      if(!base||!cidr){ gw.value=''; return; }
+      try{ gw.value=intToIp(ipToInt(base)+1);}catch(_e){ gw.value=''; }
     }
 
-    function ipToInt(ip) {
-      const p = String(ip).trim().split('.').map((x) => Number(x));
-      return (((p[0] << 24) >>> 0) + ((p[1] << 16) >>> 0) + ((p[2] << 8) >>> 0) + (p[3] >>> 0)) >>> 0;
+    function clearInlineError(){ document.getElementById('inlineErr').classList.add('hidden'); document.getElementById('inlineErr').textContent=''; }
+    function showInlineError(msg){ const e=document.getElementById('inlineErr'); e.textContent=msg; e.classList.remove('hidden'); }
+
+    function addBranchInline(e){
+      e.preventDefault(); clearInlineError();
+      const name=document.getElementById('addName').value.trim();
+      const site=document.getElementById('addSite').value.trim();
+      const base=document.getElementById('addBase').value.trim();
+      const cidr=Number(String(document.getElementById('addCidr').value).replace('/',''));
+      if(!name||!site||!base||!cidr) return showInlineError('Branch Name, City/Site, Network Base and Subnet/CIDR are required.');
+      if(!isNetworkAligned(base,cidr)) return showInlineError(`Network base must align to /${cidr} boundaries (increments of ${blockSizeFromCidr(cidr)}).`);
+      if(doesSubnetOverlap(branches,base,cidr)) return showInlineError('Subnet overlaps an existing branch subnet.');
+      const gen=makeIpRows(base,cidr);
+      branches.push({id:`b-${Date.now()}`,name,site,networkBase:base,cidr,subnetMask:cidrToMask(cidr),gateway:gen.gateway,broadcast:gen.broadcast,createdAt:nowStamp(),updatedAt:nowStamp(),ipRows:gen.ipRows});
+      saveBranches(); document.getElementById('addBranchForm').reset(); setGatewayPreview(); renderList();
+    }
+    function cancelInline(){ document.getElementById('addBranchForm').reset(); clearInlineError(); setGatewayPreview(); }
+
+    function renderList(){
+      const q=String(document.getElementById('listSearch').value||'').toLowerCase();
+      const body=document.getElementById('branchesBody');
+      const rows=branches.filter(b=>`${b.name} ${b.site} ${b.networkBase}/${b.cidr}`.toLowerCase().includes(q));
+      body.innerHTML=rows.map(b=>{ const u=calcUtil(b); return `<tr>
+      <td><span class="click" onclick="openDetails('${b.id}')">${b.name}</span></td><td>${b.site}</td><td>${b.networkBase}/${b.cidr}</td><td>${b.gateway}</td><td>${b.subnetMask}</td>
+      <td><span class="track"><span class="fill ${utilClass(u)}" style="width:${u}%"></span></span><b>${u}%</b></td><td>${b.updatedAt}</td></tr>`; }).join('');
     }
 
-    function intToIp(intValue) {
-      const n = Number(intValue) >>> 0;
-      return `${(n >>> 24) & 255}.${(n >>> 16) & 255}.${(n >>> 8) & 255}.${n & 255}`;
+    function openDetails(id){ selectedBranchId=id; document.getElementById('listView').classList.add('hidden'); document.getElementById('detailsView').classList.remove('hidden'); renderDetails(); }
+    function backToList(){ selectedBranchId=null; document.getElementById('detailsView').classList.add('hidden'); document.getElementById('listView').classList.remove('hidden'); renderList(); }
+
+    function updateRowStatus(row){ row.status=(row.hostname.trim()||row.enduser.trim())?'ASSIGNED':'FREE'; }
+    function onEditRow(idx,key,val){ const b=branches.find(x=>x.id===selectedBranchId); if(!b) return; b.ipRows[idx][key]=val; updateRowStatus(b.ipRows[idx]); b.updatedAt=nowStamp(); saveBranches(); renderDetails(); renderList(); }
+    function clearRow(idx){ const b=branches.find(x=>x.id===selectedBranchId); if(!b) return; b.ipRows[idx].hostname=''; b.ipRows[idx].enduser=''; b.ipRows[idx].status='FREE'; b.updatedAt=nowStamp(); saveBranches(); renderDetails(); renderList(); }
+
+    function renderDetails(){
+      const b=branches.find(x=>x.id===selectedBranchId); if(!b) return;
+      document.getElementById('detailsBreadcrumb').textContent=`IP Addressing > Branches > ${b.name}`;
+      document.getElementById('dName').textContent=b.name; document.getElementById('dSite').textContent=b.site;
+      document.getElementById('dNet').textContent=`${b.networkBase}/${b.cidr}`; document.getElementById('dMask').textContent=b.subnetMask;
+      document.getElementById('dGateway').textContent=b.gateway; document.getElementById('dBroadcast').textContent=b.broadcast; document.getElementById('dUtil').textContent=`${calcUtil(b)}%`;
+      const q=String(document.getElementById('detailsSearch').value||'').toLowerCase();
+      const rows=b.ipRows.map((r,i)=>({...r,_i:i})).filter(r=>`${r.ip} ${r.hostname} ${r.enduser}`.toLowerCase().includes(q));
+      document.getElementById('detailsBody').innerHTML=rows.map(r=>`<tr>
+      <td>${b.networkBase}</td><td>/${b.cidr}</td><td>${b.subnetMask}</td><td>${r.ip}</td>
+      <td><input class="input" value="${r.hostname}" oninput="onEditRow(${r._i},'hostname', this.value)"></td>
+      <td><input class="input" value="${r.enduser}" oninput="onEditRow(${r._i},'enduser', this.value)"></td>
+      <td><span class="status ${r.status==='ASSIGNED'?'assigned':'free'}">${r.status}</span></td>
+      <td><button class="btn" type="button" onclick="clearRow(${r._i})">Clear</button></td>
+      </tr>`).join('');
     }
 
-    function blockSizeFromCidr(cidr) {
-      return 2 ** (32 - Number(cidr));
-    }
-
-    function nextSubnetBase(lastBase, cidr) {
-      return intToIp(ipToInt(lastBase) + blockSizeFromCidr(cidr));
-    }
-
-    function utilizationClass(v){ if(v>85) return 'red'; if(v>=70) return 'yellow'; return 'green'; }
-    function recalcBranchUtilization(branch) {
-      const total = Array.isArray(branch.assignments) ? branch.assignments.length : 0;
-      if (!total) {
-        branch.utilization = 0;
-        return;
-      }
-      const used = branch.assignments.filter((item) => Boolean(item.used)).length;
-      branch.utilization = Math.round((used / total) * 100);
-    }
-
-
-    function buildBranchObject(index, name, site) {
-      const parentBase = ipToInt(GLOBAL_PARENT_NETWORK);
-      const block = blockSizeFromCidr(GLOBAL_CIDR);
-      const subnetBaseInt = parentBase + (index * block);
-      const networkBase = intToIp(subnetBaseInt);
-      const gateway = intToIp(subnetBaseInt + 1);
-      const assignments = [
-        { hostIp: intToIp(subnetBaseInt + 2), hostname: `HR-LT-${String(index+2).padStart(3,'0')}`, enduser: 'Sarah Ahmed', used: false },
-        { hostIp: intToIp(subnetBaseInt + 3), hostname: `FIN-PC-${String(index+3).padStart(3,'0')}`, enduser: 'Omar Ali', used: false },
-        { hostIp: intToIp(subnetBaseInt + 4), hostname: `POS-TERM-${String(index+4).padStart(3,'0')}`, enduser: 'Store Team', used: false }
-      ];
-      return {
-        id: `branch-${index+1}`,
-        name,
-        site,
-        networkBase,
-        cidr: GLOBAL_CIDR,
-        gateway,
-        subnet: `${networkBase}/${GLOBAL_CIDR}`,
-        utilization: Math.min(95, 55 + (index * 9)),
-        lastUpdated: `${5 + (index * 3)} minutes ago`,
-        assignments
-      };
-    }
-
-    function initBranches() {
-      const fromServer = {{ branches|tojson }};
-      const baseNames = Array.isArray(fromServer) && fromServer.length ? fromServer : ['B701','B702','B703','B704'];
-      const sites = ['Pejton','Skopje - HQ Core','Tetovo Campus','Bitola Distribution','Ohrid Support Center','Kumanovo Regional Office'];
-      branchesData = baseNames.map((name, idx) => buildBranchObject(idx, name, sites[idx % sites.length]));
-    }
-
-    function renderBranchesList() {
-      const tbody = document.getElementById('branchesListBody');
-      const q = String(document.getElementById('branchListSearch').value || '').toLowerCase();
-      const rows = branchesData.filter((b) => {
-        const hay = `${b.name} ${b.site} ${b.subnet}`.toLowerCase();
-        return hay.includes(q);
-      });
-      tbody.innerHTML = rows.map((b) => {
-        recalcBranchUtilization(b);
-        const p = Number(b.utilization);
-        return `<tr>
-          <td><span class="clickable" onclick="openBranchDetails('${b.id}')">${b.name}</span></td>
-          <td>${b.site}</td>
-          <td>${b.subnet}</td>
-          <td data-util-percent="${p}"><span class="progress-track"><span class="progress-fill ${utilizationClass(p)}" style="width:${p}%"></span></span><span class="util-value">${p}%</span></td>
-          <td>${b.lastUpdated}</td>
-        </tr>`;
-      }).join('');
-    }
-
-    function renderBranchDetails() {
-      const branch = branchesData.find((x) => x.id === selectedBranchId);
-      if (!branch) return;
-      document.getElementById('detailsBreadcrumb').textContent = `IP Addressing > Branches > ${branch.name}`;
-      document.getElementById('detailsTitle').textContent = branch.name;
-      document.getElementById('summaryName').textContent = branch.name;
-      document.getElementById('summarySite').textContent = branch.site;
-      document.getElementById('summarySubnet').textContent = `${branch.networkBase}/${branch.cidr}`;
-      document.getElementById('summaryGateway').textContent = branch.gateway;
-
-      const q = String(document.getElementById('detailsSearch').value || '').toLowerCase();
-      const tbody = document.getElementById('branchDetailsBody');
-      const sourceRows = isBranchEditMode ? branch.assignments.map((a, idx) => ({...a, _idx: idx})) : branch.assignments
-        .map((a, idx) => ({...a, _idx: idx}))
-        .filter((a) => (`${a.hostIp} ${a.hostname} ${a.enduser}`).toLowerCase().includes(q));
-
-      if (isBranchEditMode) {
-        document.getElementById('summaryName').innerHTML = `<input id="editSummaryName" class="input" value="${branch.name}">`;
-        document.getElementById('summarySite').innerHTML = `<input id="editSummarySite" class="input" value="${branch.site}">`;
-        document.getElementById('summarySubnet').innerHTML = `<div style="display:flex; gap:6px;"><input id="editSummaryBase" class="input" value="${branch.networkBase}"><input id="editSummaryCidr" class="input" value="${branch.cidr}" style="width:70px"></div>`;
-        document.getElementById('summaryGateway').innerHTML = `<input id="editSummaryGateway" class="input" value="${branch.gateway}">`;
-      } else {
-        document.getElementById('summaryName').textContent = branch.name;
-        document.getElementById('summarySite').textContent = branch.site;
-        document.getElementById('summarySubnet').textContent = `${branch.networkBase}/${branch.cidr}`;
-        document.getElementById('summaryGateway').textContent = branch.gateway;
-      }
-
-      tbody.innerHTML = sourceRows.map((a) => {
-        if (!isBranchEditMode) {
-          return `<tr>
-            <td>${branch.networkBase}</td>
-            <td>/${branch.cidr}</td>
-            <td>${branch.gateway}</td>
-            <td>${a.hostIp}</td>
-            <td>${a.hostname}</td>
-            <td>${a.enduser}</td>
-            <td><input class="round-check" type="checkbox" ${a.used ? "checked" : ""} onchange="toggleAssignmentUsed(${a._idx}, this.checked)"></td>
-          </tr>`;
-        }
-        return `<tr data-row-index="${a._idx}">
-          <td><input class="input" data-col="networkBase" value="${branch.networkBase}"></td>
-          <td><input class="input" data-col="cidr" value="${branch.cidr}" style="width:80px"></td>
-          <td><input class="input" data-col="gateway" value="${branch.gateway}"></td>
-          <td><input class="input" data-col="hostIp" value="${a.hostIp}"></td>
-          <td><input class="input" data-col="hostname" value="${a.hostname}"></td>
-          <td><input class="input" data-col="enduser" value="${a.enduser}"></td>
-          <td><input class="round-check" data-col="used" type="checkbox" ${a.used ? "checked" : ""}></td>
-        </tr>`;
-      }).join('');
-    }
-
-
-    function toggleAssignmentUsed(rowIndex, checked) {
-      const branch = branchesData.find((x) => x.id === selectedBranchId);
-      if (!branch || !branch.assignments[rowIndex]) return;
-      branch.assignments[rowIndex].used = Boolean(checked);
-      recalcBranchUtilization(branch);
-      renderBranchDetails();
-      renderBranchesList();
-    }
-
-    function openBranchDetails(branchId) {
-      selectedBranchId = branchId;
-      document.getElementById('viewBranches').classList.add('hidden');
-      document.getElementById('viewDetails').classList.remove('hidden');
-      renderBranchDetails();
-    }
-
-    function backToBranches() {
-      selectedBranchId = null;
-      isBranchEditMode = false;
-      const btn = document.getElementById('branchEditBtn');
-      if (btn) btn.textContent = "Settings";
-      document.getElementById('viewDetails').classList.add('hidden');
-      document.getElementById('viewBranches').classList.remove('hidden');
-      renderBranchesList();
-    }
-
-
-    function toggleBranchEditMode() {
-      if (!selectedBranchId) return;
-      if (!isBranchEditMode) {
-        isBranchEditMode = true;
-        const btn = document.getElementById('branchEditBtn');
-        if (btn) btn.textContent = 'Save Settings';
-        renderBranchDetails();
-        return;
-      }
-
-      const branch = branchesData.find((x) => x.id === selectedBranchId);
-      if (!branch) return;
-      const nameEl = document.getElementById('editSummaryName');
-      const siteEl = document.getElementById('editSummarySite');
-      const baseEl = document.getElementById('editSummaryBase');
-      const cidrEl = document.getElementById('editSummaryCidr');
-      const gwEl = document.getElementById('editSummaryGateway');
-      if (nameEl) branch.name = String(nameEl.value || '').trim() || branch.name;
-      if (siteEl) branch.site = String(siteEl.value || '').trim() || branch.site;
-      if (baseEl) branch.networkBase = String(baseEl.value || '').trim() || branch.networkBase;
-      if (cidrEl) branch.cidr = Number(String(cidrEl.value || '').replace('/', '').trim()) || branch.cidr;
-      if (gwEl) branch.gateway = String(gwEl.value || '').trim() || branch.gateway;
-      branch.subnet = `${branch.networkBase}/${branch.cidr}`;
-
-      document.querySelectorAll('#branchDetailsBody tr[data-row-index]').forEach((tr) => {
-        const idx = Number(tr.getAttribute('data-row-index'));
-        if (!Number.isInteger(idx) || !branch.assignments[idx]) return;
-        const row = branch.assignments[idx];
-        tr.querySelectorAll('input[data-col]').forEach((inp) => {
-          const col = inp.getAttribute('data-col');
-          if (!col) return;
-          if (col === 'used') {
-            row.used = Boolean(inp.checked);
-            return;
-          }
-          const val = String(inp.value || '').trim();
-          if (!val) return;
-          if (col === 'hostIp') row.hostIp = val;
-          else if (col === 'hostname') row.hostname = val;
-          else if (col === 'enduser') row.enduser = val;
-          else if (col === 'networkBase') branch.networkBase = val;
-          else if (col === 'cidr') branch.cidr = Number(val.replace('/', '')) || branch.cidr;
-          else if (col === 'gateway') branch.gateway = val;
-        });
-      });
-
-      branch.subnet = `${branch.networkBase}/${branch.cidr}`;
-      isBranchEditMode = false;
-      const btn = document.getElementById('branchEditBtn');
-      if (btn) btn.textContent = 'Settings';
-      renderBranchDetails();
-      renderBranchesList();
-    }
-
-    function openBranchSettingsModal(){ document.getElementById('branchSettingsModal')?.showModal(); }
-    function closeBranchSettingsModal(){ document.getElementById('branchSettingsModal')?.close(); }
-    function openAddBranchModal(){ closeBranchSettingsModal(); document.getElementById('addBranchModal')?.showModal(); }
-    function closeAddBranchModal(){ document.getElementById('addBranchModal')?.close(); }
-
-
-
-    document.addEventListener('DOMContentLoaded', () => {
-      updateClock();
-      setInterval(updateClock, 1000);
-      initBranches();
-      renderBranchesList();
-            document.getElementById('branchListSearch').addEventListener('input', renderBranchesList);
-      document.getElementById('detailsSearch').addEventListener('input', renderBranchDetails);
-      const deleteSelect = document.getElementById('deleteBranchSelect');
-      const deleteBtn = document.getElementById('applyDeleteBranchBtn');
-      if (deleteSelect && deleteBtn) {
-        const syncDelete = () => { deleteBtn.disabled = !deleteSelect.value; };
-        deleteSelect.addEventListener('change', syncDelete);
-        syncDelete();
-      }
+    document.addEventListener('DOMContentLoaded',()=>{
+      updateClock(); setInterval(updateClock,1000);
+      loadBranches(); setGatewayPreview(); renderList();
+      document.getElementById('addBase').addEventListener('input', setGatewayPreview);
+      document.getElementById('addCidr').addEventListener('change', setGatewayPreview);
+      document.getElementById('addBranchForm').addEventListener('submit', addBranchInline);
+      document.getElementById('listSearch').addEventListener('input', renderList);
+      document.getElementById('detailsSearch').addEventListener('input', renderDetails);
     });
   </script>
 </head>
 <body>
-  <div class="app-shell">
-    <header class="top-nav">
-      <div></div>
-      <div id="clockPill" class="date-pill">--</div>
-      <div class="nav-actions">
-        <a class="nav-btn" href="{{ url_for('dashboard', modal='notifications') }}">🔔 Notifications ({{ unread_notifications_count }})</a>
-        <a class="nav-btn" href="{{ url_for('dashboard', modal='device_creds') }}">Device Credentials</a>
-        <span class="badge">👤 {{ current_user or 'Unknown' }}/{{ current_user_role|upper }}</span>
-        <span class="badge">🔐 {{ auth_mode|upper }}</span>
-      </div>
-    </header>
-
-    <div class="workspace">
-      <aside id="ipamSidebar" class="sidebar">
-        <ul class="sidebar-list">
-          <li><a class="sidebar-item" href="{{ url_for('dashboard') }}"><span class="icon">🏠</span><span class="label">Dashboard</span></a></li>
-          <li><a class="sidebar-item active" href="{{ url_for('ip_addressing_dashboard') }}"><span class="icon">🏢</span><span class="label">Branches</span></a></li>
-          <li><a class="sidebar-item" href="#"><span class="icon">🧩</span><span class="label">Subnets</span></a></li>
-          <li><a class="sidebar-item" href="#"><span class="icon">📦</span><span class="label">IP Pools</span></a></li>
-          <li><a class="sidebar-item" href="#"><span class="icon">📌</span><span class="label">Reservations</span></a></li>
-          <li><a class="sidebar-item" href="#"><span class="icon">📊</span><span class="label">Reports</span></a></li>
-          <li><a class="sidebar-item" href="#"><span class="icon">⚙️</span><span class="label">Settings</span></a></li>
-        </ul>
-      </aside>
-
+  <div class="app">
+    <header class="top"><div></div><div id="clockPill" class="pill">--</div><div class="actions"><a class="btn-top" href="{{ url_for('dashboard', modal='notifications') }}">🔔 Notifications ({{ unread_notifications_count }})</a><a class="btn-top" href="{{ url_for('dashboard', modal='device_creds') }}">Device Credentials</a><span class="chip">👤 {{ current_user or 'Unknown' }}/{{ current_user_role|upper }}</span><span class="chip">🔐 {{ auth_mode|upper }}</span></div></header>
+    <div class="main">
+      <aside class="side"><ul class="nav"><li><a class="item" href="{{ url_for('dashboard') }}"><span>🏠</span><span class="lbl">Dashboard</span></a></li><li><a class="item active" href="{{ url_for('ip_addressing_dashboard') }}"><span>🏢</span><span class="lbl">Branches</span></a></li><li><a class="item" href="#"><span>🧩</span><span class="lbl">Subnets</span></a></li><li><a class="item" href="#"><span>📦</span><span class="lbl">IP Pools</span></a></li><li><a class="item" href="#"><span>📌</span><span class="lbl">Reservations</span></a></li><li><a class="item" href="#"><span>📊</span><span class="lbl">Reports</span></a></li><li><a class="item" href="#"><span>⚙️</span><span class="lbl">Settings</span></a></li></ul></aside>
       <main class="content">
-        <section class="panel" id="viewBranches">
-          {% if info %}<div class="flash-info">{{ info }}</div>{% endif %}
-          {% if error %}<div class="flash-error">{{ error }}</div>{% endif %}
-          <div class="breadcrumb">IP Addressing &gt; Branches</div>
-          <h1 class="title">Branches</h1>
-          <div class="toolbar">
-            <div class="toolbar-left">
-              <input id="branchListSearch" class="input" type="search" placeholder="Search branch, city/site, subnet...">
-            </div>
-            <div class="toolbar-right">
-              <button class="btn primary" type="button" onclick="openBranchSettingsModal()">Branch Settings</button>
-              <button class="btn icon-btn" type="button" title="Import">⤓</button>
-              <button class="btn icon-btn" type="button" title="Export">⤒</button>
-            </div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Branch Name</th>
-                  <th>City / Site</th>
-                  <th>Subnet</th>
-                  <th>Utilization</th>
-                  <th>Last Updated</th>
-                </tr>
-              </thead>
-              <tbody id="branchesListBody"></tbody>
-            </table>
-          </div>
+        <section id="listView" class="panel">
+          <div class="breadcrumb">IP Addressing > Branches</div><h1 class="title">Branches</h1>
+          <form id="addBranchForm" class="inline-form">
+            <div class="field"><label>Branch Name</label><input id="addName" class="input" placeholder="e.g., B902 - East Campus"></div>
+            <div class="field"><label>City/Site</label><input id="addSite" class="input" placeholder="e.g., Kumanovo Regional Office"></div>
+            <div class="field"><label>Network Base</label><input id="addBase" class="input" placeholder="e.g., 10.10.10.0"></div>
+            <div class="field"><label>Subnet/CIDR</label><select id="addCidr" class="select"><option>/27</option><option>/26</option><option>/28</option></select></div>
+            <div class="field"><label>Gateway (Auto)</label><input id="addGateway" class="input gw-read" readonly></div>
+            <button type="button" class="btn" onclick="cancelInline()">Cancel</button>
+            <button type="submit" class="btn pri">Add Branch</button>
+          </form>
+          <div id="inlineErr" class="err hidden"></div>
+          <div class="toolbar"><div class="left"><input id="listSearch" class="input" placeholder="Search branch, city/site, network..."></div></div>
+          <div class="table-wrap"><table><thead><tr><th>Branch Name</th><th>City/Site</th><th>Network (base/cidr)</th><th>Gateway</th><th>Subnet Mask</th><th>Utilization</th><th>Last Updated</th></tr></thead><tbody id="branchesBody"></tbody></table></div>
         </section>
 
-        <section class="panel hidden" id="viewDetails">
-          <div class="breadcrumb" id="detailsBreadcrumb">IP Addressing &gt; Branches</div>
-          <div class="toolbar">
-            <h1 class="title" id="detailsTitle">Branch</h1>
-            <button class="btn back" type="button" onclick="backToBranches()">← Back to Branches</button>
-            <button id="branchEditBtn" class="btn" type="button" onclick="toggleBranchEditMode()">Settings</button>
-          </div>
-          <div class="summary-card">
-            <div class="summary-item"><b>Branch</b><span id="summaryName">-</span></div>
-            <div class="summary-item"><b>City / Site</b><span id="summarySite">-</span></div>
-            <div class="summary-item"><b>Subnet</b><span id="summarySubnet">-</span></div>
-            <div class="summary-item"><b>Gateway</b><span id="summaryGateway">-</span></div>
-          </div>
-          <div class="toolbar-left">
-            <input id="detailsSearch" class="input" type="search" placeholder="Search by IP / hostname / enduser...">
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Network Base</th>
-                  <th>/CIDR</th>
-                  <th>Gateway</th>
-                  <th>Host IP</th>
-                  <th>Hostname</th>
-                  <th>Enduser</th>
-                  <th>Used</th>
-                </tr>
-              </thead>
-              <tbody id="branchDetailsBody"></tbody>
-            </table>
-          </div>
+        <section id="detailsView" class="panel hidden">
+          <div id="detailsBreadcrumb" class="breadcrumb">IP Addressing > Branches</div>
+          <div class="toolbar"><h1 class="title">Branch Details</h1><button class="btn" onclick="backToList()">← Back to Branches</button></div>
+          <div class="summary"><div><b>Branch Name</b><span id="dName">-</span></div><div><b>City/Site</b><span id="dSite">-</span></div><div><b>Network</b><span id="dNet">-</span></div><div><b>Subnet Mask</b><span id="dMask">-</span></div><div><b>Gateway</b><span id="dGateway">-</span></div><div><b>Broadcast</b><span id="dBroadcast">-</span></div><div><b>Utilization</b><span id="dUtil">0%</span></div></div>
+          <div class="left"><input id="detailsSearch" class="input" placeholder="Search by IP/hostname/enduser..."></div>
+          <div class="table-wrap"><table><thead><tr><th>Network Base</th><th>/CIDR</th><th>Subnet Mask</th><th>Host IP</th><th>Hostname</th><th>Enduser</th><th>Status</th><th>Action</th></tr></thead><tbody id="detailsBody"></tbody></table></div>
         </section>
       </main>
     </div>
   </div>
-
-  <dialog id="branchSettingsModal" class="modal">
-    <div class="modal-body">
-      <h3 class="modal-title">Branch Settings</h3>
-      <div class="toolbar-left" style="margin-bottom: 12px;">
-        <button class="btn primary" type="button" onclick="openAddBranchModal()">Add Branch</button>
-      </div>
-      <form method="post" action="{{ url_for('manage_ip_branches') }}">
-        <input type="hidden" name="action" value="delete">
-        <label>Select Branch to Delete</label>
-        <select id="deleteBranchSelect" class="select" name="branch_name" style="width:100%; margin-top:8px;">
-          <option value="" selected>-- Select Branch --</option>
-          {% for branch in branches %}
-            <option value="{{ branch }}">{{ branch }}</option>
-          {% endfor %}
-        </select>
-        <div class="modal-actions">
-          <button class="btn" type="button" onclick="closeBranchSettingsModal()">Cancel</button>
-          <button id="applyDeleteBranchBtn" class="btn primary" type="submit">Apply Delete Branch</button>
-        </div>
-      </form>
-    </div>
-  </dialog>
-
-  <dialog id="addBranchModal" class="modal">
-    <form id="addBranchForm" class="modal-body" method="post" action="{{ url_for('manage_ip_branches') }}">
-      <input type="hidden" name="action" value="add">
-      <h3 class="modal-title">Add Branch</h3>
-      <label>Branch Name</label>
-      <input id="addBranchName" class="input" name="branch_name" type="text" placeholder="e.g., B902" style="width:100%; margin-top:8px;" required>
-      <label style="display:block; margin-top:12px;">City / Site</label>
-      <input id="addBranchSite" class="input" type="text" placeholder="e.g., Kumanovo Regional Office" style="width:100%; margin-top:8px;">
-      <div class="modal-actions">
-        <button class="btn" type="button" onclick="closeAddBranchModal()">Cancel</button>
-        <button class="btn primary" type="submit">Apply Add Branch</button>
-      </div>
-    </form>
-  </dialog>
 </body>
 </html>
