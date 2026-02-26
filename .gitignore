@@ -1,0 +1,15 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+
+# Local runtime/state files
+app_data.db
+super_admin.json
+
+# Local editor/system files
+.DS_Store
+Thumbs.db

@@ -1038,12 +1038,26 @@ ${entry.output}
                 <form method="post" action="{{ url_for('pending_requests_action') }}">
                   <input type="hidden" name="action" value="approve">
                   <input type="hidden" name="request_id" value="{{ item.pending_request_id }}">
+                  <input type="hidden" name="request_type" value="{{ item.pending_request_type or 'device' }}">
                   <button class="btn" type="submit">Approve</button>
                 </form>
                 <form method="post" action="{{ url_for('pending_requests_action') }}">
                   <input type="hidden" name="action" value="reject">
                   <input type="hidden" name="request_id" value="{{ item.pending_request_id }}">
+                  <input type="hidden" name="request_type" value="{{ item.pending_request_type or 'device' }}">
                   <button class="btn ghost" type="submit">Reject</button>
+                </form>
+              {% endif %}
+              {% if current_user_role == 'junior' and item.junior_command_actionable %}
+                <form method="post" action="{{ url_for('pending_command_decision') }}">
+                  <input type="hidden" name="action" value="run">
+                  <input type="hidden" name="request_id" value="{{ item.pending_request_id }}">
+                  <button class="btn" type="submit">Run command</button>
+                </form>
+                <form method="post" action="{{ url_for('pending_command_decision') }}">
+                  <input type="hidden" name="action" value="discard">
+                  <input type="hidden" name="request_id" value="{{ item.pending_request_id }}">
+                  <button class="btn ghost" type="submit">Discard</button>
                 </form>
               {% endif %}
               <form method="post" action="{{ url_for('delete_notification_route') }}">

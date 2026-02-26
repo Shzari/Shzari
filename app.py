@@ -227,6 +227,22 @@ def init_db() -> None:
         )
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS pending_command_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                requester_username TEXT NOT NULL,
+                requester_role TEXT NOT NULL,
+                command_mode TEXT NOT NULL,
+                command_text TEXT NOT NULL,
+                target_devices TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                approver_username TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                decided_at TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS user_notifications (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL,
@@ -951,6 +967,73 @@ def load_pending_device_requests(status: str = "pending") -> list[dict[str, Any]
     return pending
 
 
+def load_pending_command_requests(status: str = "pending") -> list[dict[str, Any]]:
+    with db_conn() as conn:
+        if status == "all":
+            rows = conn.execute("SELECT * FROM pending_command_requests ORDER BY id DESC").fetchall()
+        elif status == "closed":
+            rows = conn.execute("SELECT * FROM pending_command_requests WHERE status IN ('approved','rejected') ORDER BY id DESC").fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM pending_command_requests WHERE status = 'pending' ORDER BY id DESC"
+            ).fetchall()
+
+    pending: list[dict[str, Any]] = []
+    for row in rows:
+        try:
+            target_devices = json.loads(str(row["target_devices"] or "[]"))
+        except Exception:
+            target_devices = []
+        pending.append({
+            "id": int(row["id"]),
+            "requester_username": str(row["requester_username"]),
+            "requester_role": normalize_role(str(row["requester_role"])),
+            "command_mode": str(row["command_mode"]),
+            "command_text": str(row["command_text"]),
+            "target_devices": [str(item).strip() for item in target_devices if str(item).strip()],
+            "status": str(row["status"]),
+            "approver_username": str(row["approver_username"]),
+            "created_at": str(row["created_at"]),
+            "decided_at": str(row["decided_at"]),
+        })
+    return pending
+
+
+def clear_senior_command_request_notifications(request_id: int) -> None:
+    if request_id <= 0:
+        return
+    with db_conn() as conn:
+        conn.execute(
+            "DELETE FROM user_notifications WHERE message LIKE ?",
+            (f"%approval request #{int(request_id)}%",),
+        )
+
+
+def load_pending_command_request_by_id(request_id: int) -> dict[str, Any] | None:
+    if request_id <= 0:
+        return None
+    with db_conn() as conn:
+        row = conn.execute("SELECT * FROM pending_command_requests WHERE id = ?", (int(request_id),)).fetchone()
+    if not row:
+        return None
+    try:
+        target_devices = json.loads(str(row["target_devices"] or "[]"))
+    except Exception:
+        target_devices = []
+    return {
+        "id": int(row["id"]),
+        "requester_username": str(row["requester_username"]),
+        "requester_role": normalize_role(str(row["requester_role"])),
+        "command_mode": str(row["command_mode"]),
+        "command_text": str(row["command_text"]),
+        "target_devices": [str(item).strip() for item in target_devices if str(item).strip()],
+        "status": str(row["status"]),
+        "approver_username": str(row["approver_username"]),
+        "created_at": str(row["created_at"]),
+        "decided_at": str(row["decided_at"]),
+    }
+
+
 def validate_local_user(username: str, password: str) -> tuple[bool, str, str]:
     if verify_super_admin(username, password):
         return True, "", "super_admin"
@@ -1545,6 +1628,77 @@ def _read_shell_output(channel: Any, timeout_seconds: int) -> str:
         if chunks and not got_data:
             break
     return "".join(chunks).strip()
+
+
+def command_requires_senior_approval(command_text: str) -> bool:
+    commands = [item.strip().lower() for item in split_cli_commands(command_text)]
+    if not commands:
+        return False
+
+    for cmd in commands:
+        if not cmd:
+            continue
+        if re.search(r"\breload\b", cmd) or re.search(r"\breboot\b", cmd):
+            return True
+        if re.search(r"\bshutdown\b", cmd) and not re.search(r"\bno\s+shutdown\b", cmd):
+            return True
+    return False
+
+
+def notify_seniors_new_pending_command_request(
+    request_id: int,
+    requester_username: str,
+    command_mode: str,
+    command_text: str,
+    device_names: list[str],
+) -> None:
+    message = (
+        f"New pending request #{request_id} from {requester_username} for DANGEROUS command approval. "
+        f"Devices: {', '.join(device_names) or '-'}; Command: '{str(command_text).strip()}'."
+    )
+    for senior_username in load_senior_notification_targets():
+        if senior_username.strip().lower() == str(requester_username).strip().lower():
+            continue
+        notify_user(senior_username, message)
+
+
+def create_pending_command_request(
+    *,
+    requester_username: str,
+    requester_role: str,
+    command_mode: str,
+    command_text: str,
+    device_names: list[str],
+) -> int:
+    normalized_devices = [str(name).strip() for name in device_names if str(name).strip()]
+    with db_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO pending_command_requests(
+                requester_username, requester_role, command_mode, command_text,
+                target_devices, status, approver_username, created_at, decided_at
+            ) VALUES (?, ?, ?, ?, ?, 'pending', '', ?, '')
+            """,
+            (
+                str(requester_username),
+                normalize_role(requester_role),
+                str(command_mode or 'show').strip().lower(),
+                str(command_text),
+                json.dumps(normalized_devices),
+                datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+            ),
+        )
+        request_id = int(cursor.lastrowid or 0)
+
+    if request_id > 0:
+        notify_seniors_new_pending_command_request(
+            request_id=request_id,
+            requester_username=str(requester_username),
+            command_mode=str(command_mode or 'show').strip().lower(),
+            command_text=str(command_text).strip(),
+            device_names=normalized_devices,
+        )
+    return request_id
 
 
 def run_config_commands(
@@ -2143,8 +2297,62 @@ def pending_requests_action() -> Any:
 
     action = request.form.get("action", "").strip().lower()
     request_id = int(request.form.get("request_id", "0") or 0)
-    if request_id <= 0 or action not in {"approve", "reject"}:
+    request_type = request.form.get("request_type", "device").strip().lower() or "device"
+    if request_id <= 0 or action not in {"approve", "reject"} or request_type not in {"device", "command"}:
         session["dashboard_error"] = "Invalid pending request action."
+        return redirect(url_for("dashboard"))
+
+    if request_type == "command":
+        with db_conn() as conn:
+            row = conn.execute("SELECT * FROM pending_command_requests WHERE id = ? AND status = 'pending'", (request_id,)).fetchone()
+        if not row:
+            session["dashboard_error"] = "Request not found or already decided. A request can be approved/rejected only once."
+            return redirect(url_for("dashboard"))
+
+        requester = str(row["requester_username"])
+        approver = str(session.get("creds", {}).get("username", ""))
+        command_mode = str(row["command_mode"])
+        command_text = str(row["command_text"])
+        try:
+            target_devices = json.loads(str(row["target_devices"] or "[]"))
+        except Exception:
+            target_devices = []
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        new_status = "approved" if action == "approve" else "rejected"
+
+        with db_conn() as conn:
+            updated = conn.execute(
+                "UPDATE pending_command_requests SET status = ?, approver_username = ?, decided_at = ? WHERE id = ? AND status = 'pending'",
+                (new_status, approver, now, request_id),
+            )
+        if updated.rowcount == 0:
+            session["dashboard_error"] = "Request already decided by another Senior user."
+            return redirect(url_for("dashboard"))
+
+        if new_status == "approved":
+            notify_user(
+                requester,
+                f"Command request #{request_id} was approved. Run command or Discard from Notifications. Command: '{str(command_text).strip()}'.",
+            )
+        else:
+            notify_user(
+                requester,
+                f"Command request #{request_id} was rejected. Command: '{str(command_text).strip()}'.",
+            )
+        write_audit_log(
+            f"command_request_{new_status}",
+            requester,
+            approver,
+            ",".join(str(d).strip() for d in target_devices if str(d).strip()),
+            {
+                "request_id": request_id,
+                "command_mode": command_mode,
+                "command_text": command_text,
+                "target_devices": target_devices,
+            },
+        )
+        clear_senior_command_request_notifications(request_id)
+        session["dashboard_info"] = f"{new_status.title()} request #{request_id}."
         return redirect(url_for("dashboard"))
 
     with db_conn() as conn:
@@ -2247,6 +2455,106 @@ def pending_requests_action() -> Any:
     return redirect(url_for("dashboard"))
 
 
+@app.route("/pending-command/decision", methods=["POST"])
+def pending_command_decision() -> Any:
+    if "creds" not in session:
+        return redirect(url_for("login"))
+
+    action = request.form.get("action", "").strip().lower()
+    request_id = int(request.form.get("request_id", "0") or 0)
+    if action not in {"run", "discard"} or request_id <= 0:
+        session["dashboard_error"] = "Invalid command decision."
+        return redirect(url_for("dashboard"))
+
+    current_username = str(session.get("creds", {}).get("username", "")).strip()
+    request_item = load_pending_command_request_by_id(request_id)
+    if not request_item:
+        session["dashboard_error"] = "Command request not found."
+        return redirect(url_for("dashboard"))
+
+    if str(request_item.get("requester_username", "")).strip().lower() != current_username.lower():
+        session["dashboard_error"] = "You can only act on your own command requests."
+        return redirect(url_for("dashboard"))
+
+    if str(request_item.get("status", "")).strip().lower() != "approved":
+        session["dashboard_error"] = "This command request is no longer available."
+        return redirect(url_for("dashboard"))
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    if action == "discard":
+        with db_conn() as conn:
+            updated = conn.execute(
+                "UPDATE pending_command_requests SET status = 'discarded', decided_at = ? WHERE id = ? AND status = 'approved'",
+                (now, request_id),
+            )
+        if updated.rowcount == 0:
+            session["dashboard_error"] = "This command request was already handled."
+            return redirect(url_for("dashboard"))
+        mark_notifications_read(current_username)
+        session["dashboard_info"] = f"Command request #{request_id} discarded."
+        return redirect(url_for("dashboard"))
+
+    # action == run
+    all_devices = load_devices()
+    auth_mode = str(session.get("auth_mode", "local"))
+    allowed_devices = filter_devices_for_user(all_devices, current_username, auth_mode)
+    allowed_by_name = {str(device.get("name", "")).strip(): device for device in allowed_devices}
+    target_devices = [allowed_by_name[name] for name in request_item.get("target_devices", []) if name in allowed_by_name]
+
+    if not target_devices:
+        session["dashboard_error"] = "No allowed target devices found for this approved command."
+        return redirect(url_for("dashboard"))
+
+    dashboard_creds = session.get("creds", {})
+    device_creds = session.get("device_creds", {})
+    creds = {
+        "username": str(device_creds.get("username", "")).strip() or str(dashboard_creds.get("username", "")).strip(),
+        "password": str(device_creds.get("password", "")) or str(dashboard_creds.get("password", "")),
+        "timeout": int(dashboard_creds.get("timeout", 8) or 8),
+        "enable_password": str(device_creds.get("enable_password", "")),
+    }
+    if not creds["username"] or not creds["password"]:
+        session["dashboard_error"] = "Set device SSH credentials first from the dashboard user-strip button."
+        return redirect(url_for("dashboard"))
+
+    with db_conn() as conn:
+        updated = conn.execute(
+            "UPDATE pending_command_requests SET status = 'executing', decided_at = ? WHERE id = ? AND status = 'approved'",
+            (now, request_id),
+        )
+    if updated.rowcount == 0:
+        session["dashboard_error"] = "This command request was already handled."
+        return redirect(url_for("dashboard"))
+
+    results: list[SSHResult] = []
+    command_text = str(request_item.get("command_text", ""))
+    command_mode = str(request_item.get("command_mode", "show"))
+    with ThreadPoolExecutor(max_workers=min(20, max(1, len(target_devices)))) as executor:
+        futures = [executor.submit(execute_for_device, device, creds, command_text, command_mode) for device in target_devices]
+        for future in as_completed(futures):
+            results.append(future.result())
+    results.sort(key=lambda result: result.device)
+
+    run_entry = {
+        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        "command": command_text,
+        "results": [asdict(result) for result in results],
+    }
+    run_history = session.get("run_history", [])
+    run_history.append(run_entry)
+    session["run_history"] = run_history[-50:]
+
+    with db_conn() as conn:
+        conn.execute(
+            "UPDATE pending_command_requests SET status = 'executed', decided_at = ? WHERE id = ? AND status = 'executing'",
+            (datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"), request_id),
+        )
+    mark_notifications_read(current_username)
+    session["dashboard_info"] = f"Approved command request #{request_id} executed once."
+    return redirect(url_for("dashboard"))
+
+
 @app.route("/logout")
 def logout() -> Any:
     expired = request.args.get("expired") == "1"
@@ -2274,21 +2582,45 @@ def dashboard() -> Any:
     role = current_user_role()
     unread_notifications = load_unread_notifications(current_username)
     pending_requests = load_pending_device_requests() if role == "senior" else []
-    pending_request_ids: set[int] = set()
-    if role == "senior":
-        pending_request_ids = {int(item.get("id", 0)) for item in pending_requests}
-        for item in unread_notifications:
-            item["pending_request_id"] = 0
-            item["pending_request_actionable"] = False
-            msg = str(item.get("message", ""))
-            match = re.search(r"request\s*#(\d+)", msg, flags=re.IGNORECASE)
-            if not match:
-                continue
-            req_id = int(match.group(1) or 0)
-            if req_id <= 0:
-                continue
-            item["pending_request_id"] = req_id
-            item["pending_request_actionable"] = req_id in pending_request_ids
+    pending_command_requests = load_pending_command_requests() if role == "senior" else []
+    pending_request_ids: set[int] = set(int(item.get("id", 0)) for item in pending_requests)
+    pending_command_request_ids: set[int] = set(int(item.get("id", 0)) for item in pending_command_requests)
+    approved_command_request_ids: set[int] = set()
+
+    all_command_requests = load_pending_command_requests(status="all")
+    approved_command_request_ids = {
+        int(item.get("id", 0))
+        for item in all_command_requests
+        if str(item.get("status", "")).strip().lower() == "approved"
+        and str(item.get("requester_username", "")).strip().lower() == current_username.strip().lower()
+    }
+
+    for item in unread_notifications:
+        item["pending_request_id"] = 0
+        item["pending_request_type"] = ""
+        item["pending_request_actionable"] = False
+        item["junior_command_actionable"] = False
+        msg = str(item.get("message", ""))
+        match = re.search(r"request\s*#(\d+)", msg, flags=re.IGNORECASE)
+        if not match:
+            continue
+        req_id = int(match.group(1) or 0)
+        if req_id <= 0:
+            continue
+
+        is_command_request = "critical command approval request" in msg.lower()
+        item["pending_request_id"] = req_id
+        item["pending_request_type"] = "command" if is_command_request else "device"
+
+        if role == "senior":
+            if is_command_request:
+                item["pending_request_actionable"] = req_id in pending_command_request_ids
+            else:
+                item["pending_request_actionable"] = req_id in pending_request_ids
+        else:
+            is_approved_notice = "was approved" in msg.lower() and "critical command request" in msg.lower()
+            if is_approved_notice:
+                item["junior_command_actionable"] = req_id in approved_command_request_ids
     return render_template(
         "dashboard.html",
         devices=devices,
@@ -2305,6 +2637,7 @@ def dashboard() -> Any:
         run_history=session.get("run_history", []),
         current_user_role=role,
         pending_requests=pending_requests,
+        pending_command_requests=pending_command_requests,
         unread_notifications=unread_notifications,
         unread_notifications_count=len(unread_notifications),
     )
@@ -2726,6 +3059,20 @@ def run_commands() -> Any:
     if not selected_devices:
         return render_template("output.html", run_history=session.get("run_history", []), error="No devices selected.")
 
+    if current_user_role() == "junior" and command_requires_senior_approval(command):
+        request_id = create_pending_command_request(
+            requester_username=current_username,
+            requester_role=current_user_role(),
+            command_mode=command_mode,
+            command_text=command,
+            device_names=[str(device.get("name", "")).strip() for device in selected_devices],
+        )
+        return render_template(
+            "output.html",
+            run_history=session.get("run_history", []),
+            error=f"Critical command blocked. Approval request #{request_id} sent to senior users.",
+        )
+
     dashboard_creds = session.get("creds", {})
     device_creds = session.get("device_creds", {})
     creds = {
@@ -2784,6 +3131,21 @@ def run_commands_api() -> Any:
     selected_devices = [by_name[name] for name in selected_names if name in by_name]
     if not selected_devices:
         return jsonify({"ok": False, "error": "No devices selected."}), 400
+
+    if current_user_role() == "junior" and command_requires_senior_approval(command):
+        request_id = create_pending_command_request(
+            requester_username=current_username,
+            requester_role=current_user_role(),
+            command_mode=command_mode,
+            command_text=command,
+            device_names=[str(device.get("name", "")).strip() for device in selected_devices],
+        )
+        return jsonify({
+            "ok": False,
+            "requires_approval": True,
+            "request_id": request_id,
+            "error": f"Critical command blocked. Approval request #{request_id} sent to senior users.",
+        }), 202
 
     dashboard_creds = session.get("creds", {})
     device_creds = session.get("device_creds", {})

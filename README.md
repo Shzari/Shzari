@@ -80,12 +80,42 @@ A web-based network engineering app to authenticate users, select routers/switch
 5. Verify Super Admin and configure primary/secondary ISE.
 
 ## Run
+
+### Linux / macOS
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+python3 -m pip install -r requirements.txt
 python3 app.py
 ```
+
+### Windows (PowerShell)
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python app.py
+```
+
+### Windows (Command Prompt)
+```bat
+py -m venv .venv
+.venv\Scripts\activate
+python -m pip install -r requirements.txt
+python app.py
+```
+
+If you see `ModuleNotFoundError: No module named 'flask'` on Windows even after install, you are likely mixing interpreters (for example, installing with one Python and running with `py`, which can select another). After activation, always use `python -m pip ...` and `python app.py`, and keep a single virtual environment folder (delete old `venv`/`.venv` duplicates if needed).
+
+
+### Windows notes
+- `rg` (ripgrep) is optional. If `rg` is not installed on Windows, use `findstr` instead:
+
+```bat
+findstr /spin /c:"update pr" /c:"make_pr" /c:"pull request" /c:"PR" README.md app.py templates\dashboard.html
+```
+
+- If `git status --short` shows only local runtime files (like `.venv/`, `venv/`, `app_data.db`, or `super_admin.json`), these are ignored by `.gitignore` in this repo and should not be committed.
 
 ## Security Notes
 - Set `APP_SECRET_KEY`.
