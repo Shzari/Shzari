@@ -2,48 +2,441 @@
 <html>
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Network Tool - IP Addressing Dashboard</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    :root {
+      --bg-top: #081a36;
+      --bg-bottom: #123a72;
+      --nav-bg-1: #0b1f40;
+      --nav-bg-2: #0f2a57;
+      --sidebar-bg: #091a34;
+      --panel-bg: #edf1f6;
+      --panel-soft: #f8fafc;
+      --text-dark: #132238;
+      --text-muted: #5a6a81;
+      --primary: #2f6fec;
+      --success: #1fa266;
+      --warning: #d7a006;
+      --danger: #d24d57;
+      --shadow: 0 10px 30px rgba(6, 19, 44, 0.22);
+      --radius-lg: 18px;
+      --radius-md: 12px;
+      --space-1: 8px;
+      --space-2: 16px;
+      --space-3: 24px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", Inter, Arial, sans-serif;
+      color: #f7fbff;
+      background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 100%);
+    }
+
+    .app-shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+
+    .top-nav {
+      background: linear-gradient(120deg, var(--nav-bg-1), var(--nav-bg-2));
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: var(--space-2);
+      padding: 12px 20px;
+      box-shadow: var(--shadow);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    .date-pill {
+      justify-self: center;
+      background: rgba(255, 255, 255, 0.16);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 999px;
+      padding: 8px 18px;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.2px;
+      backdrop-filter: blur(4px);
+    }
+
+    .nav-actions {
+      justify-self: end;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .nav-btn,
+    .badge {
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      background: rgba(255, 255, 255, 0.12);
+      color: #f4f8ff;
+      padding: 7px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      transition: all 0.25s ease;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .nav-btn:hover { background: rgba(255, 255, 255, 0.22); }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      min-height: 0;
+    }
+
+    .sidebar {
+      width: 60px;
+      background: var(--sidebar-bg);
+      border-right: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 14px 10px;
+      transition: width 300ms ease;
+      overflow: hidden;
+    }
+
+    .sidebar:hover,
+    .sidebar.force-collapsed:hover {
+      width: 220px;
+    }
+
+    .sidebar-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 8px;
+    }
+
+    .sidebar-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-radius: 10px;
+      padding: 10px 9px;
+      color: #d9e6ff;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.2s ease;
+    }
+
+    .sidebar-item:hover { background: rgba(255, 255, 255, 0.1); }
+
+    .sidebar-item.active {
+      background: rgba(47, 111, 236, 0.26);
+      border: 1px solid rgba(95, 155, 255, 0.35);
+      color: #ffffff;
+    }
+
+    .icon { width: 24px; text-align: center; font-size: 15px; }
+
+    .label {
+      opacity: 0;
+      transform: translateX(-4px);
+      transition: opacity 220ms ease, transform 220ms ease;
+      white-space: nowrap;
+    }
+
+    .sidebar:hover .label { opacity: 1; transform: translateX(0); }
+
+    .content {
+      padding: var(--space-3);
+      min-width: 0;
+    }
+
+    .panel {
+      background: var(--panel-bg);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+      color: var(--text-dark);
+      padding: var(--space-3);
+      min-height: calc(100vh - 130px);
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+    }
+
+    .breadcrumb {
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .title { margin: 0; font-size: 28px; }
+
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      gap: var(--space-2);
+      flex-wrap: wrap;
+    }
+
+    .toolbar-left,
+    .toolbar-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .input,
+    .select,
+    .btn {
+      border-radius: 10px;
+      border: 1px solid #ccd5e1;
+      background: #ffffff;
+      color: #22324a;
+      font-size: 14px;
+      padding: 10px 12px;
+      transition: all 0.2s ease;
+    }
+
+    .input:focus,
+    .select:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(47, 111, 236, 0.14);
+    }
+
+    .btn {
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(17, 41, 82, 0.08);
+      font-weight: 600;
+    }
+
+    .btn.primary {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
+
+    .btn.icon-btn { width: 40px; padding: 10px 0; }
+
+    .table-wrap {
+      background: var(--panel-soft);
+      border: 1px solid #d6deea;
+      border-radius: var(--radius-md);
+      overflow: auto;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.45);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      min-width: 860px;
+    }
+
+    thead th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: #e6edf7;
+      color: #324760;
+      text-align: left;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 14px 16px;
+      border-bottom: 1px solid #cbd7e6;
+    }
+
+    tbody td {
+      padding: 14px 16px;
+      border-bottom: 1px solid #dde5f1;
+      font-size: 14px;
+      color: #253a53;
+      background: #f9fbfd;
+      transition: background 0.2s ease;
+    }
+
+    tbody tr:hover td { background: #eef4ff; }
+
+    .progress-track {
+      height: 9px;
+      border-radius: 999px;
+      background: #dbe4ef;
+      overflow: hidden;
+      width: 150px;
+      display: inline-block;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+
+    .progress-fill { height: 100%; border-radius: 999px; }
+    .progress-fill.green { background: var(--success); }
+    .progress-fill.yellow { background: var(--warning); }
+    .progress-fill.red { background: var(--danger); }
+
+    .util-value { font-size: 13px; font-weight: 700; color: #3b4f69; }
+
+    .arrow-cell { font-size: 18px; color: #6880a3; text-align: center; }
+
+    @media (max-width: 960px) {
+      .top-nav { grid-template-columns: 1fr; justify-items: start; }
+      .date-pill { justify-self: start; }
+      .nav-actions { justify-self: start; }
+      .content { padding: var(--space-2); }
+      .panel { padding: var(--space-2); }
+    }
+  </style>
   <script>
     function updateClock() {
-      const clock = document.getElementById('dashboardClock');
-      if (!clock) return;
-      clock.textContent = new Date().toLocaleString();
+      const el = document.getElementById('clockPill');
+      if (!el) return;
+      el.textContent = new Date().toLocaleString();
     }
+
+    function onSidebarNavClick(itemKey) {
+      const sidebar = document.getElementById('ipamSidebar');
+      if (!sidebar) return;
+      document.querySelectorAll('[data-nav-item]').forEach((el) => el.classList.remove('active'));
+      const target = document.querySelector(`[data-nav-item="${itemKey}"]`);
+      if (target) target.classList.add('active');
+      if (itemKey === 'branches') {
+        sidebar.classList.add('force-collapsed');
+        sidebar.style.width = '60px';
+      }
+    }
+
+    function utilizationClass(percentValue) {
+      if (percentValue > 85) return 'red';
+      if (percentValue >= 70) return 'yellow';
+      return 'green';
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
       updateClock();
       setInterval(updateClock, 1000);
+
+      document.querySelectorAll('[data-util-percent]').forEach((cell) => {
+        const n = Number(cell.dataset.utilPercent || 0);
+        const fill = cell.querySelector('.progress-fill');
+        if (!fill) return;
+        fill.style.width = `${Math.max(0, Math.min(100, n))}%`;
+        fill.classList.add(utilizationClass(n));
+      });
     });
   </script>
 </head>
 <body>
-  <div class="page-bg"></div>
-
-  <div class="user-strip">
-    <div class="chip center-chip"><span id="dashboardClock">--</span></div>
-    <a class="btn" href="{{ url_for('dashboard', modal='notifications') }}">🔔 Notifications ({{ unread_notifications_count }})</a>
-    <a class="btn" href="{{ url_for('dashboard', modal='device_creds') }}">Device Credentials</a>
-    <div class="chip">👤 User: <b>{{ current_user or 'Unknown' }}/{{ current_user_role|upper }}</b></div>
-    <div class="chip">🔐 Mode: <b>{{ auth_mode|upper }}</b></div>
-    <a class="logout-link" href="{{ url_for('logout') }}">Logout</a>
-  </div>
-
-  <div class="view-switch" style="display:flex; gap:10px; justify-content:flex-start; margin:10px 0;">
-    <a class="btn ghost" href="{{ url_for('dashboard') }}">Devices</a>
-    <a class="btn" href="{{ url_for('ip_addressing_dashboard') }}">IP-Addressing</a>
-  </div>
-
-  <div class="topbar glass">
-    <h2>🌐 IP Addressing Dashboard</h2>
-    <p>Manage IP planning and addressing operations with the same dashboard layout.</p>
-  </div>
-
-  <div class="grid">
-    <div class="card glass">
-      <div class="card-head">
-        <h3>IP Addressing</h3>
+  <div class="app-shell">
+    <header class="top-nav">
+      <div></div>
+      <div id="clockPill" class="date-pill">--</div>
+      <div class="nav-actions">
+        <a class="nav-btn" href="{{ url_for('dashboard', modal='notifications') }}">🔔 Notifications ({{ unread_notifications_count }})</a>
+        <a class="nav-btn" href="{{ url_for('dashboard', modal='device_creds') }}">Device Credentials</a>
+        <span class="badge">👤 {{ current_user or 'Unknown' }}/{{ current_user_role|upper }}</span>
+        <span class="badge">🔐 {{ auth_mode|upper }}</span>
       </div>
-      <div class="muted-note">This page is ready for IP management widgets while preserving the same top design and organization as Devices.</div>
+    </header>
+
+    <div class="workspace">
+      <aside id="ipamSidebar" class="sidebar">
+        <ul class="sidebar-list">
+          <li><a class="sidebar-item" data-nav-item="dashboard" href="{{ url_for('dashboard') }}" onclick="onSidebarNavClick('dashboard')"><span class="icon">🏠</span><span class="label">Dashboard</span></a></li>
+          <li><a class="sidebar-item active" data-nav-item="branches" href="{{ url_for('ip_addressing_dashboard') }}" onclick="onSidebarNavClick('branches')"><span class="icon">🏢</span><span class="label">Branches</span></a></li>
+          <li><a class="sidebar-item" data-nav-item="subnets" href="#" onclick="onSidebarNavClick('subnets')"><span class="icon">🧩</span><span class="label">Subnets</span></a></li>
+          <li><a class="sidebar-item" data-nav-item="pools" href="#" onclick="onSidebarNavClick('pools')"><span class="icon">📦</span><span class="label">IP Pools</span></a></li>
+          <li><a class="sidebar-item" data-nav-item="reservations" href="#" onclick="onSidebarNavClick('reservations')"><span class="icon">📌</span><span class="label">Reservations</span></a></li>
+          <li><a class="sidebar-item" data-nav-item="reports" href="#" onclick="onSidebarNavClick('reports')"><span class="icon">📊</span><span class="label">Reports</span></a></li>
+          <li><a class="sidebar-item" data-nav-item="settings" href="#" onclick="onSidebarNavClick('settings')"><span class="icon">⚙️</span><span class="label">Settings</span></a></li>
+        </ul>
+      </aside>
+
+      <main class="content">
+        <section class="panel">
+          <div class="breadcrumb">IP Addressing &gt; Branches</div>
+          <h1 class="title">Branches</h1>
+
+          <div class="toolbar">
+            <div class="toolbar-left">
+              <input class="input" type="search" placeholder="Search branch, city, or subnet...">
+              <select class="select">
+                <option>All Sites</option>
+                <option>Headquarters</option>
+                <option>Regional</option>
+                <option>Remote Office</option>
+              </select>
+            </div>
+            <div class="toolbar-right">
+              <button class="btn primary" type="button">+ Add Branch</button>
+              <button class="btn icon-btn" type="button" title="Import">⤓</button>
+              <button class="btn icon-btn" type="button" title="Export">⤒</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Branch Name</th>
+                  <th>City / Site</th>
+                  <th>Subnets</th>
+                  <th>Utilization</th>
+                  <th>Last Updated</th>
+                  <th>Expand</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>B701</td>
+                  <td>Pejton</td>
+                  <td>30</td>
+                  <td data-util-percent="55"><span class="progress-track"><span class="progress-fill"></span></span><span class="util-value">55%</span></td>
+                  <td>5 minutes ago</td>
+                  <td class="arrow-cell">▸</td>
+                </tr>
+                <tr>
+                  <td>B118</td>
+                  <td>Skopje - HQ Core</td>
+                  <td>64</td>
+                  <td data-util-percent="88"><span class="progress-track"><span class="progress-fill"></span></span><span class="util-value">88%</span></td>
+                  <td>2 minutes ago</td>
+                  <td class="arrow-cell">▸</td>
+                </tr>
+                <tr>
+                  <td>B204</td>
+                  <td>Tetovo Campus</td>
+                  <td>42</td>
+                  <td data-util-percent="74"><span class="progress-track"><span class="progress-fill"></span></span><span class="util-value">74%</span></td>
+                  <td>12 minutes ago</td>
+                  <td class="arrow-cell">▸</td>
+                </tr>
+                <tr>
+                  <td>B309</td>
+                  <td>Bitola Distribution</td>
+                  <td>25</td>
+                  <td data-util-percent="49"><span class="progress-track"><span class="progress-fill"></span></span><span class="util-value">49%</span></td>
+                  <td>20 minutes ago</td>
+                  <td class="arrow-cell">▸</td>
+                </tr>
+                <tr>
+                  <td>B412</td>
+                  <td>Ohrid Support Center</td>
+                  <td>18</td>
+                  <td data-util-percent="67"><span class="progress-track"><span class="progress-fill"></span></span><span class="util-value">67%</span></td>
+                  <td>8 minutes ago</td>
+                  <td class="arrow-cell">▸</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
     </div>
   </div>
 </body>
