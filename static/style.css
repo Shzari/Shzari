@@ -34,6 +34,35 @@ body {
   border-radius: 999px;
   font-size: 14px;
 }
+
+.btn-top {
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.22);
+  background: rgba(255,255,255,.12);
+  color: #f4f8ff;
+  text-decoration: none;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background .2s ease, transform .15s ease, box-shadow .2s ease;
+}
+.btn-top:hover {
+  background: rgba(255,255,255,.2);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(8, 25, 59, .35);
+}
+.notification-alert {
+  background: rgba(220, 38, 38, .85);
+  border-color: rgba(254, 202, 202, .55);
+  color: #fff;
+}
+.notification-alert:hover {
+  background: rgba(220, 38, 38, .95);
+}
 .logout-link { color: #fff; text-decoration: none; font-weight: 700; }
 .logout-link:hover { text-decoration: underline; }
 
