@@ -18,15 +18,23 @@
     .breadcrumb{color:var(--muted);font-size:13px;font-weight:600}.title{margin:0;font-size:28px}
     .toolbar{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}.left,.right{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
     .input,.select,.btn{border:1px solid #ccd5e1;border-radius:10px;background:#fff;color:#22324a;padding:10px 12px;font-size:14px}.btn{font-weight:600;cursor:pointer}.btn.pri{background:var(--pri);border-color:var(--pri);color:#fff}
-    .inline-form{display:grid;grid-template-columns:1.3fr 1.2fr 1.2fr .8fr 1.2fr auto auto;gap:10px;align-items:end;background:var(--soft);border:1px solid #d6deea;border-radius:12px;padding:12px}
-    .inline-form .field{display:flex;flex-direction:column;gap:6px}.field label{font-size:12px;color:#4f607a;font-weight:700}.gw-read{background:#eef3fa}
+    .field label{font-size:12px;color:#4f607a;font-weight:700}.gw-read{background:#eef3fa}
     .err{color:#9b1c1c;background:#ffe3e3;border:1px solid #ffc7c7;border-radius:10px;padding:8px 10px;font-weight:600;font-size:13px}
+    .branch-modal-backdrop{position:fixed;inset:0;background:rgba(8,18,39,.46);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+    .branch-modal-backdrop.show{display:flex}
+    .branch-modal{width:min(980px,96vw);background:#eef3fa;color:#22324a;border-radius:16px;border:1px solid #d6deea;box-shadow:var(--shadow);padding:18px;display:grid;gap:14px}
+    .branch-modal .head{display:flex;justify-content:space-between;align-items:center;gap:12px}
+    .branch-grid{display:grid;grid-template-columns:1.3fr 1.2fr 1.2fr .8fr 1.2fr;gap:10px;align-items:end}
+    .branch-grid .field{display:flex;flex-direction:column;gap:6px}
+    .delete-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end}
+    .section-title{font-size:13px;color:#445a77;font-weight:700;margin:0}
+    @media(max-width:1200px){.branch-grid{grid-template-columns:repeat(2,minmax(180px,1fr))}.delete-row{grid-template-columns:1fr}}
     .table-wrap{background:var(--soft);border:1px solid #d6deea;border-radius:12px;overflow:auto}table{width:100%;border-collapse:separate;border-spacing:0;min-width:980px}
     th{position:sticky;top:0;background:#e6edf7;color:#324760;text-align:left;padding:14px 16px;font-size:13px;border-bottom:1px solid #cbd7e6}td{padding:12px 16px;border-bottom:1px solid #dde5f1;background:#f9fbfd;color:#253a53}tbody tr:hover td{background:#eef4ff}
     .click{color:#2b63d6;cursor:pointer;text-decoration:underline;font-weight:700}.track{height:9px;border-radius:999px;background:#dbe4ef;display:inline-block;width:150px;overflow:hidden;margin-right:8px;vertical-align:middle}.fill{height:100%}.g{background:var(--ok)}.y{background:var(--warn)}.r{background:var(--bad)}
     .summary{background:#f7fafd;border:1px solid #d6deea;border-radius:12px;padding:14px 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}.summary b{display:block;font-size:12px;color:#4f607a}
     .status{font-weight:700}.free{color:#3e6ea8}.assigned{color:#0c7a43}.hidden{display:none!important}
-    @media(max-width:1200px){.inline-form{grid-template-columns:repeat(2,minmax(180px,1fr))}}
+    
   </style>
   <script>
     let branches = [];
@@ -57,6 +65,39 @@
       branches=seedFromServer(); saveBranches();
     }
     function saveBranches(){ localStorage.setItem(STORE_KEY, JSON.stringify(branches)); }
+    function openBranchManager(){
+      clearInlineError();
+      refreshDeleteBranchOptions();
+      setGatewayPreview();
+      const modal=document.getElementById('branchManagerModal');
+      if(modal) modal.classList.add('show');
+    }
+    function closeBranchManager(){
+      const modal=document.getElementById('branchManagerModal');
+      if(modal) modal.classList.remove('show');
+      cancelInline();
+    }
+    function refreshDeleteBranchOptions(){
+      const sel=document.getElementById('deleteBranchSelect');
+      if(!sel) return;
+      const current=sel.value;
+      const opts=['<option value="">-- Select Branch --</option>'].concat(branches.map(b=>`<option value="${b.id}">${b.name} (${b.networkBase}/${b.cidr})</option>`));
+      sel.innerHTML=opts.join('');
+      if(current && branches.some(b=>b.id===current)) sel.value=current;
+    }
+    function deleteSelectedBranch(){
+      clearInlineError();
+      const sel=document.getElementById('deleteBranchSelect');
+      if(!sel || !sel.value) return showInlineError('Select a branch to delete from the dropdown list.');
+      const target=sel.value;
+      const before=branches.length;
+      branches=branches.filter(b=>b.id!==target);
+      if(branches.length===before) return showInlineError('Selected branch was not found.');
+      saveBranches();
+      refreshDeleteBranchOptions();
+      renderList();
+    }
+
 
     function setGatewayPreview(){
       const base=document.getElementById('addBase').value.trim();
@@ -80,7 +121,7 @@
       if(doesSubnetOverlap(branches,base,cidr)) return showInlineError('Subnet overlaps an existing branch subnet.');
       const gen=makeIpRows(base,cidr);
       branches.push({id:`b-${Date.now()}`,name,site,networkBase:base,cidr,subnetMask:cidrToMask(cidr),gateway:gen.gateway,broadcast:gen.broadcast,createdAt:nowStamp(),updatedAt:nowStamp(),ipRows:gen.ipRows});
-      saveBranches(); document.getElementById('addBranchForm').reset(); setGatewayPreview(); renderList();
+      saveBranches(); document.getElementById('addBranchForm').reset(); setGatewayPreview(); refreshDeleteBranchOptions(); renderList();
     }
     function cancelInline(){ document.getElementById('addBranchForm').reset(); clearInlineError(); setGatewayPreview(); }
 
@@ -171,19 +212,46 @@
       <main class="content">
         <section id="listView" class="panel">
           <div class="breadcrumb">IP Addressing > Branches</div><h1 class="title">Branches</h1>
-          <form id="addBranchForm" class="inline-form">
-            <div class="field"><label>Branch Name</label><input id="addName" class="input" placeholder="e.g., B902 - East Campus"></div>
-            <div class="field"><label>City/Site</label><input id="addSite" class="input" placeholder="e.g., Kumanovo Regional Office"></div>
-            <div class="field"><label>Network Base</label><input id="addBase" class="input" placeholder="e.g., 10.10.10.0"></div>
-            <div class="field"><label>Subnet/CIDR</label><select id="addCidr" class="select"><option>/27</option><option>/26</option><option>/28</option></select></div>
-            <div class="field"><label>Gateway (Auto)</label><input id="addGateway" class="input gw-read" readonly></div>
-            <button type="button" class="btn" onclick="cancelInline()">Cancel</button>
-            <button type="submit" class="btn pri">Add Branch</button>
-          </form>
+          <div class="toolbar">
+            <div class="left"><input id="listSearch" class="input" placeholder="Search branch, city/site, network..."></div>
+            <div class="right"><button class="btn pri" type="button" onclick="openBranchManager()">Edit/Add</button></div>
+          </div>
           <div id="inlineErr" class="err hidden"></div>
-          <div class="toolbar"><div class="left"><input id="listSearch" class="input" placeholder="Search branch, city/site, network..."></div></div>
           <div class="table-wrap"><table><thead><tr><th>Branch Name</th><th>City/Site</th><th>Network (base/cidr)</th><th>Gateway</th><th>Subnet Mask</th><th>Utilization</th><th>Last Updated</th></tr></thead><tbody id="branchesBody"></tbody></table></div>
         </section>
+
+
+
+        <div id="branchManagerModal" class="branch-modal-backdrop" onclick="if(event.target===this){closeBranchManager();}">
+          <div class="branch-modal" role="dialog" aria-modal="true" aria-label="Edit/Add Branches">
+            <div class="head">
+              <h3 style="margin:0;">Edit/Add Branches</h3>
+              <button class="btn" type="button" onclick="closeBranchManager()">Close</button>
+            </div>
+
+            <p class="section-title">Add Branch</p>
+            <form id="addBranchForm" class="branch-grid">
+              <div class="field"><label>Branch Name</label><input id="addName" class="input" placeholder="e.g., B902 - East Campus"></div>
+              <div class="field"><label>City/Site</label><input id="addSite" class="input" placeholder="e.g., Kumanovo Regional Office"></div>
+              <div class="field"><label>Network Base</label><input id="addBase" class="input" placeholder="e.g., 10.10.10.0"></div>
+              <div class="field"><label>Subnet/CIDR</label><select id="addCidr" class="select"><option>/27</option><option>/26</option><option>/28</option></select></div>
+              <div class="field"><label>Gateway (Auto)</label><input id="addGateway" class="input gw-read" readonly></div>
+            </form>
+            <div class="right">
+              <button type="button" class="btn" onclick="cancelInline()">Cancel</button>
+              <button type="button" class="btn pri" onclick="addBranchInline(event)">Add Branch</button>
+            </div>
+
+            <p class="section-title">Delete Branch</p>
+            <div class="delete-row">
+              <div class="field">
+                <label>Select branch to delete</label>
+                <select id="deleteBranchSelect" class="select"></select>
+              </div>
+              <button type="button" class="btn" onclick="deleteSelectedBranch()">Delete Selected Branch</button>
+            </div>
+          </div>
+        </div>
 
         <section id="detailsView" class="panel hidden">
           <div id="detailsBreadcrumb" class="breadcrumb">IP Addressing > Branches</div>
