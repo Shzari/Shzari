@@ -129,7 +129,7 @@
       } else if (action === 'force_change') {
         note.textContent = 'Keep current password but force user to change on next login.';
       } else if (action === 'set_role') {
-        note.textContent = 'Set role group for this user (Helpdesk / Junior / Senior).';
+        note.textContent = 'Set role group for this user (Helpdesk / Junior / Senior / Audit).';
       } else if (action === 'set_user_rights') {
         note.textContent = 'Set user rights: allowed categories + account privileges + operation access. Move category requires both Edit Devices + Move Device Category.';
       }
@@ -337,6 +337,7 @@
           <option value="helpdesk">Helpdesk</option>
           <option value="junior" selected>Junior</option>
           <option value="senior">Senior</option>
+          <option value="audit">Audit</option>
         </select>
         <button class="btn" type="submit">Add User</button>
       </form>
@@ -415,6 +416,7 @@
           <option value="helpdesk">Helpdesk</option>
           <option value="junior" selected>Junior</option>
           <option value="senior">Senior</option>
+          <option value="audit">Audit</option>
         </select>
       </div>
 

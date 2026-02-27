@@ -779,7 +779,7 @@ def is_current_session_super_admin() -> bool:
 
 def normalize_role(role: str) -> str:
     raw = str(role or "").strip().lower()
-    if raw in {"senior", "junior", "helpdesk"}:
+    if raw in {"senior", "junior", "helpdesk", "audit"}:
         return raw
     if raw in {"super_admin", "admin"}:
         return "senior"
@@ -914,6 +914,34 @@ def write_audit_log(action: str, requester: str, approver: str, device_name: str
             ),
         )
 
+
+
+
+def load_audit_logs(limit: int = 500) -> list[dict[str, Any]]:
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, action, requester, approver, device_name, details_json, created_at FROM audit_logs ORDER BY id DESC LIMIT ?",
+            (max(1, int(limit)),),
+        ).fetchall()
+
+    logs: list[dict[str, Any]] = []
+    for row in rows:
+        details_raw = str(row["details_json"] or "")
+        try:
+            details = json.loads(details_raw) if details_raw else {}
+        except Exception:
+            details = {"raw": details_raw}
+        logs.append({
+            "id": int(row["id"]),
+            "action": str(row["action"]),
+            "requester": str(row["requester"]),
+            "approver": str(row["approver"]),
+            "device_name": str(row["device_name"]),
+            "details": details,
+            "details_pretty": json.dumps(details, ensure_ascii=False, indent=2),
+            "created_at": str(row["created_at"]),
+        })
+    return logs
 
 def create_pending_device_request(*, requester_username: str, requester_role: str, original_device: dict[str, Any], proposed_hostname: str, proposed_ip: str, proposed_categories: list[str]) -> None:
     request_id = 0
@@ -1261,8 +1289,11 @@ def user_has_panel_access(username: str, auth_mode: str, panel_name: str) -> boo
     if user is None:
         return True
 
-    if normalize_role(str(user.get("role", "junior"))) == "senior":
+    role = normalize_role(str(user.get("role", "junior")))
+    if role == "senior":
         return True
+    if role == "audit":
+        return False
 
     privileges = user.get("account_privileges")
     if not isinstance(privileges, list):
@@ -1961,6 +1992,18 @@ def enforce_dashboard_session_timeout() -> Any:
     endpoint = request.endpoint or ""
     if endpoint in {"static", "login", "logout", "setup_super_admin", "change_password"}:
         return None
+
+    role = current_user_role()
+    if role == "audit":
+        allowed_audit_endpoints = {
+            "audit_dashboard",
+            "mark_notifications_read_route",
+            "delete_notification_route",
+            "logout",
+            "pending_command_decision",
+        }
+        if endpoint not in allowed_audit_endpoints:
+            return redirect(url_for("audit_dashboard"))
 
     settings = load_session_settings()
     timeout_seconds = max(60, int(settings.get("idle_timeout_minutes", 15)) * 60)
@@ -2752,6 +2795,30 @@ def logout() -> Any:
     return redirect(url_for("login"))
 
 
+@app.route("/audit-dashboard", methods=["GET"])
+def audit_dashboard() -> Any:
+    if "creds" not in session:
+        return redirect(url_for("login"))
+
+    role = current_user_role()
+    if role not in {"audit", "senior"}:
+        session["dashboard_error"] = "You do not have access to Audit Dashboard."
+        return redirect(url_for("dashboard"))
+
+    current_username = str(session.get("creds", {}).get("username", "")).strip()
+    logs = load_audit_logs(500)
+    return render_template(
+        "audit_dashboard.html",
+        logs=logs,
+        current_user=current_username,
+        current_user_role=role,
+        auth_mode=str(session.get("auth_mode", "local")),
+        info=session.pop("dashboard_info", ""),
+        error=session.pop("dashboard_error", ""),
+        unread_notifications_count=len(load_unread_notifications(current_username)),
+    )
+
+
 @app.route("/ip-addressing", methods=["GET"])
 def ip_addressing_dashboard() -> Any:
     if "creds" not in session:
@@ -2759,6 +2826,9 @@ def ip_addressing_dashboard() -> Any:
 
     current_username = str(session.get("creds", {}).get("username", ""))
     auth_mode = str(session.get("auth_mode", "local"))
+    if current_user_role() == "audit":
+        return redirect(url_for("audit_dashboard"))
+
     if not user_has_panel_access(current_username, auth_mode, "ip_addressing"):
         if user_has_panel_access(current_username, auth_mode, "devices"):
             session["dashboard_error"] = "You do not have access to the IP Addressing panel."
@@ -2846,6 +2916,9 @@ def request_ip_branch_add() -> Any:
 
     current_username = str(session.get("creds", {}).get("username", "")).strip()
     auth_mode = str(session.get("auth_mode", "local"))
+    if current_user_role() == "audit":
+        return redirect(url_for("audit_dashboard"))
+
     if not user_has_panel_access(current_username, auth_mode, "ip_addressing"):
         return jsonify({"ok": False, "error": "You do not have access to IP Addressing."}), 403
 
@@ -2870,6 +2943,9 @@ def request_ip_branch_delete() -> Any:
 
     current_username = str(session.get("creds", {}).get("username", "")).strip()
     auth_mode = str(session.get("auth_mode", "local"))
+    if current_user_role() == "audit":
+        return jsonify({"ok": False, "error": "Audit role is read-only."}), 403
+
     if not user_has_panel_access(current_username, auth_mode, "ip_addressing"):
         return jsonify({"ok": False, "error": "You do not have access to IP Addressing."}), 403
 
@@ -2928,6 +3004,8 @@ def dashboard() -> Any:
     info = session.pop("dashboard_info", "")
     error = session.pop("dashboard_error", "")
     role = current_user_role()
+    if role == "audit":
+        return redirect(url_for("audit_dashboard"))
     unread_notifications = load_unread_notifications(current_username)
     pending_requests = load_pending_device_requests() if role == "senior" else []
     pending_command_requests = load_pending_command_requests() if role == "senior" else []
