@@ -924,6 +924,27 @@ def load_audit_logs(limit: int = 500) -> list[dict[str, Any]]:
             (max(1, int(limit)),),
         ).fetchall()
 
+    def build_log_summary(action: str, device_name: str, details: dict[str, Any]) -> str:
+        label = str(action or "").replace("_", " ").strip().title()
+        target = str(device_name or "").strip() or "N/A"
+
+        if action in {"command_request_approved", "command_request_rejected", "command_request_executed"}:
+            mode = str(details.get("command_mode", "")).strip() or "command"
+            devices = details.get("target_devices", [])
+            count = len(devices) if isinstance(devices, list) else 0
+            return f"{label} for {mode}. Target devices: {count}."
+
+        if action in {"branch_delete_direct", "branch_delete_executed", "branch_add"}:
+            branch = str(details.get("branch_name", "")).strip() or target
+            return f"{label} for branch '{branch}'."
+
+        if action in {"request_approved", "request_rejected"}:
+            fields = details.get("fields", {}) if isinstance(details.get("fields", {}), dict) else {}
+            changed = ", ".join(fields.keys()) if fields else "no field details"
+            return f"{label} for '{target}'. Changes: {changed}."
+
+        return f"{label} for '{target}'."
+
     logs: list[dict[str, Any]] = []
     for row in rows:
         details_raw = str(row["details_json"] or "")
@@ -931,14 +952,16 @@ def load_audit_logs(limit: int = 500) -> list[dict[str, Any]]:
             details = json.loads(details_raw) if details_raw else {}
         except Exception:
             details = {"raw": details_raw}
+
+        action = str(row["action"])
+        device_name = str(row["device_name"])
         logs.append({
             "id": int(row["id"]),
-            "action": str(row["action"]),
+            "action": action,
             "requester": str(row["requester"]),
             "approver": str(row["approver"]),
-            "device_name": str(row["device_name"]),
-            "details": details,
-            "details_pretty": json.dumps(details, ensure_ascii=False, indent=2),
+            "device_name": device_name,
+            "summary": build_log_summary(action, device_name, details),
             "created_at": str(row["created_at"]),
         })
     return logs

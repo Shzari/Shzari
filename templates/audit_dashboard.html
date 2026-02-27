@@ -10,8 +10,7 @@
     .audit-table { width: 100%; border-collapse: collapse; min-width: 980px; }
     .audit-table th, .audit-table td { padding: 10px 12px; border-bottom: 1px solid #e5ecfb; vertical-align: top; }
     .audit-table th { background: #eef3ff; text-align: left; }
-    .audit-pre { margin: 0; white-space: pre-wrap; font-size: 12px; background: #0f172a; color: #e2e8f0; padding: 8px; border-radius: 8px; }
-  </style>
+      </style>
 </head>
 <body>
   <div class="page-bg"></div>
@@ -35,7 +34,7 @@
       <table class="audit-table">
         <thead>
           <tr>
-            <th>ID</th><th>Timestamp</th><th>Action</th><th>Requester</th><th>Approver</th><th>Target</th><th>Details</th>
+            <th>ID</th><th>Timestamp</th><th>Action</th><th>Requester</th><th>Approver</th><th>Target</th><th>Log Summary</th>
           </tr>
         </thead>
         <tbody>
@@ -47,7 +46,7 @@
             <td>{{ item.requester }}</td>
             <td>{{ item.approver }}</td>
             <td>{{ item.device_name }}</td>
-            <td><pre class="audit-pre">{{ item.details_pretty }}</pre></td>
+            <td>{{ item.summary }}</td>
           </tr>
           {% endfor %}
           {% if not logs %}
