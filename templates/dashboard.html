@@ -1176,6 +1176,7 @@ ${entry.output}
         <button class="btn" type="submit">Save Device Changes</button>
       </form>
 
+      {% if current_user_role == 'senior' %}
       <form method="post" action="{{ url_for('manage_devices') }}" class="submenu-form" onsubmit="return requireSuperAdminPassword(event)">
         <input type="hidden" name="action" value="delete">
         <label>Delete device</label>
@@ -1186,6 +1187,7 @@ ${entry.output}
         </select>
         <button class="btn ghost" type="submit">Delete Device</button>
       </form>
+      {% endif %}
 
     </div>
   </dialog>

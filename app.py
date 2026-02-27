@@ -3121,8 +3121,11 @@ def manage_devices() -> Any:
 
     if action == "delete":
         delete_name = request.form.get("delete_device_name", "").strip()
-        admin_password = request.form.get("super_admin_password", "")
+        if current_user_role() != "senior":
+            session["dashboard_error"] = "Only Senior users can delete devices."
+            return redirect(dashboard_modal_url)
 
+        admin_password = request.form.get("super_admin_password", "")
         if not current_user_has_admin_permission("delete_device") and not is_super_admin_password(admin_password):
             session["dashboard_error"] = "Deleting devices requires valid super admin password."
             return redirect(dashboard_modal_url)
