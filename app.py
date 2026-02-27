@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import csv
 import hashlib
 import hmac
 import json
@@ -3043,6 +3044,110 @@ def manage_devices() -> Any:
         devices.append({"name": hostname, "host": ip_address, "port": 22, "groups": selected_categories})
         save_devices(devices)
         session["dashboard_info"] = f"Device '{hostname}' added successfully."
+        return redirect(dashboard_modal_url)
+
+
+
+    if action == "import_csv":
+        if not is_senior_user():
+            session["dashboard_error"] = "Only Senior users can import devices."
+            return redirect(dashboard_modal_url)
+
+        uploaded = request.files.get("devices_csv")
+        if uploaded is None or not str(uploaded.filename or "").strip():
+            session["dashboard_error"] = "Select a CSV file to import."
+            return redirect(dashboard_modal_url)
+
+        try:
+            content = uploaded.read().decode("utf-8-sig")
+        except Exception:
+            session["dashboard_error"] = "CSV file must be UTF-8 text."
+            return redirect(dashboard_modal_url)
+
+        lines = [line for line in content.splitlines() if line.strip()]
+        if not lines:
+            session["dashboard_error"] = "CSV file is empty."
+            return redirect(dashboard_modal_url)
+
+        def _norm_header(value: str) -> str:
+            return re.sub(r"[^a-z0-9]", "", str(value or "").strip().lower())
+
+        name_headers = {"name", "hostname", "devicename"}
+        ip_headers = {"ip", "ipaddress", "host", "address"}
+        category_headers = {"category", "categories", "group", "groups"}
+
+        reader = csv.DictReader(lines)
+        mapped_rows: list[dict[str, str]] = []
+        if reader.fieldnames:
+            normalized = {_norm_header(h): h for h in reader.fieldnames if h is not None}
+            name_col = next((normalized[h] for h in name_headers if h in normalized), None)
+            ip_col = next((normalized[h] for h in ip_headers if h in normalized), None)
+            category_col = next((normalized[h] for h in category_headers if h in normalized), None)
+            if name_col and ip_col:
+                for row in reader:
+                    mapped_rows.append({
+                        "name": str(row.get(name_col, "") or "").strip(),
+                        "ip": str(row.get(ip_col, "") or "").strip(),
+                        "category": str(row.get(category_col, "") or "").strip() if category_col else "",
+                    })
+
+        if not mapped_rows:
+            plain = csv.reader(lines)
+            for parts in plain:
+                if len(parts) < 2:
+                    continue
+                mapped_rows.append({
+                    "name": str(parts[0]).strip(),
+                    "ip": str(parts[1]).strip(),
+                    "category": str(parts[2]).strip() if len(parts) > 2 else "",
+                })
+
+        if not mapped_rows:
+            session["dashboard_error"] = "CSV must include at least name and ip_address columns."
+            return redirect(dashboard_modal_url)
+
+        existing_names = {str(d.get("name", "")).strip().lower() for d in devices}
+        existing_ips = {str(d.get("host", "")).strip() for d in devices}
+        batch_names: set[str] = set()
+        batch_ips: set[str] = set()
+
+        imported = 0
+        skipped: list[str] = []
+
+        for idx, row in enumerate(mapped_rows, start=2):
+            hostname = str(row.get("name", "")).strip()
+            ip_address = str(row.get("ip", "")).strip()
+            category_raw = str(row.get("category", "")).strip()
+            categories = [c.strip() for c in re.split(r"[;,]", category_raw) if c.strip()] if category_raw else [DEFAULT_CATEGORY]
+            if not hostname or not ip_address:
+                skipped.append(f"row {idx}: missing name or ip")
+                continue
+            if not is_valid_ipv4(ip_address):
+                skipped.append(f"row {idx}: invalid ip '{ip_address}'")
+                continue
+            if hostname.lower() in existing_names or hostname.lower() in batch_names:
+                skipped.append(f"row {idx}: duplicate hostname '{hostname}'")
+                continue
+            if ip_address in existing_ips or ip_address in batch_ips:
+                skipped.append(f"row {idx}: duplicate ip '{ip_address}'")
+                continue
+            if not user_can_assign_categories(categories, current_username, auth_mode):
+                skipped.append(f"row {idx}: category not allowed")
+                continue
+
+            devices.append({"name": hostname, "host": ip_address, "port": 22, "groups": categories})
+            batch_names.add(hostname.lower())
+            batch_ips.add(ip_address)
+            imported += 1
+
+        if imported > 0:
+            save_devices(devices)
+            msg = f"Imported {imported} device(s) from CSV."
+            if skipped:
+                msg += f" Skipped {len(skipped)} row(s)."
+            session["dashboard_info"] = msg
+        else:
+            session["dashboard_error"] = "No devices were imported. " + ("; ".join(skipped[:3]) if skipped else "Check CSV format.")
         return redirect(dashboard_modal_url)
 
     if action == "edit":

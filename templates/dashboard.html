@@ -1114,6 +1114,15 @@ ${entry.output}
         <button class="btn" type="submit">Save Device</button>
       </form>
 
+
+
+      <form method="post" action="{{ url_for('manage_devices') }}" class="submenu-form" enctype="multipart/form-data">
+        <input type="hidden" name="action" value="import_csv">
+        <label>Import devices from CSV (name, ip_address, category)</label>
+        <input name="devices_csv" type="file" accept=".csv,text/csv" required>
+        <button class="btn" type="submit">Import CSV</button>
+      </form>
+
       <form method="post" action="{{ url_for('manage_categories') }}" class="submenu-form" onsubmit="return true">
         <input type="hidden" name="action" value="create_category">
         <label>Create new category</label>
