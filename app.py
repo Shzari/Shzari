@@ -3521,10 +3521,14 @@ def run_session_command_api() -> Any:
 @app.context_processor
 def inject_common_context() -> dict[str, Any]:
     creds = session.get("creds", {})
+    current_username = str(creds.get("username", "")).strip()
+    auth_mode = str(session.get("auth_mode", "local"))
+    can_access_devices = bool(current_username) and user_has_panel_access(current_username, auth_mode, "devices")
     return {
-        "current_user": creds.get("username", ""),
-        "auth_mode": session.get("auth_mode", "local"),
+        "current_user": current_username,
+        "auth_mode": auth_mode,
         "is_super_admin_session": is_current_session_super_admin(),
+        "can_access_devices_panel": can_access_devices,
     }
 
 

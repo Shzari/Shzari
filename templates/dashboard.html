@@ -938,7 +938,7 @@ ${entry.output}
   <div class="user-strip">
     <div class="chip center-chip"><span id="dashboardClock">--</span></div>
     <button class="btn-top {% if unread_notifications_count|int > 0 %}notification-alert{% endif %}" type="button" onclick="openNotificationsModal()">🔔 Notifications ({{ unread_notifications_count }})</button>
-    <button class="btn-top" type="button" onclick="openDeviceCredsModal()">Device Credentials</button>
+    {% if can_access_devices_panel %}<button class="btn-top" type="button" onclick="openDeviceCredsModal()">Device Credentials</button>{% endif %}
     <div class="chip">👤 {{ current_user or 'Unknown' }}/{{ current_user_role|upper }}</div>
     <div class="chip">🔐 {{ auth_mode|upper }}</div>
     <a class="btn-top" href="{{ url_for('logout') }}">Logout</a>
