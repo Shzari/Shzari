@@ -2784,6 +2784,7 @@ def manage_ip_branches() -> Any:
         return redirect(url_for("login"))
 
     action = str(request.form.get("action", "")).strip().lower()
+    current_username_value = str(session.get("creds", {}).get("username", "")).strip()
     branches = load_ip_branches()
 
     if action == "add":
@@ -2804,12 +2805,33 @@ def manage_ip_branches() -> Any:
         if not branch_name:
             session["dashboard_error"] = "Select a branch to delete."
             return redirect(url_for("ip_addressing_dashboard"))
-        updated = [item for item in branches if item.lower() != branch_name.lower()]
-        if len(updated) == len(branches):
+
+        if not any(item.lower() == branch_name.lower() for item in branches):
             session["dashboard_error"] = "Branch not found."
             return redirect(url_for("ip_addressing_dashboard"))
-        save_ip_branches(updated)
-        session["dashboard_info"] = f"Branch '{branch_name}' deleted."
+
+        if is_senior_user():
+            updated = [item for item in branches if item.lower() != branch_name.lower()]
+            save_ip_branches(updated)
+            write_audit_log("branch_delete_direct", current_username_value, current_username_value, branch_name, {"branch_name": branch_name})
+            session["dashboard_info"] = f"Branch '{branch_name}' deleted."
+            return redirect(url_for("ip_addressing_dashboard"))
+
+        request_id = create_pending_command_request(
+            requester_username=current_username_value,
+            requester_role=current_user_role(),
+            command_mode="branch_delete",
+            command_text=f"DELETE_BRANCH::{branch_name}",
+            device_names=[],
+        )
+        if request_id <= 0:
+            session["dashboard_error"] = "Could not create delete approval request."
+            return redirect(url_for("ip_addressing_dashboard"))
+
+        session["dashboard_info"] = (
+            f"Branch delete request #{request_id} sent to Senior for approval. "
+            "After approval, use Notifications to Continue delete or Cancel."
+        )
         return redirect(url_for("ip_addressing_dashboard"))
 
     session["dashboard_error"] = "Unknown branch action."
