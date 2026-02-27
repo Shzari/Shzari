@@ -769,7 +769,7 @@ ${entry.output}
     }
 
     function requireSuperAdminPassword(event) {
-      if (IS_SUPER_ADMIN_SESSION) {
+      if (IS_SUPER_ADMIN_SESSION || CURRENT_USER_ROLE === 'senior') {
         return true;
       }
 
