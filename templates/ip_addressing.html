@@ -41,6 +41,7 @@
     let selectedBranchId = null;
     let detailsEditEnabled = false;
     const STORE_KEY = 'ipam_branches_v2';
+    const SERVER_BRANCH_NAMES = {{ branches|tojson }};
 
     function nowStamp(){ return new Date().toLocaleString(); }
     function updateClock(){ const e=document.getElementById('clockPill'); if(e) e.textContent=nowStamp(); }
@@ -56,12 +57,24 @@
     function calcUtil(b){ const total=b.ipRows.length||1; const assigned=b.ipRows.filter(r=>r.status==='ASSIGNED').length; return Math.round((assigned/total)*100); }
 
     function seedFromServer(){
-      const names={{ branches|tojson }}; if(!Array.isArray(names)||!names.length) return [];
+      const names=SERVER_BRANCH_NAMES; if(!Array.isArray(names)||!names.length) return [];
       const base='10.10.10.0'; const cidr=27; const block=blockSizeFromCidr(cidr); const start=ipToInt(base);
       return names.map((n,idx)=>{ const nb=intToIp(start+idx*block); const gen=makeIpRows(nb,cidr); return {id:`b-${idx+1}`,name:n,site:'Site',networkBase:nb,cidr,subnetMask:cidrToMask(cidr),gateway:gen.gateway,broadcast:gen.broadcast,createdAt:nowStamp(),updatedAt:nowStamp(),ipRows:gen.ipRows}; });
     }
+    function reconcileBranchesWithServer(){
+      const serverNames = Array.isArray(SERVER_BRANCH_NAMES) ? SERVER_BRANCH_NAMES : [];
+      if(!serverNames.length) return;
+      const serverSet = new Set(serverNames.map(n=>String(n).trim().toLowerCase()).filter(Boolean));
+      branches = branches.filter(b=>serverSet.has(String(b.name||'').trim().toLowerCase()));
+      const localSet = new Set(branches.map(b=>String(b.name||'').trim().toLowerCase()));
+      const seeded = seedFromServer();
+      seeded.forEach((b)=>{
+        const key=String(b.name||'').trim().toLowerCase();
+        if(key && !localSet.has(key)) branches.push(b);
+      });
+    }
     function loadBranches(){
-      try{ const r=JSON.parse(localStorage.getItem(STORE_KEY)||'[]'); if(Array.isArray(r)&&r.length){ branches=r; return; } }catch(_e){}
+      try{ const r=JSON.parse(localStorage.getItem(STORE_KEY)||'[]'); if(Array.isArray(r)&&r.length){ branches=r; reconcileBranchesWithServer(); saveBranches(); return; } }catch(_e){}
       branches=seedFromServer(); saveBranches();
     }
     function saveBranches(){ localStorage.setItem(STORE_KEY, JSON.stringify(branches)); }
@@ -111,7 +124,7 @@
           refreshDeleteBranchOptions();
           renderList();
         }
-        showInlineError(payload.message || 'Delete request sent.');
+        showInlineError(payload.message || 'Delete request sent for approval.');
       }).catch((err)=>{
         showInlineError(`Delete request failed: ${err}`);
       });
@@ -129,7 +142,7 @@
     function clearInlineError(){ document.getElementById('inlineErr').classList.add('hidden'); document.getElementById('inlineErr').textContent=''; }
     function showInlineError(msg){ const e=document.getElementById('inlineErr'); e.textContent=msg; e.classList.remove('hidden'); }
 
-    function addBranchInline(e){
+    async function addBranchInline(e){
       e.preventDefault(); clearInlineError();
       const name=document.getElementById('addName').value.trim();
       const site=document.getElementById('addSite').value.trim();
@@ -138,6 +151,25 @@
       if(!name||!site||!base||!cidr) return showInlineError('Branch Name, City/Site, Network Base and Subnet/CIDR are required.');
       if(!isNetworkAligned(base,cidr)) return showInlineError(`Network base must align to /${cidr} boundaries (increments of ${blockSizeFromCidr(cidr)}).`);
       if(doesSubnetOverlap(branches,base,cidr)) return showInlineError('Subnet overlaps an existing branch subnet.');
+
+      const body=new URLSearchParams();
+      body.set('branch_name', name);
+      const resp = await fetch("{{ url_for('request_ip_branch_add') }}", {
+        method:'POST',
+        headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},
+        body: body.toString()
+      }).catch((err)=>({ok:false,_err:err}));
+      if(!resp || !resp.ok){
+        let msg='Could not add branch.';
+        if(resp && !resp._err){
+          const payload=await resp.json().catch(()=>({}));
+          msg=payload.error || msg;
+        } else if(resp && resp._err){
+          msg=`Add request failed: ${resp._err}`;
+        }
+        return showInlineError(msg);
+      }
+
       const gen=makeIpRows(base,cidr);
       branches.push({id:`b-${Date.now()}`,name,site,networkBase:base,cidr,subnetMask:cidrToMask(cidr),gateway:gen.gateway,broadcast:gen.broadcast,createdAt:nowStamp(),updatedAt:nowStamp(),ipRows:gen.ipRows});
       saveBranches(); document.getElementById('addBranchForm').reset(); setGatewayPreview(); refreshDeleteBranchOptions(); renderList();

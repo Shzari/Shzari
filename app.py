@@ -2446,12 +2446,12 @@ def pending_requests_action() -> Any:
             if is_branch_delete:
                 notify_user(
                     requester,
-                    f"Command request #{request_id} was approved for branch delete '{branch_name}'. Continue delete (Run) or Cancel (Discard) from Notifications.",
+                    f"Command request #{request_id} was approved for branch delete '{branch_name}'. Continue delete (Execute) or Cancel from Notifications.",
                 )
             else:
                 notify_user(
                     requester,
-                    f"Command request #{request_id} was approved. Run command or Discard from Notifications. Command: '{str(command_text).strip()}'.",
+                    f"Command request #{request_id} was approved. Execute command or Cancel from Notifications. Command: '{str(command_text).strip()}'.",
                 )
         else:
             if is_branch_delete:
@@ -2830,12 +2830,36 @@ def manage_ip_branches() -> Any:
 
         session["dashboard_info"] = (
             f"Branch delete request #{request_id} sent to Senior for approval. "
-            "After approval, use Notifications to Continue delete or Cancel."
+            "After approval, use Notifications to Execute delete or Cancel."
         )
         return redirect(url_for("ip_addressing_dashboard"))
 
     session["dashboard_error"] = "Unknown branch action."
     return redirect(url_for("ip_addressing_dashboard"))
+
+
+@app.route("/ip-branches/request-add", methods=["POST"])
+def request_ip_branch_add() -> Any:
+    if "creds" not in session:
+        return jsonify({"ok": False, "error": "Not authenticated."}), 401
+
+    current_username = str(session.get("creds", {}).get("username", "")).strip()
+    auth_mode = str(session.get("auth_mode", "local"))
+    if not user_has_panel_access(current_username, auth_mode, "ip_addressing"):
+        return jsonify({"ok": False, "error": "You do not have access to IP Addressing."}), 403
+
+    branch_name = str(request.form.get("branch_name", "")).strip()
+    if not branch_name:
+        return jsonify({"ok": False, "error": "Branch name is required."}), 400
+
+    branches = load_ip_branches()
+    if any(branch_name.lower() == item.lower() for item in branches):
+        return jsonify({"ok": False, "error": "Branch already exists."}), 409
+
+    branches.append(branch_name)
+    save_ip_branches(branches)
+    write_audit_log("branch_add", current_username, current_username, branch_name, {"branch_name": branch_name})
+    return jsonify({"ok": True, "message": f"Branch '{branch_name}' added."})
 
 
 @app.route("/ip-branches/request-delete", methods=["POST"])
@@ -2877,7 +2901,7 @@ def request_ip_branch_delete() -> Any:
         "request_id": request_id,
         "message": (
             f"Branch delete request #{request_id} sent to Senior for approval. "
-            "After approval, use Notifications to Continue (Run) or Cancel (Discard)."
+            "After approval, use Notifications to Continue (Execute) or Cancel."
         ),
     })
 
