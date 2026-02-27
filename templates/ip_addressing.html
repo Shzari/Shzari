@@ -89,13 +89,32 @@
       clearInlineError();
       const sel=document.getElementById('deleteBranchSelect');
       if(!sel || !sel.value) return showInlineError('Select a branch to delete from the dropdown list.');
-      const target=sel.value;
-      const before=branches.length;
-      branches=branches.filter(b=>b.id!==target);
-      if(branches.length===before) return showInlineError('Selected branch was not found.');
-      saveBranches();
-      refreshDeleteBranchOptions();
-      renderList();
+      const target=branches.find(b=>b.id===sel.value);
+      if(!target) return showInlineError('Selected branch was not found.');
+
+      const body=new URLSearchParams();
+      body.set('branch_name', target.name);
+      fetch("{{ url_for('request_ip_branch_delete') }}", {
+        method:'POST',
+        headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},
+        body: body.toString()
+      }).then(async (resp)=>{
+        const payload=await resp.json().catch(()=>({ok:false,error:'Unexpected server response.'}));
+        if(!resp.ok || !payload.ok){
+          showInlineError(payload.error || 'Could not process branch delete request.');
+          return;
+        }
+
+        if(payload.deleted){
+          branches=branches.filter(b=>b.id!==target.id);
+          saveBranches();
+          refreshDeleteBranchOptions();
+          renderList();
+        }
+        showInlineError(payload.message || 'Delete request sent.');
+      }).catch((err)=>{
+        showInlineError(`Delete request failed: ${err}`);
+      });
     }
 
 

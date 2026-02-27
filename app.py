@@ -1728,6 +1728,14 @@ def _read_shell_output(channel: Any, timeout_seconds: int) -> str:
     return "".join(chunks).strip()
 
 
+
+
+def parse_branch_delete_command(command_text: str) -> str:
+    raw = str(command_text or '').strip()
+    if raw.startswith('DELETE_BRANCH::'):
+        return raw.split('::', 1)[1].strip()
+    return ''
+
 def command_requires_senior_approval(command_text: str) -> bool:
     commands = [item.strip().lower() for item in split_cli_commands(command_text)]
     if not commands:
@@ -2432,16 +2440,30 @@ def pending_requests_action() -> Any:
             session["dashboard_error"] = "Request already decided by another Senior user."
             return redirect(url_for("dashboard"))
 
+        is_branch_delete = str(command_mode).strip().lower() == "branch_delete"
+        branch_name = parse_branch_delete_command(command_text) if is_branch_delete else ""
         if new_status == "approved":
-            notify_user(
-                requester,
-                f"Command request #{request_id} was approved. Run command or Discard from Notifications. Command: '{str(command_text).strip()}'.",
-            )
+            if is_branch_delete:
+                notify_user(
+                    requester,
+                    f"Command request #{request_id} was approved for branch delete '{branch_name}'. Continue delete (Run) or Cancel (Discard) from Notifications.",
+                )
+            else:
+                notify_user(
+                    requester,
+                    f"Command request #{request_id} was approved. Run command or Discard from Notifications. Command: '{str(command_text).strip()}'.",
+                )
         else:
-            notify_user(
-                requester,
-                f"Command request #{request_id} was rejected. Command: '{str(command_text).strip()}'.",
-            )
+            if is_branch_delete:
+                notify_user(
+                    requester,
+                    f"Command request #{request_id} for branch delete '{branch_name}' was rejected.",
+                )
+            else:
+                notify_user(
+                    requester,
+                    f"Command request #{request_id} was rejected. Command: '{str(command_text).strip()}'.",
+                )
         write_audit_log(
             f"command_request_{new_status}",
             requester,
@@ -2596,10 +2618,54 @@ def pending_command_decision() -> Any:
             session["dashboard_error"] = "This command request was already handled."
             return redirect(url_for("dashboard"))
         mark_notifications_read(current_username)
+        command_mode = str(request_item.get("command_mode", "show")).strip().lower()
+        if command_mode == "branch_delete":
+            branch_name = parse_branch_delete_command(str(request_item.get("command_text", ""))) or "selected branch"
+            session["dashboard_info"] = f"Branch delete request #{request_id} canceled for '{branch_name}'."
+            return redirect(url_for("ip_addressing_dashboard"))
         session["dashboard_info"] = f"Command request #{request_id} discarded."
         return redirect(url_for("dashboard"))
 
     # action == run
+    command_mode = str(request_item.get("command_mode", "show")).strip().lower()
+    if command_mode == "branch_delete":
+        branch_name = parse_branch_delete_command(str(request_item.get("command_text", "")))
+        if not branch_name:
+            session["dashboard_error"] = "Approved branch delete request has invalid payload."
+            return redirect(url_for("dashboard"))
+
+        branches = load_ip_branches()
+        updated = [item for item in branches if item.strip().lower() != branch_name.lower()]
+        if len(updated) == len(branches):
+            session["dashboard_error"] = f"Branch '{branch_name}' was not found in central list."
+            return redirect(url_for("dashboard"))
+
+        with db_conn() as conn:
+            updated_status = conn.execute(
+                "UPDATE pending_command_requests SET status = 'executing', decided_at = ? WHERE id = ? AND status = 'approved'",
+                (now, request_id),
+            )
+        if updated_status.rowcount == 0:
+            session["dashboard_error"] = "This branch delete request was already handled."
+            return redirect(url_for("dashboard"))
+
+        save_ip_branches(updated)
+        with db_conn() as conn:
+            conn.execute(
+                "UPDATE pending_command_requests SET status = 'executed', decided_at = ? WHERE id = ? AND status = 'executing'",
+                (datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"), request_id),
+            )
+        write_audit_log(
+            "branch_delete_executed",
+            current_username,
+            str(request_item.get("approver_username", "")),
+            branch_name,
+            {"request_id": request_id, "branch_name": branch_name},
+        )
+        mark_notifications_read(current_username)
+        session["dashboard_info"] = f"Approved branch delete request #{request_id} executed for '{branch_name}'."
+        return redirect(url_for("ip_addressing_dashboard"))
+
     all_devices = load_devices()
     auth_mode = str(session.get("auth_mode", "local"))
     allowed_devices = filter_devices_for_user(all_devices, current_username, auth_mode)
@@ -2748,6 +2814,50 @@ def manage_ip_branches() -> Any:
 
     session["dashboard_error"] = "Unknown branch action."
     return redirect(url_for("ip_addressing_dashboard"))
+
+
+@app.route("/ip-branches/request-delete", methods=["POST"])
+def request_ip_branch_delete() -> Any:
+    if "creds" not in session:
+        return jsonify({"ok": False, "error": "Not authenticated."}), 401
+
+    current_username = str(session.get("creds", {}).get("username", "")).strip()
+    auth_mode = str(session.get("auth_mode", "local"))
+    if not user_has_panel_access(current_username, auth_mode, "ip_addressing"):
+        return jsonify({"ok": False, "error": "You do not have access to IP Addressing."}), 403
+
+    branch_name = str(request.form.get("branch_name", "")).strip()
+    if not branch_name:
+        return jsonify({"ok": False, "error": "Select a branch to delete."}), 400
+
+    if is_senior_user():
+        branches = load_ip_branches()
+        updated = [item for item in branches if item.strip().lower() != branch_name.lower()]
+        if len(updated) == len(branches):
+            return jsonify({"ok": False, "error": "Branch not found."}), 404
+        save_ip_branches(updated)
+        write_audit_log("branch_delete_direct", current_username, current_username, branch_name, {"branch_name": branch_name})
+        return jsonify({"ok": True, "deleted": True, "message": f"Branch '{branch_name}' deleted."})
+
+    request_id = create_pending_command_request(
+        requester_username=current_username,
+        requester_role=current_user_role(),
+        command_mode="branch_delete",
+        command_text=f"DELETE_BRANCH::{branch_name}",
+        device_names=[],
+    )
+    if request_id <= 0:
+        return jsonify({"ok": False, "error": "Could not create delete approval request."}), 500
+
+    return jsonify({
+        "ok": True,
+        "deleted": False,
+        "request_id": request_id,
+        "message": (
+            f"Branch delete request #{request_id} sent to Senior for approval. "
+            "After approval, use Notifications to Continue (Run) or Cancel (Discard)."
+        ),
+    })
 
 
 @app.route("/dashboard", methods=["GET"])
