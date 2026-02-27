@@ -932,6 +932,12 @@ def load_audit_logs(limit: int = 500) -> list[dict[str, Any]]:
             mode = str(details.get("command_mode", "")).strip() or "command"
             devices = details.get("target_devices", [])
             count = len(devices) if isinstance(devices, list) else 0
+            cmd = str(details.get("command_text", "")).strip()
+            if cmd:
+                cmd = re.sub(r"\s+", " ", cmd)
+                if len(cmd) > 180:
+                    cmd = cmd[:180] + "..."
+                return f"{label} for {mode}. Target devices: {count}. Command sent: {cmd}"
             return f"{label} for {mode}. Target devices: {count}."
 
         if action in {"branch_delete_direct", "branch_delete_executed", "branch_add"}:
@@ -940,8 +946,26 @@ def load_audit_logs(limit: int = 500) -> list[dict[str, Any]]:
 
         if action in {"request_approved", "request_rejected"}:
             fields = details.get("fields", {}) if isinstance(details.get("fields", {}), dict) else {}
-            changed = ", ".join(fields.keys()) if fields else "no field details"
-            return f"{label} for '{target}'. Changes: {changed}."
+            ip_change = fields.get("ip", {}) if isinstance(fields.get("ip", {}), dict) else {}
+            ip_from = str(ip_change.get("from", "")).strip()
+            ip_to = str(ip_change.get("to", "")).strip()
+            categories_change = fields.get("categories", {}) if isinstance(fields.get("categories", {}), dict) else {}
+            cat_from = categories_change.get("from", [])
+            cat_to = categories_change.get("to", [])
+            requester_name = str(details.get("requester", "")).strip()
+
+            parts = [f"{label} for '{target}'."]
+            if requester_name:
+                parts.append(f"Requested by junior/user: {requester_name}.")
+            if ip_from or ip_to:
+                parts.append(f"IP change: {ip_from or '-'} -> {ip_to or '-' }.")
+            if cat_from or cat_to:
+                from_txt = ", ".join(str(x) for x in cat_from) if isinstance(cat_from, list) and cat_from else "-"
+                to_txt = ", ".join(str(x) for x in cat_to) if isinstance(cat_to, list) and cat_to else "-"
+                parts.append(f"Categories: {from_txt} -> {to_txt}.")
+            if len(parts) == 1:
+                parts.append("No field details.")
+            return " ".join(parts)
 
         return f"{label} for '{target}'."
 
@@ -2541,6 +2565,7 @@ def pending_requests_action() -> Any:
                 "command_mode": command_mode,
                 "command_text": command_text,
                 "target_devices": target_devices,
+                "requester": requester,
             },
         )
         clear_senior_command_request_notifications(request_id)
@@ -2585,6 +2610,7 @@ def pending_requests_action() -> Any:
             notify_user(requester, f"Your request #{request_id} was rejected because device no longer exists.")
             write_audit_log("request_rejected", requester, approver, device_name, {
                 "request_id": request_id,
+                "requester": requester,
                 "reason": "device_missing",
             })
             clear_senior_pending_request_notifications(request_id)
@@ -2612,6 +2638,7 @@ def pending_requests_action() -> Any:
         )
         write_audit_log("request_approved", requester, approver, device_name, {
             "request_id": request_id,
+            "requester": requester,
             "fields": {
                 "ip": {"from": original_ip, "to": proposed_ip},
                 "categories": {"from": original_categories, "to": proposed_categories},
@@ -2637,6 +2664,7 @@ def pending_requests_action() -> Any:
     )
     write_audit_log("request_rejected", requester, approver, device_name, {
         "request_id": request_id,
+        "requester": requester,
         "fields": {
             "ip": {"from": original_ip, "to": proposed_ip},
             "categories": {"from": original_categories, "to": proposed_categories},
