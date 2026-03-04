@@ -1,0 +1,29 @@
+{
+  "enabled": false,
+  "collection_mode": "telemetry",
+  "collector_host": "",
+  "collector_port": 57000,
+  "transport": "grpc",
+  "username": "",
+  "password": "",
+  "token": "",
+  "interval_seconds": 30,
+  "metrics": "cpu,memory,interfaces,sla",
+  "monitored_devices": [
+    "R2-test",
+    "R1-test",
+    "sw-1",
+    "server1"
+  ],
+  "category_options": [
+    "Router",
+    "Switch",
+    "ATM",
+    "Windows Servers",
+    "Firewalls",
+    "Uncategorized",
+    "Servers",
+    "atm"
+  ],
+  "notes": ""
+}

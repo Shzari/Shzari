@@ -236,6 +236,14 @@ pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; white-
   padding: 16px;
   background: #ffffff;
 }
+.device-modal.user-edit-modal {
+  max-width: 980px;
+  width: 96%;
+}
+.device-modal.user-edit-modal form {
+  max-height: 82vh;
+  overflow: auto;
+}
 
 
 

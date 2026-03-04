@@ -1,0 +1,198 @@
+{
+  "local::shkelqim": [
+    {
+      "id": "show-version",
+      "label": "Show Version",
+      "command": "show version",
+      "mode": "show",
+      "categories": [],
+      "audience": "senior"
+    },
+    {
+      "id": "show-ip-int-brief",
+      "label": "IP Interface Brief",
+      "command": "show ip interface brief",
+      "mode": "show",
+      "categories": [],
+      "audience": "senior"
+    },
+    {
+      "id": "show-int-status",
+      "label": "Interfaces Status",
+      "command": "show interfaces status",
+      "mode": "show",
+      "categories": [],
+      "audience": "senior"
+    },
+    {
+      "id": "show-logging",
+      "label": "Show Logging",
+      "command": "show logging | tail 50",
+      "mode": "show",
+      "categories": [],
+      "audience": "senior"
+    },
+    {
+      "id": "show-hostname",
+      "label": "Show Hostname",
+      "command": "show running-config | include hostname",
+      "mode": "show",
+      "categories": [],
+      "audience": "senior"
+    },
+    {
+      "id": "show-arp",
+      "label": "Show ARP",
+      "command": "show arp",
+      "mode": "show",
+      "categories": [],
+      "audience": "senior"
+    },
+    {
+      "id": "show-cdp",
+      "label": "CDP Neighbors",
+      "command": "show cdp neighbors",
+      "mode": "show",
+      "categories": [],
+      "audience": "senior"
+    },
+    {
+      "id": "show-route",
+      "label": "IP Route",
+      "command": "show ip route",
+      "mode": "show",
+      "categories": [],
+      "audience": "senior"
+    },
+    {
+      "id": "config-hostname",
+      "label": "Set Hostname",
+      "command": "configure terminal\nhostname NEW-HOSTNAME",
+      "mode": "config",
+      "categories": [],
+      "audience": "senior"
+    },
+    {
+      "id": "config-int-desc",
+      "label": "Interface Description",
+      "command": "configure terminal\ninterface Gi0/1\ndescription UPDATED_BY_TOOL",
+      "mode": "config",
+      "categories": [],
+      "audience": "senior"
+    },
+    {
+      "id": "config-save",
+      "label": "Save Config",
+      "command": "write memory",
+      "mode": "config",
+      "categories": [],
+      "audience": "senior"
+    },
+    {
+      "id": "custom-1772655341156",
+      "label": "route",
+      "command": "show run | inc route",
+      "mode": "show",
+      "categories": [],
+      "audience": "junior"
+    }
+  ],
+  "__global__": [
+    {
+      "id": "show-version",
+      "label": "Show Version",
+      "command": "show version",
+      "mode": "show",
+      "categories": [],
+      "audience": "senior"
+    },
+    {
+      "id": "show-ip-int-brief",
+      "label": "IP Interface Brief",
+      "command": "show ip interface brief",
+      "mode": "show",
+      "categories": [],
+      "audience": "senior"
+    },
+    {
+      "id": "show-int-status",
+      "label": "Interfaces Status",
+      "command": "show interfaces status",
+      "mode": "show",
+      "categories": [],
+      "audience": "senior"
+    },
+    {
+      "id": "show-logging",
+      "label": "Show Logging",
+      "command": "show logging | tail 50",
+      "mode": "show",
+      "categories": [],
+      "audience": "senior"
+    },
+    {
+      "id": "show-hostname",
+      "label": "Show Hostname",
+      "command": "show running-config | include hostname",
+      "mode": "show",
+      "categories": [],
+      "audience": "senior"
+    },
+    {
+      "id": "show-arp",
+      "label": "Show ARP",
+      "command": "show arp",
+      "mode": "show",
+      "categories": [],
+      "audience": "senior"
+    },
+    {
+      "id": "show-cdp",
+      "label": "CDP Neighbors",
+      "command": "show cdp neighbors",
+      "mode": "show",
+      "categories": [],
+      "audience": "senior"
+    },
+    {
+      "id": "show-route",
+      "label": "IP Route",
+      "command": "show ip route",
+      "mode": "show",
+      "categories": [],
+      "audience": "senior"
+    },
+    {
+      "id": "config-hostname",
+      "label": "Set Hostname",
+      "command": "configure terminal\nhostname NEW-HOSTNAME",
+      "mode": "config",
+      "categories": [],
+      "audience": "senior"
+    },
+    {
+      "id": "config-int-desc",
+      "label": "Interface Description",
+      "command": "configure terminal\ninterface Gi0/1\ndescription UPDATED_BY_TOOL",
+      "mode": "config",
+      "categories": [],
+      "audience": "senior"
+    },
+    {
+      "id": "config-save",
+      "label": "Save Config",
+      "command": "write memory",
+      "mode": "config",
+      "categories": [],
+      "audience": "senior"
+    },
+    {
+      "id": "custom-1772655341156",
+      "label": "route",
+      "command": "show run | inc route",
+      "mode": "show",
+      "categories": [],
+      "audience": "junior"
+    }
+  ]
+}

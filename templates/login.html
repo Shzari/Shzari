@@ -9,7 +9,7 @@
   <div class="page-bg"></div>
   <div class="card narrow glass">
     <h1>Network Automation Login</h1>
-    <p>Authenticate with local credentials or Cisco ISE (RADIUS).</p>
+    <p>Only users added in Super Admin Users can log in. Each user uses their assigned auth source.</p>
 
     <div class="action-row">
       <a class="btn" href="{{ url_for('verify_super_admin_route') }}">Settings (Super Admin)</a>
@@ -18,17 +18,11 @@
     {% if error %}<div class="error">{{ error }}</div>{% endif %}
 
     <form method="post" id="loginForm">
-      <label>Auth Mode</label>
-      <select name="auth_mode">
-        <option value="local">Local Device Login</option>
-        <option value="ise">ISE Credentials (RADIUS)</option>
-      </select>
-
       <label>Username</label>
       <input id="loginUsername" name="username" type="text" required>
 
       <label>Password</label>
-      <input name="password" type="password" placeholder="Leave blank only for first-time local user setup">
+      <input name="password" type="password" required>
 
       <label>SSH Timeout (seconds)</label>
       <input name="timeout" type="number" value="8" min="3" max="30">
