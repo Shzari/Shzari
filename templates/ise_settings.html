@@ -4,6 +4,185 @@
   <meta charset="utf-8">
   <title>ISE Settings</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    .super-settings-shell {
+      max-width: 940px;
+      margin: 20px auto;
+      padding: 20px;
+    }
+    .super-settings-shell h1 {
+      margin: 0 0 6px;
+      font-size: 30px;
+      letter-spacing: .2px;
+    }
+    .super-settings-shell > p {
+      margin: 0 0 12px;
+      color: #4b5e79;
+    }
+    .super-settings-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(220px, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .super-settings-grid .btn {
+      width: 100%;
+      margin: 0;
+      padding: 12px 14px;
+      font-weight: 700;
+      border-radius: 12px;
+    }
+    .device-modal {
+      max-width: 760px;
+      width: min(96vw, 760px);
+    }
+    #usersManageModal.device-modal {
+      max-width: 1060px;
+      width: min(97vw, 1060px);
+    }
+    .device-modal.user-edit-modal {
+      max-width: 1140px;
+      width: min(98vw, 1140px);
+    }
+    .web-listeners-grid {
+      display: grid;
+      gap: 10px;
+      margin: 8px 0 2px;
+    }
+    .web-listener-row {
+      display: grid;
+      grid-template-columns: minmax(170px, 220px) 1fr;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 12px;
+      border: 1px solid #d7e3f7;
+      border-radius: 12px;
+      background: #f7fbff;
+    }
+    .web-listener-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      color: #1f2f49;
+    }
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+      flex: 0 0 auto;
+    }
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+      position: absolute;
+    }
+    .switch .slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background: #b5c2d8;
+      border-radius: 999px;
+      transition: background-color .2s ease;
+    }
+    .switch .slider::before {
+      content: "";
+      position: absolute;
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      top: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform .2s ease;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, .18);
+    }
+    .switch input:checked + .slider {
+      background: #0a74da;
+    }
+    .switch input:checked + .slider::before {
+      transform: translateX(20px);
+    }
+    .web-listener-port {
+      display: grid;
+      gap: 4px;
+    }
+    .web-listener-port label {
+      margin: 0;
+      font-size: 12px;
+      color: #4b5e79;
+      font-weight: 700;
+    }
+    .web-listener-port input[disabled] {
+      opacity: .65;
+      cursor: not-allowed;
+      background: #eef2f8;
+    }
+    .web-listener-hint {
+      margin: 2px 0 0;
+      color: #4b5e79;
+      font-size: 12px;
+    }
+    .web-acl-box {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border: 1px solid #d7e3f7;
+      border-radius: 12px;
+      background: #f7fbff;
+      display: grid;
+      gap: 8px;
+    }
+    .web-acl-text {
+      min-height: 92px;
+      resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .lockout-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(120px, 1fr));
+      gap: 10px;
+    }
+    #usersManageModal .device-list {
+      max-height: 52vh;
+    }
+    #usersManageModal .device-item {
+      display: grid;
+      gap: 4px;
+      align-items: start;
+      border: 1px solid #dde7f8;
+      background: #fff;
+    }
+    #usersManageModal .device-item span {
+      font-weight: 700;
+      color: #1f2f49;
+    }
+    #usersManageModal .device-item small {
+      margin-left: 0;
+      line-height: 1.45;
+      color: #556a86;
+      white-space: normal;
+      word-break: break-word;
+    }
+    #userEditModal .category-access-list {
+      max-height: 220px;
+    }
+    @media (max-width: 900px) {
+      .super-settings-grid {
+        grid-template-columns: 1fr;
+      }
+      .super-settings-shell {
+        margin: 12px auto;
+        padding: 14px;
+      }
+      .web-listener-row {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
   <script>
     const USER_CATEGORY_MAP = {{ users|tojson }}.reduce((acc, user) => {
       acc[user.username] = Array.isArray(user.allowed_categories) ? user.allowed_categories : null;
@@ -170,6 +349,7 @@
     function openSessionModal() {
       const modal = document.getElementById('sessionConfigModal');
       if (modal && modal.showModal) modal.showModal();
+      syncWebListenerFields();
     }
 
     function openExternalLoggingModal() {
@@ -195,6 +375,64 @@
     function closeSessionModal() {
       const modal = document.getElementById('sessionConfigModal');
       if (modal && modal.close) modal.close();
+    }
+
+    function syncWebListenerFields() {
+      const httpEnabled = document.getElementById('httpEnabledCheckbox');
+      const httpsEnabled = document.getElementById('httpsEnabledCheckbox');
+      const aclEnabled = document.getElementById('webAclEnabledCheckbox');
+      const lockoutEnabled = document.getElementById('loginLockoutEnabledCheckbox');
+      const httpPort = document.getElementById('httpPortInput');
+      const httpsPort = document.getElementById('httpsPortInput');
+      const aclInput = document.getElementById('webAclEntriesInput');
+      const lockoutAttempts = document.getElementById('loginLockoutAttemptsInput');
+      const lockoutSeconds = document.getElementById('loginLockoutSecondsInput');
+      const bindState = (enabledBox, portInput, fallback) => {
+        if (!enabledBox || !portInput) return;
+        const enabled = Boolean(enabledBox.checked);
+        if (enabled) {
+          portInput.disabled = false;
+          portInput.placeholder = String(fallback);
+        } else {
+          portInput.value = '';
+          portInput.disabled = true;
+          portInput.placeholder = 'Disabled';
+        }
+      };
+      bindState(httpEnabled, httpPort, 8080);
+      bindState(httpsEnabled, httpsPort, 8443);
+      if (aclEnabled && aclInput) {
+        aclInput.disabled = !aclEnabled.checked;
+        if (!aclEnabled.checked) {
+          aclInput.placeholder = 'Disabled';
+        } else {
+          aclInput.placeholder = 'One IP/CIDR per line';
+        }
+      }
+      const lockoutOn = lockoutEnabled && lockoutEnabled.checked;
+      if (lockoutAttempts) {
+        lockoutAttempts.disabled = false;
+        lockoutAttempts.placeholder = lockoutOn ? '' : 'Enable toggle to apply';
+      }
+      if (lockoutSeconds) {
+        lockoutSeconds.disabled = false;
+        lockoutSeconds.placeholder = lockoutOn ? '' : 'Enable toggle to apply';
+      }
+      const autoEnableFromField = () => {
+        if (!lockoutEnabled) return;
+        if (!lockoutEnabled.checked) {
+          lockoutEnabled.checked = true;
+          syncWebListenerFields();
+        }
+      };
+      if (lockoutAttempts) {
+        lockoutAttempts.onfocus = autoEnableFromField;
+        lockoutAttempts.oninput = autoEnableFromField;
+      }
+      if (lockoutSeconds) {
+        lockoutSeconds.onfocus = autoEnableFromField;
+        lockoutSeconds.oninput = autoEnableFromField;
+      }
     }
 
     function closeUsersModal() {
@@ -303,6 +541,15 @@
       syncUserCategoriesSelection();
       syncUserAccountPrivilegesSelection();
       syncUserMenuAccessSelection();
+      syncWebListenerFields();
+      const httpEnabled = document.getElementById('httpEnabledCheckbox');
+      const httpsEnabled = document.getElementById('httpsEnabledCheckbox');
+      const aclEnabled = document.getElementById('webAclEnabledCheckbox');
+      const lockoutEnabled = document.getElementById('loginLockoutEnabledCheckbox');
+      if (httpEnabled) httpEnabled.addEventListener('change', syncWebListenerFields);
+      if (httpsEnabled) httpsEnabled.addEventListener('change', syncWebListenerFields);
+      if (aclEnabled) aclEnabled.addEventListener('change', syncWebListenerFields);
+      if (lockoutEnabled) lockoutEnabled.addEventListener('change', syncWebListenerFields);
 
       const selectedModal = {{ selected_modal|tojson }};
       if (selectedModal === 'users') {
@@ -323,32 +570,35 @@
         openMonitoringModal();
       }
     });
+
+    // If browser restores this page from back/forward cache, force a fresh auth check.
+    window.addEventListener('pageshow', (event) => {
+      const nav = performance.getEntriesByType ? performance.getEntriesByType('navigation')[0] : null;
+      const isBackForward = Boolean(event.persisted) || (nav && nav.type === 'back_forward');
+      if (isBackForward) {
+        window.location.replace('{{ url_for("verify_super_admin_route") }}');
+      }
+    });
   </script>
 </head>
 <body>
   <div class="page-bg"></div>
   <div class="user-strip">
-    <a class="logout-link" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+    <a class="logout-link" href="{{ url_for('verify_super_admin_route', exit=1) }}">Back to Dashboard</a>
   </div>
-  <div class="card narrow glass">
+  <div class="card glass super-settings-shell">
     <h1>Super Admin Settings</h1>
     <p>Choose which settings window to open.</p>
     {% if info %}<div class="info">{{ info }}</div>{% endif %}
     {% if error %}<div class="error">{{ error }}</div>{% endif %}
 
-    <div class="action-row equal-buttons">
+    <div class="super-settings-grid">
       <button class="btn run" type="button" onclick="openUsersModal()">Users</button>
       <button class="btn" type="button" onclick="openIseModal()">ISE</button>
-    </div>
-    <div class="action-row equal-buttons">
       <button class="btn" type="button" onclick="openLdapModal()">LDAP</button>
       <button class="btn" type="button" onclick="openNtpModal()">NTP</button>
-    </div>
-    <div class="action-row equal-buttons">
       <button class="btn" type="button" onclick="openSqlModal()">SQL Log</button>
-      <button class="btn" type="button" onclick="openSessionModal()">Idle Logout</button>
-    </div>
-    <div class="action-row equal-buttons">
+      <button class="btn" type="button" onclick="openSessionModal()">Settings</button>
       <button class="btn" type="button" onclick="openExternalLoggingModal()">External Logging</button>
       <button class="btn" type="button" onclick="openMonitoringModal()">Monitoring</button>
     </div>
@@ -503,11 +753,76 @@
 
   <dialog id="sessionConfigModal" class="device-modal">
     <form method="post" action="{{ url_for('session_settings_page') }}">
-      <h3>Idle Logout</h3>
-      <p>Control automatic logout for inactive dashboard sessions.</p>
+      <h3>Settings</h3>
+      <p>Control idle logout and web listeners/ports (HTTP and/or HTTPS).</p>
 
       <label>Idle Timeout (minutes)</label>
       <input name="idle_timeout_minutes" type="number" value="{{ session_settings.idle_timeout_minutes }}" min="1" max="240" required>
+
+      <div class="web-listeners-grid">
+        <div class="web-listener-row">
+          <div class="web-listener-toggle">
+            <label class="switch" title="Enable HTTP">
+              <input id="httpEnabledCheckbox" name="http_enabled" type="checkbox" {% if session_settings.http_enabled %}checked{% endif %}>
+              <span class="slider"></span>
+            </label>
+            <span>HTTP Listener</span>
+          </div>
+          <div class="web-listener-port">
+            <label for="httpPortInput">HTTP Port</label>
+            <input id="httpPortInput" name="http_port" type="number" value="{{ session_settings.http_port }}" min="1" max="65535" placeholder="8080">
+          </div>
+        </div>
+
+        <div class="web-listener-row">
+          <div class="web-listener-toggle">
+            <label class="switch" title="Enable HTTPS">
+              <input id="httpsEnabledCheckbox" name="https_enabled" type="checkbox" {% if session_settings.https_enabled %}checked{% endif %}>
+              <span class="slider"></span>
+            </label>
+            <span>HTTPS Listener</span>
+          </div>
+          <div class="web-listener-port">
+            <label for="httpsPortInput">HTTPS Port</label>
+            <input id="httpsPortInput" name="https_port" type="number" value="{{ session_settings.https_port }}" min="1" max="65535" placeholder="8443">
+          </div>
+        </div>
+      </div>
+      <p class="web-listener-hint">Ports are optional in UI. If a listener is disabled, its port is not required.</p>
+      <div class="web-acl-box">
+        <div class="web-listener-toggle">
+          <label class="switch" title="Enable Web ACL">
+            <input id="webAclEnabledCheckbox" name="web_acl_enabled" type="checkbox" {% if session_settings.web_acl_enabled %}checked{% endif %}>
+            <span class="slider"></span>
+          </label>
+          <span>Web Access List (Allow only these client IPs)</span>
+        </div>
+        <label for="webAclEntriesInput">Allowed IPs / CIDRs (one per line or comma separated)</label>
+        <textarea id="webAclEntriesInput" class="web-acl-text" name="web_acl_entries" placeholder="10.10.10.5&#10;192.168.1.0/24">{{ session_settings.web_acl_text or '' }}</textarea>
+        <p class="web-listener-hint">Examples: <code>192.168.217.10</code>, <code>10.20.0.0/16</code>. Your current IP must be included before enabling.</p>
+      </div>
+      <div class="web-acl-box">
+        <div class="web-listener-toggle">
+          <label class="switch" title="Enable Login Lockout">
+            <input id="loginLockoutEnabledCheckbox" name="login_lockout_enabled" type="checkbox" {% if session_settings.login_lockout_enabled %}checked{% endif %}>
+            <span class="slider"></span>
+          </label>
+          <label for="loginLockoutEnabledCheckbox">Login Lockout Countdown</label>
+        </div>
+        <div class="lockout-grid">
+          <div class="web-listener-port">
+            <label for="loginLockoutAttemptsInput">Failed Attempts Before Lock</label>
+            <input id="loginLockoutAttemptsInput" name="login_lockout_max_attempts" type="number" min="1" max="20" value="{{ session_settings.login_lockout_max_attempts }}">
+          </div>
+          <div class="web-listener-port">
+            <label for="loginLockoutSecondsInput">Lockout Countdown (seconds)</label>
+            <input id="loginLockoutSecondsInput" name="login_lockout_seconds" type="number" min="1" max="86400" value="{{ session_settings.login_lockout_seconds }}">
+          </div>
+        </div>
+        <p class="web-listener-hint">After reaching failed attempts, user must wait for the countdown before next login try.</p>
+      </div>
+
+      <div class="info">You can enable HTTP, HTTPS, or both. Listener changes apply automatically after save.</div>
 
       <div class="action-row">
         <button class="btn run" type="submit">Save</button>

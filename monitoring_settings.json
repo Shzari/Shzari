@@ -1,5 +1,5 @@
 {
-  "enabled": false,
+  "enabled": true,
   "collection_mode": "telemetry",
   "collector_host": "",
   "collector_port": 57000,

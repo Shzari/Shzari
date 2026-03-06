@@ -106,11 +106,17 @@
     .node-dash-title{font-weight:700;color:#2f4361;font-size:14px;margin-bottom:8px}
     .node-dash-kv{display:grid;grid-template-columns:minmax(120px,180px) minmax(0,1fr);gap:8px 10px;font-size:13px}
     .node-dash-kv b{color:#4f607a}
-    .node-gauge-grid{display:grid;grid-template-columns:repeat(4,minmax(110px,1fr));gap:10px;align-content:start}
+    .node-gauge-grid{display:grid;grid-template-columns:repeat(3,minmax(110px,1fr));gap:10px;align-content:start}
     .node-gauge{display:grid;justify-items:center;gap:6px}
     .node-gauge-ring{width:86px;height:86px;border-radius:999px;display:grid;place-items:center;background:conic-gradient(#2f6fec 0deg,#d9e2f0 0deg)}
     .node-gauge-inner{width:64px;height:64px;border-radius:999px;background:#fff;display:grid;place-items:center;font-weight:700;color:#243854;font-size:13px}
     .node-gauge-label{font-size:12px;color:#5a6a81}
+    .node-gauge-throughput{margin-top:6px;border-top:1px solid #e5ecf7;padding-top:6px;display:grid;gap:4px}
+    .node-gauge-throughput-label{font-size:11px;font-weight:700;color:#5a6a81}
+    .node-gauge-throughput-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+    .node-gauge-throughput-item{border:1px solid #e3eaf5;border-radius:8px;background:#fbfdff;padding:6px 8px;line-height:1.2}
+    .node-gauge-throughput-item b{display:block;font-size:10px;color:#60748f}
+    .node-gauge-throughput-item span{display:block;font-size:12px;font-weight:700;color:#243854}
     .node-chart-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:stretch}
     .node-chart{border:1px solid #d6deea;border-radius:10px;background:#fbfdff;padding:8px;min-width:0;height:100%;display:flex;flex-direction:column}
     .node-chart-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
@@ -122,29 +128,39 @@
     .avail-row b{color:#4f607a}
     .avail-bar{height:10px;border-radius:999px;background:#dbe4ef;overflow:hidden}
     .avail-fill{height:100%;background:#2f6fec}
-    .node-util-box{border:1px solid #d6deea;border-radius:10px;background:#fff;padding:10px;min-width:0}
-    .node-util-header{display:grid;grid-template-columns:100px minmax(220px,1fr) minmax(260px,1fr) minmax(260px,1fr);gap:10px;padding:6px 8px;border-bottom:1px solid #e7edf6;font-size:12px;font-weight:700;color:#4f607a}
+    .node-util-box{border:1px solid #d6deea;border-radius:10px;background:#fff;padding:10px;min-width:0;overflow:hidden}
+    .node-util-header{display:grid;grid-template-columns:90px minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr);gap:10px;padding:6px 8px;border-bottom:1px solid #e7edf6;font-size:12px;font-weight:700;color:#4f607a}
     .node-util-list{display:grid;gap:4px}
-    .node-util-row{display:grid;grid-template-columns:100px minmax(220px,1fr) minmax(260px,1fr) minmax(260px,1fr);gap:10px;align-items:center;padding:6px 8px;border-bottom:1px solid #eef3fa;font-size:13px;color:#2d415f}
+    .node-util-row{display:grid;grid-template-columns:90px minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr);gap:10px;align-items:center;padding:6px 8px;border-bottom:1px solid #eef3fa;font-size:13px;color:#2d415f}
     .node-util-row:last-child{border-bottom:none}
+    .node-util-header > span,.node-util-row > div{min-width:0}
     .node-util-status{display:flex;align-items:center;gap:8px;font-weight:600}
     .node-util-iface{display:grid;gap:2px;min-width:0}
     .node-util-iface-main{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .node-util-iface-desc{font-size:12px;color:#6a7d97;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .node-util-meter{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}
-    .node-util-bar{height:8px;border-radius:999px;background:#dbe4ef;overflow:hidden}
+    .node-util-meter{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;min-width:0}
+    .node-util-bar{height:8px;border-radius:999px;background:#dbe4ef;overflow:hidden;min-width:0;width:100%}
     .node-util-fill{height:100%;background:#2f6fec}
     .node-util-fill.warn{background:#d09a1e}
     .node-util-pct{font-size:12px;color:#4f607a;min-width:42px;text-align:right}
     .node-util-empty{padding:10px 8px;color:#6b7c94;font-size:13px}
-    .win-card-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:stretch}
-    .win-kpi{display:grid;gap:8px}
+    .node-alert-row{display:grid;grid-template-columns:minmax(140px,220px) minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px;border-bottom:1px solid #eef3fa}
+    .node-alert-row:last-child{border-bottom:none}
+    .node-alert-sev{font-size:12px;font-weight:700;text-transform:uppercase}
+    .node-alert-sev.critical{color:#b4232d}
+    .node-alert-sev.warning{color:#8b5e00}
+    .node-alert-meta{font-size:12px;color:#6b7c94}
+    .win-card-grid{display:grid;grid-template-columns:1fr;gap:12px;align-items:stretch}
+    .win-kpi{display:grid;gap:10px}
+    .win-kpi-layout{display:grid;grid-template-columns:minmax(220px,280px) minmax(0,1fr);gap:12px;align-items:start}
     .win-kpi .big{font-size:24px;font-weight:700;color:#243854}
     .win-kpi .small{font-size:12px;color:#60748f}
-    .win-net-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-    .win-net-item{border:1px solid #e3eaf5;border-radius:8px;background:#fbfdff;padding:10px}
-    .win-net-item b{display:block;font-size:12px;color:#59708b}
-    .win-net-item span{display:block;font-size:20px;font-weight:700;color:#243854}
+    .win-kpi-main{display:grid;gap:8px}
+    .win-info-grid{display:grid;grid-template-columns:repeat(3,minmax(160px,1fr));gap:8px}
+    .win-info-item{display:grid;gap:2px;padding:8px;border:1px solid #dce5f2;border-radius:8px;background:#f8fbff;min-width:0}
+    .win-info-item b{font-size:11px;color:#5a6f8b}
+    .win-info-item span{font-size:11px;color:#243854;line-height:1.25;white-space:normal;overflow-wrap:anywhere;word-break:break-word}
+    @media(max-width:1080px){.win-kpi-layout{grid-template-columns:1fr}.win-info-grid{grid-template-columns:repeat(2,minmax(150px,1fr))}}
     .range-pop{position:fixed;z-index:10050;left:50%;top:50%;transform:translate(-50%,-50%);width:min(760px,92vw);border:1px solid #d6deea;border-radius:12px;background:#fff;box-shadow:0 18px 36px rgba(11,23,46,.24);display:none}
     .range-pop.show{display:grid;grid-template-columns:200px 1fr;gap:12px;padding:12px}
     .range-quick{display:grid;gap:6px}
@@ -153,7 +169,7 @@
     .range-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
     .range-grid .field{display:flex;flex-direction:column;gap:6px}
     @media(max-width:1280px){.node-dash-grid{grid-template-columns:1fr}.node-chart-grid{grid-template-columns:1fr}.node-gauge-grid{grid-template-columns:repeat(2,minmax(110px,1fr))}}
-    @media(max-width:1280px){.node-util-header,.node-util-row{grid-template-columns:100px minmax(180px,1fr) minmax(160px,1fr) minmax(160px,1fr)}}
+    @media(max-width:1280px){.node-util-header,.node-util-row{grid-template-columns:86px minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr)}}
     .monitor-node-grid{display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:10px}
     .monitor-node-grid .field{display:flex;flex-direction:column;gap:6px}
     .monitor-node-span{grid-column:1 / -1}
@@ -176,7 +192,7 @@
     @media(max-width:1280px){.device-layout{grid-template-columns:1fr}}
   </style>
   <script>
-    let branches=[];let selectedBranchId=null;let detailsEditEnabled=false;let deviceTreeOpen=true;let currentDeviceCategory='all';let ipAddressingTreeOpen=true;let currentIpAddressingSection='branches';let networkAddressTreeOpen=true;let networkSubTreeOpen=false;let networkSystemTreeOpen=false;let networkSystemHoOpen=false;let networkSystemDrsOpen=false;let currentNetworkAddressSection='servers';let currentNetworkAddressSub='ho-vm';let currentMonitoringCategory='all';let currentMonitoringStatus='all';let monitoringExpandedCategories={};let monitoringExpandedStatuses={};let monitoringLeftCollapsed=true;let monitoringRightCollapsed=true;let monitoringLeftHoverTimer=null;let monitoringRightHoverTimer=null;let monitoringResourceState={deviceName:'',host:'',interfaces:[],metrics:[],selectedMetrics:new Set(),selectedInterfaces:new Set()};let monitoringDashboardDeviceName='';let monitoringDashboardAutoRefreshTimer=null;let monitoringDashboardSeries=[];let monitoringChartRanges={cpu:{type:'relative',minutes:30,label:'Last 30 minutes'},memory:{type:'relative',minutes:30,label:'Last 30 minutes'},response:{type:'relative',minutes:30,label:'Last 30 minutes'}};let monitoringRangePickerPanel='cpu';let helpdeskLastShowDevices=[];
+    let branches=[];let selectedBranchId=null;let detailsEditEnabled=false;let deviceTreeOpen=true;let currentDeviceCategory='all';let ipAddressingTreeOpen=true;let currentIpAddressingSection='branches';let networkAddressTreeOpen=true;let networkSubTreeOpen=false;let networkSystemTreeOpen=false;let networkSystemHoOpen=false;let networkSystemDrsOpen=false;let currentNetworkAddressSection='servers';let currentNetworkAddressSub='ho-vm';let currentMonitoringCategory='all';let currentMonitoringStatus='all';let monitoringExpandedCategories={};let monitoringExpandedStatuses={};let monitoringLeftCollapsed=true;let monitoringRightCollapsed=true;let monitoringLeftHoverTimer=null;let monitoringRightHoverTimer=null;let monitoringResourceState={deviceName:'',host:'',interfaces:[],metrics:[],selectedMetrics:new Set(),selectedInterfaces:new Set()};let monitoringDashboardDeviceName='';let monitoringDashboardAutoRefreshTimer=null;let monitoringDashboardLiveGaugeTimer=null;let monitoringDashboardLiveGaugeInFlight=false;let monitoringDashboardIsWindows=false;let monitoringDashboardSeries=[];let monitoringChartRanges={cpu:{type:'relative',minutes:30,label:'Last 30 minutes'},memory:{type:'relative',minutes:30,label:'Last 30 minutes'},response:{type:'relative',minutes:30,label:'Last 30 minutes'}};let monitoringRangePickerPanel='cpu';let helpdeskLastShowDevices=[];
     const STORE_KEY='ipam_branches_v2';
     const BRANCH_STATE_URL="{{ url_for('ip_branch_state_api') }}";
     const SERVER_BRANCH_NAMES={{ branches|tojson }};
@@ -193,7 +209,9 @@
     const MONITORING_PULL_RESOURCES_URL="{{ url_for('monitoring_node_resources_pull_api') }}";
     const MONITORING_SAVE_RESOURCES_URL="{{ url_for('monitoring_node_resources_save_api') }}";
     const MONITORING_DASHBOARD_DATA_URL="{{ url_for('monitoring_node_dashboard_data_api') }}";
+    const MONITORING_LIVE_GAUGES_URL="{{ url_for('monitoring_node_live_gauges_api') }}";
     const MONITORING_TEST_SNMP_URL="{{ url_for('monitoring_node_test_snmp_api') }}";
+    const MONITORING_ACK_ALERT_URL="{{ url_for('monitoring_alert_ack_api') }}";
     const LIVE_DATA_URL="{{ url_for('ip_addressing_live_data_api') }}";
     const CURRENT_USER_ROLE={{ current_user_role|tojson }};
     const MONITORING_CAN_MANAGE={{ monitoring_can_manage|tojson }};
@@ -263,8 +281,10 @@
     function setNotificationCount(count){const btn=document.getElementById('notificationsBtn');if(!btn)return;const n=Math.max(0,Number(count||0));btn.textContent=`Notifications (${n})`;}
     function refreshMonitoringCategorySelectOptions(options){const sel=document.getElementById('mnCategory');if(!sel||!Array.isArray(options)||!options.length)return;const current=String(sel.value||'').trim();sel.innerHTML=options.map((x)=>`<option>${escapeHtml(String(x||''))}</option>`).join('');if(current&&options.includes(current))sel.value=current;}
     function applyLiveData(payload){if(!payload||typeof payload!=='object')return;if(Array.isArray(payload.devices))DEVICE_DATA=payload.devices;if(Array.isArray(payload.categories))DEVICE_CATEGORIES=payload.categories;if(Array.isArray(payload.monitoring_devices))MONITORING_DEVICE_DATA=payload.monitoring_devices;if(payload.monitoring_profiles&&typeof payload.monitoring_profiles==='object')MONITORING_NODE_PROFILES=payload.monitoring_profiles;if(Array.isArray(payload.monitored_device_names))MONITORED_DEVICE_NAMES=payload.monitored_device_names;if(Array.isArray(payload.monitoring_editable_device_names))MONITORING_EDITABLE_DEVICE_NAMES=payload.monitoring_editable_device_names;setNotificationCount(payload.unread_notifications_count);refreshMonitoringCategorySelectOptions(payload.monitoring_category_options);renderDeviceTree();if(!document.getElementById('netDevicesView')?.classList.contains('hidden'))renderNetDevicesList();if(!document.getElementById('netMonitoringView')?.classList.contains('hidden'))renderMonitoringPanel();const editSel=document.getElementById('mnEditDeviceSelect');if(editSel&&!document.getElementById('mnSectionForm')?.classList.contains('hidden')){refreshMonitoringNodeSelect('mnEditDeviceSelect',String(editSel.value||''));}const delSel=document.getElementById('mnDeleteDeviceSelect');if(delSel){refreshMonitoringNodeSelect('mnDeleteDeviceSelect',String(delSel.value||''));}}
-    async function fetchLiveData(){if(liveSyncInFlight)return;liveSyncInFlight=true;try{const res=await fetch(LIVE_DATA_URL,{method:'GET',cache:'no-store'});const data=await res.json();if(!res.ok||!data?.ok)return;applyLiveData(data);}catch(_e){}finally{liveSyncInFlight=false;}}
+    async function fetchLiveData(){if(liveSyncInFlight)return;liveSyncInFlight=true;try{const res=await fetch(LIVE_DATA_URL,{method:'GET',cache:'no-store'});if(res.status===401){window.location='{{ url_for("login", expired=1) }}';return;}const data=await res.json();if(!res.ok||!data?.ok)return;applyLiveData(data);}catch(_e){}finally{liveSyncInFlight=false;}}
     function startLiveUpdates(){setInterval(fetchLiveData,10000);}
+    function verifyActiveSessionOnHistoryNavigation(){fetch(LIVE_DATA_URL,{method:'GET',cache:'no-store'}).then((res)=>{if(res.status===401){window.location='{{ url_for("login", expired=1) }}';return;}if(!res.ok){window.location.reload();}}).catch(()=>{window.location.reload();});}
+    window.addEventListener('pageshow',(event)=>{if(event&&event.persisted){verifyActiveSessionOnHistoryNavigation();}});
     function showNetMonitoring(){if(!CAN_ACCESS_MONITORING_PANEL)return;currentDeviceCategory='monitoring';if(!currentMonitoringCategory)currentMonitoringCategory='all';setActiveSidebar('monitoring');document.getElementById('listView').classList.add('hidden');document.getElementById('detailsView').classList.add('hidden');document.getElementById('ipHqView').classList.add('hidden');document.getElementById('networkAddressesView').classList.add('hidden');document.getElementById('netDevicesView').classList.add('hidden');document.getElementById('netMonitoringView').classList.remove('hidden');updateDeviceTreeSelection();applyMonitoringPanelLayout();renderMonitoringPanel();}
     function handleDeviceCheckClick(event, checkbox){if(!checkbox)return;const useMulti=Boolean(event.ctrlKey||event.metaKey);if(useMulti)return;document.querySelectorAll('.device-check').forEach((el)=>{if(el!==checkbox)el.checked=false;});checkbox.checked=true;}
     function renderNetDevicesList(){const body=document.getElementById('netDevicesBody');if(!body)return;const search=String(document.getElementById('deviceSearch')?.value||'').toLowerCase();const filtered=(Array.isArray(DEVICE_DATA)?DEVICE_DATA:[]).filter((device)=>{if(!deviceMatchesCategory(device,currentDeviceCategory))return false;const text=`${device.name||''} ${device.host||''} ${(device.groups||[]).join(' ')}`.toLowerCase();return text.includes(search);});if(!filtered.length){body.innerHTML='<div class="device-row"><div></div><div>No devices in this category.</div><div></div></div>';return;}body.innerHTML=filtered.map((device)=>{const groups=Array.isArray(device.groups)?device.groups:[];const firstGroup=groups.length?groups[0]:'Uncategorized';return `<label class="device-row"><input type="checkbox" class="device-check" onclick="handleDeviceCheckClick(event,this)" value="${String(device.name||'').replace(/"/g,'&quot;')}"><div><div><b>${device.name||'-'}</b></div><div class="device-meta">${device.host||'-'}</div></div><span class="category-chip">${firstGroup}</span></label>`;}).join('');}
@@ -341,29 +361,192 @@
     function openMonitoringResourcesFromEdit(){const name=String(document.getElementById('mnEditDeviceSelect')?.value||'').trim();if(!name)return;closeSettingsPopup('monitoringNodeModal');openMonitoringResources(name);}
     function openMonitoringHealth(deviceName){const name=String(deviceName||'').trim();if(!name)return;const device=(Array.isArray(MONITORING_DEVICE_DATA)?MONITORING_DEVICE_DATA:[]).find((d)=>String(d.name||'').trim()===name);if(!device)return;const profile=(MONITORING_NODE_PROFILES&&MONITORING_NODE_PROFILES[name])?MONITORING_NODE_PROFILES[name]:{};const set=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=String(val??'-');};set('mhName',device.name||'-');set('mhIp',device.host||'-');set('mhStatus',monitoringDeviceStatus(device));set('mhCpu',device.monitor_cpu_percent??'-');set('mhMemory',device.monitor_memory_percent??'-');set('mhInterfaces',`${device.monitor_interfaces_up??'-'} up / ${device.monitor_interfaces_down??'-'} down`);set('mhSla',device.monitor_sla_ms??'-');set('mhLast',device.monitor_last_collected_at||'-');set('mhMetrics',profile.metrics_override||'default');set('mhWatchIf',profile.interfaces_watch||'all');openSettingsPopup('monitoringHealthModal');}
     function setGaugeRing(id,value,max){const v=Math.max(0,Math.min(Number(max||100),Number(value||0)));const pct=max>0?(v/Number(max))*100:0;const deg=Math.round((Math.max(0,Math.min(100,pct))/100)*360);const ring=document.getElementById(id);if(!ring)return;ring.style.background=`conic-gradient(#2f6fec ${deg}deg,#d9e2f0 ${deg}deg)`;const inner=ring.querySelector('.node-gauge-inner');if(inner)inner.textContent=`${Math.round(v)}`;}
-    function drawLineChart(canvasId, points, color, opts){const options=(opts&&typeof opts==='object')?opts:{};const canvas=document.getElementById(canvasId);if(!canvas)return;const ctx=canvas.getContext('2d');if(!ctx)return;const ratio=window.devicePixelRatio||1;const w=canvas.clientWidth||460;const h=canvas.clientHeight||200;canvas.width=Math.floor(w*ratio);canvas.height=Math.floor(h*ratio);ctx.setTransform(ratio,0,0,ratio,0,0);ctx.clearRect(0,0,w,h);ctx.fillStyle='#fbfdff';ctx.fillRect(0,0,w,h);const leftPad=options.leftPad||44;const rightPad=8;const topPad=6;const bottomPad=14;const plotW=Math.max(10,w-leftPad-rightPad);const plotH=Math.max(10,h-topPad-bottomPad);const vals=(Array.isArray(points)?points:[]).map((v)=>Number(v)).filter((v)=>Number.isFinite(v));const hasFixedRange=Number.isFinite(Number(options.min))&&Number.isFinite(Number(options.max));const min=hasFixedRange?Number(options.min):(vals.length?Math.min(...vals):0);const max=hasFixedRange?Number(options.max):(vals.length?Math.max(...vals):1);const span=Math.max(1,max-min);ctx.strokeStyle='#d8e2f0';ctx.lineWidth=1;const ticks=Array.isArray(options.yTicks)&&options.yTicks.length?options.yTicks:[min+(span*0.2),min+(span*0.4),min+(span*0.6),min+(span*0.8),max];ctx.fillStyle='#6b7c94';ctx.font='11px Segoe UI';ticks.forEach((t)=>{const y=topPad+((max-Number(t))/span)*plotH;ctx.beginPath();ctx.moveTo(leftPad,y);ctx.lineTo(leftPad+plotW,y);ctx.stroke();const label=(typeof options.yTickFormatter==='function')?String(options.yTickFormatter(Number(t))):String(Math.round(Number(t)));ctx.fillText(label,4,y+4);});ctx.beginPath();ctx.moveTo(leftPad,topPad);ctx.lineTo(leftPad,topPad+plotH);ctx.strokeStyle='#cdd8e8';ctx.stroke();if(!vals.length){ctx.fillStyle='#6b7c94';ctx.font='12px Segoe UI';ctx.fillText(String(options.noDataText||'No data'),leftPad+8,topPad+14);return;}ctx.strokeStyle=color||'#2f6fec';ctx.lineWidth=2;ctx.beginPath();vals.forEach((v,i)=>{const x=(vals.length<=1)?leftPad:(leftPad+(i*plotW/(vals.length-1)));const y=topPad+((max-v)/span)*plotH;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);});ctx.stroke();}
-    function percentTrendAxisOptions(points){const vals=(Array.isArray(points)?points:[]).map((v)=>Number(v)).filter((v)=>Number.isFinite(v)&&v>=0);const peak=vals.length?Math.max(...vals):0;const yMax=Math.max(10,peak*2);const step=yMax/5;return {min:0,max:yMax,yTicks:[0,step,step*2,step*3,step*4,yMax],yTickFormatter:(v)=>`${(Math.round(v*10)/10).toString().replace(/\\.0$/,'')}%`};}
+    function drawLineChart(canvasId, points, color, opts){
+      const options=(opts&&typeof opts==='object')?opts:{};
+      const canvas=document.getElementById(canvasId);if(!canvas)return;
+      const ctx=canvas.getContext('2d');if(!ctx)return;
+      const ratio=window.devicePixelRatio||1;
+      const w=canvas.clientWidth||460;
+      const h=canvas.clientHeight||200;
+      canvas.width=Math.floor(w*ratio);
+      canvas.height=Math.floor(h*ratio);
+      ctx.setTransform(ratio,0,0,ratio,0,0);
+      ctx.clearRect(0,0,w,h);
+      ctx.fillStyle='#fbfdff';
+      ctx.fillRect(0,0,w,h);
+
+      const leftPad=options.leftPad||44;
+      const rightPad=10;
+      const topPad=6;
+      const bottomPad=26;
+      const plotW=Math.max(10,w-leftPad-rightPad);
+      const plotH=Math.max(10,h-topPad-bottomPad);
+
+      const rawRows=Array.isArray(points)?points:[];
+      const entries=rawRows.map((item)=>{if(item&&typeof item==='object'&&!Array.isArray(item)){const value=Number(item.value);if(!Number.isFinite(value))return null;const tsRaw=String(item.ts||'').trim();const tsDate=new Date(tsRaw);const tsMs=Number.isNaN(tsDate.getTime())?null:tsDate.getTime();return {value,tsRaw,tsMs};}const value=Number(item);if(!Number.isFinite(value))return null;return {value,tsRaw:'',tsMs:null};}).filter((item)=>item!==null);
+      const vals=entries.map((item)=>Number(item.value)).filter((v)=>Number.isFinite(v));
+
+      const hasFixedRange=Number.isFinite(Number(options.min))&&Number.isFinite(Number(options.max));
+      const min=hasFixedRange?Number(options.min):(vals.length?Math.min(...vals):0);
+      const max=hasFixedRange?Number(options.max):(vals.length?Math.max(...vals):1);
+      const span=Math.max(1,max-min);
+
+      ctx.strokeStyle='#d8e2f0';
+      ctx.lineWidth=1;
+      const ticks=Array.isArray(options.yTicks)&&options.yTicks.length?options.yTicks:[min+(span*0.2),min+(span*0.4),min+(span*0.6),min+(span*0.8),max];
+      ctx.fillStyle='#6b7c94';
+      ctx.font='11px Segoe UI';
+      ticks.forEach((t)=>{
+        const y=topPad+((max-Number(t))/span)*plotH;
+        ctx.beginPath();
+        ctx.moveTo(leftPad,y);
+        ctx.lineTo(leftPad+plotW,y);
+        ctx.stroke();
+        const label=(typeof options.yTickFormatter==='function')?String(options.yTickFormatter(Number(t))):String(Math.round(Number(t)));
+        ctx.fillText(label,4,y+4);
+      });
+
+      ctx.beginPath();
+      ctx.moveTo(leftPad,topPad);
+      ctx.lineTo(leftPad,topPad+plotH);
+      ctx.lineTo(leftPad+plotW,topPad+plotH);
+      ctx.strokeStyle='#cdd8e8';
+      ctx.stroke();
+
+      const xLabelFor=(entry,startMs,endMs)=>{
+        if(!entry||!Number.isFinite(entry.tsMs||NaN))return'';
+        const d=new Date(Number(entry.tsMs));
+        const hh=String(d.getHours()).padStart(2,'0');
+        const mm=String(d.getMinutes()).padStart(2,'0');
+        const dd=String(d.getDate()).padStart(2,'0');
+        const mo=String(d.getMonth()+1).padStart(2,'0');
+        const spanMs=Math.max(0,Number(endMs)-Number(startMs));
+        if(spanMs<=24*60*60*1000)return `${hh}:${mm}`;
+        if(spanMs<=14*24*60*60*1000)return `${dd}-${mo} ${hh}:${mm}`;
+        return `${dd}-${mo}`;
+      };
+
+      if(!vals.length){
+        ctx.fillStyle='#6b7c94';
+        ctx.font='12px Segoe UI';
+        ctx.fillText(String(options.noDataText||'No data'),leftPad+8,topPad+14);
+        canvas.onmousemove=null;
+        canvas.onmouseleave=null;
+        canvas.title='';
+        return;
+      }
+
+      const firstMs=Number(entries[0]?.tsMs||0);
+      const lastMs=Number(entries[entries.length-1]?.tsMs||0);
+      const hasTimeAxis=entries.some((e)=>Number.isFinite(e.tsMs||NaN));
+      if(hasTimeAxis){
+        const labelCount=Math.min(6,entries.length);
+        const safeCount=Math.max(2,labelCount);
+        ctx.fillStyle='#6b7c94';
+        ctx.font='10px Segoe UI';
+        ctx.textAlign='center';
+        for(let i=0;i<safeCount;i++){
+          const idx=(safeCount<=1)?0:Math.round(i*(entries.length-1)/(safeCount-1));
+          const x=(entries.length<=1)?leftPad:(leftPad+(idx*plotW/(entries.length-1)));
+          const entry=entries[idx];
+          const label=xLabelFor(entry,firstMs,lastMs);
+          if(!label)continue;
+          ctx.fillText(label,x,topPad+plotH+14);
+        }
+        ctx.textAlign='left';
+      }
+
+      ctx.strokeStyle=color||'#2f6fec';
+      ctx.lineWidth=2;
+      ctx.beginPath();
+      entries.forEach((entry,i)=>{
+        const x=(entries.length<=1)?leftPad:(leftPad+(i*plotW/(entries.length-1)));
+        const y=topPad+((max-entry.value)/span)*plotH;
+        if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+      });
+      ctx.stroke();
+
+      const valueFormatter=(typeof options.valueFormatter==='function')?options.valueFormatter:(v=>String(Math.round(Number(v))));
+      const seriesLabel=String(options.seriesLabel||'Value');
+      const pointAtClientX=(clientX)=>{
+        const rect=canvas.getBoundingClientRect();
+        const x=clientX-rect.left;
+        if(entries.length<=1)return 0;
+        const ratioX=(x-leftPad)/plotW;
+        const idx=Math.round(Math.max(0,Math.min(1,ratioX))*(entries.length-1));
+        return Math.max(0,Math.min(entries.length-1,idx));
+      };
+      canvas.onmousemove=(ev)=>{
+        const idx=pointAtClientX(ev.clientX);
+        const row=entries[idx];
+        if(!row)return;
+        const tsText=row.tsRaw?formatDateTime(row.tsRaw):'';
+        const valueText=valueFormatter(row.value);
+        canvas.title=`${seriesLabel}: ${valueText}${tsText?` | ${tsText}`:''}`;
+      };
+      canvas.onmouseleave=()=>{canvas.title='';};
+    }
+    function percentTrendAxisOptions(points,capTo100){const vals=(Array.isArray(points)?points:[]).map((v)=>Number(v)).filter((v)=>Number.isFinite(v)&&v>=0);const peak=vals.length?Math.max(...vals):0;const dynamicMax=Math.max(10,peak*2);const yMax=capTo100?Math.min(100,dynamicMax):dynamicMax;const step=yMax/5;return {min:0,max:yMax,yTicks:[0,step,step*2,step*3,step*4,yMax],yTickFormatter:(v)=>`${(Math.round(v*10)/10).toString().replace(/\\.0$/,'')}%`};}
     function msTrendAxisOptions(points){const vals=(Array.isArray(points)?points:[]).map((v)=>Number(v)).filter((v)=>Number.isFinite(v)&&v>=0);const peak=vals.length?Math.max(...vals):0;const yMax=Math.max(10,peak*2);const step=yMax/5;return {min:0,max:yMax,yTicks:[0,step,step*2,step*3,step*4,yMax],yTickFormatter:(v)=>`${(Math.round(v*10)/10).toString().replace(/\\.0$/,'')} ms`};}
     function setAvailabilityRow(id,pct){const valueEl=document.getElementById(`${id}Value`);const fillEl=document.getElementById(`${id}Fill`);if(!valueEl||!fillEl)return;if(pct===null||pct===undefined||!Number.isFinite(Number(pct))){valueEl.textContent='N/A';fillEl.style.width='0%';return;}const n=Math.max(0,Math.min(100,Number(pct)));valueEl.textContent=`${n.toFixed(2)}%`;fillEl.style.width=`${n}%`;}
     function toLocalInputValue(dateObj){const d=new Date(dateObj);if(Number.isNaN(d.getTime()))return'';const yyyy=d.getFullYear();const mm=String(d.getMonth()+1).padStart(2,'0');const dd=String(d.getDate()).padStart(2,'0');const hh=String(d.getHours()).padStart(2,'0');const mi=String(d.getMinutes()).padStart(2,'0');return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;}
     function computeRangeBounds(rangeDef){const now=new Date();if(!rangeDef||typeof rangeDef!=='object')return {start:new Date(now.getTime()-30*60000),end:now};if(String(rangeDef.type)==='absolute'){const start=new Date(String(rangeDef.start||''));const end=new Date(String(rangeDef.end||''));if(Number.isNaN(start.getTime())||Number.isNaN(end.getTime()))return {start:new Date(now.getTime()-30*60000),end:now};return {start,end};}if(String(rangeDef.type)==='today'){const start=new Date(now);start.setHours(0,0,0,0);return {start,end:now};}const minutes=Math.max(1,Number(rangeDef.minutes||30));return {start:new Date(now.getTime()-minutes*60000),end:now};}
-    function rangeLabel(rangeDef){if(!rangeDef||typeof rangeDef!=='object')return'Last 30 minutes';if(String(rangeDef.type)==='absolute'){const b=computeRangeBounds(rangeDef);return `${formatDateTime(b.start.toISOString())} - ${formatDateTime(b.end.toISOString())}`;}if(String(rangeDef.type)==='today')return'Today';return String(rangeDef.label||'Last 30 minutes');}
+    function formatDateTimeCompact(value){const raw=String(value||'').trim();if(!raw)return'-';const d=new Date(raw);if(Number.isNaN(d.getTime()))return raw;const hh=String(d.getHours()).padStart(2,'0');const mi=String(d.getMinutes()).padStart(2,'0');const dd=String(d.getDate()).padStart(2,'0');const mm=String(d.getMonth()+1).padStart(2,'0');const yyyy=String(d.getFullYear());return `${dd}-${mm}-${yyyy} ${hh}:${mi}`;}
+    function rangeLabel(rangeDef){if(!rangeDef||typeof rangeDef!=='object')return'Last 30 minutes';if(String(rangeDef.type)==='absolute'){const b=computeRangeBounds(rangeDef);return `${formatDateTimeCompact(b.start.toISOString())} -> ${formatDateTimeCompact(b.end.toISOString())}`;}if(String(rangeDef.type)==='today')return'Today';return String(rangeDef.label||'Last 30 minutes');}
+    function getDashboardQueryWindow(){const defs=[monitoringChartRanges.cpu,monitoringChartRanges.memory,monitoringChartRanges.response];const starts=[];const ends=[];defs.forEach((def)=>{const b=computeRangeBounds(def);if(!b||!b.start||!b.end)return;const sMs=b.start.getTime();const eMs=b.end.getTime();if(Number.isNaN(sMs)||Number.isNaN(eMs)||sMs>=eMs)return;starts.push(sMs);ends.push(eMs);});if(!starts.length||!ends.length)return null;return {start:new Date(Math.min(...starts)).toISOString(),end:new Date(Math.max(...ends)).toISOString()};}
+    function shouldAutoRefreshNodeDashboard(){const q=getDashboardQueryWindow();if(!q||!q.end)return true;const endMs=new Date(String(q.end)).getTime();if(Number.isNaN(endMs))return true;return endMs>=(Date.now()-70000);}
     function filterSeriesByRange(allRows,rangeDef){const rows=Array.isArray(allRows)?allRows:[];const bounds=computeRangeBounds(rangeDef);const startMs=bounds.start.getTime();const endMs=bounds.end.getTime();return rows.filter((row)=>{const ts=new Date(String(row?.collected_at||''));if(Number.isNaN(ts.getTime()))return false;const ms=ts.getTime();return ms>=startMs&&ms<=endMs;});}
-    function renderMonitoringTrendCharts(){const cpuRange=monitoringChartRanges.cpu||{type:'relative',minutes:30,label:'Last 30 minutes'};const memRange=monitoringChartRanges.memory||{type:'relative',minutes:30,label:'Last 30 minutes'};const respRange=monitoringChartRanges.response||{type:'relative',minutes:30,label:'Last 30 minutes'};const canFallback=(r)=>String(r?.type||'')==='relative'&&Number(r?.minutes||0)===30;let cpuRows=filterSeriesByRange(monitoringDashboardSeries,cpuRange);let memRows=filterSeriesByRange(monitoringDashboardSeries,memRange);let respRows=filterSeriesByRange(monitoringDashboardSeries,respRange);if(!cpuRows.length&&canFallback(cpuRange)&&Array.isArray(monitoringDashboardSeries)&&monitoringDashboardSeries.length){cpuRows=monitoringDashboardSeries;}if(!memRows.length&&canFallback(memRange)&&Array.isArray(monitoringDashboardSeries)&&monitoringDashboardSeries.length){memRows=monitoringDashboardSeries;}if(!respRows.length&&canFallback(respRange)&&Array.isArray(monitoringDashboardSeries)&&monitoringDashboardSeries.length){respRows=monitoringDashboardSeries;}const cpuSeries=cpuRows.map((x)=>x.cpu_percent);const memSeries=memRows.map((x)=>x.memory_percent);const slaSeries=respRows.map((x)=>x.sla_ms);drawLineChart('ndCpuChart',cpuSeries,'#2f6fec',{...percentTrendAxisOptions(cpuSeries),noDataText:'No data for selected time range.'});drawLineChart('ndMemChart',memSeries,'#16a085',{...percentTrendAxisOptions(memSeries),noDataText:'No data for selected time range.'});drawLineChart('ndSlaChart',slaSeries,'#d35400',{...msTrendAxisOptions(slaSeries),noDataText:'No data for selected time range.'});const cpuLbl=document.getElementById('ndCpuRangeLabel');if(cpuLbl)cpuLbl.textContent=rangeLabel(cpuRange);const memLbl=document.getElementById('ndMemRangeLabel');if(memLbl)memLbl.textContent=rangeLabel(memRange);const slaLbl=document.getElementById('ndSlaRangeLabel');if(slaLbl)slaLbl.textContent=rangeLabel(respRange);}
+    function renderMonitoringTrendCharts(){
+      const cpuRange=monitoringChartRanges.cpu||{type:'relative',minutes:30,label:'Last 30 minutes'};
+      const memRange=monitoringChartRanges.memory||{type:'relative',minutes:30,label:'Last 30 minutes'};
+      const respRange=monitoringChartRanges.response||{type:'relative',minutes:30,label:'Last 30 minutes'};
+      const canFallback=(r)=>String(r?.type||'')==='relative'&&Number(r?.minutes||0)===30;
+      let cpuRows=filterSeriesByRange(monitoringDashboardSeries,cpuRange);
+      let memRows=filterSeriesByRange(monitoringDashboardSeries,memRange);
+      let respRows=filterSeriesByRange(monitoringDashboardSeries,respRange);
+      if(!cpuRows.length&&canFallback(cpuRange)&&Array.isArray(monitoringDashboardSeries)&&monitoringDashboardSeries.length){cpuRows=monitoringDashboardSeries;}
+      if(!memRows.length&&canFallback(memRange)&&Array.isArray(monitoringDashboardSeries)&&monitoringDashboardSeries.length){memRows=monitoringDashboardSeries;}
+      if(!respRows.length&&canFallback(respRange)&&Array.isArray(monitoringDashboardSeries)&&monitoringDashboardSeries.length){respRows=monitoringDashboardSeries;}
+
+      const cpuSeries=cpuRows.map((x)=>x.cpu_percent);
+      const memSeries=memRows.map((x)=>x.memory_percent);
+      const slaSeries=respRows.map((x)=>x.sla_ms);
+      const cpuPoints=cpuRows.map((x)=>({value:x?.cpu_percent,ts:x?.collected_at}));
+      const memPoints=memRows.map((x)=>({value:x?.memory_percent,ts:x?.collected_at}));
+      const slaPoints=respRows.map((x)=>({value:x?.sla_ms,ts:x?.collected_at}));
+
+      drawLineChart('ndCpuChart',cpuPoints,'#2f6fec',{...percentTrendAxisOptions(cpuSeries,true),seriesLabel:'CPU',valueFormatter:(v)=>`${Math.round(Number(v)||0)}%`,noDataText:'No data for selected time range.'});
+      drawLineChart('ndMemChart',memPoints,'#16a085',{...percentTrendAxisOptions(memSeries),seriesLabel:'Memory',valueFormatter:(v)=>`${Math.round(Number(v)||0)}%`,noDataText:'No data for selected time range.'});
+      drawLineChart('ndSlaChart',slaPoints,'#d35400',{...msTrendAxisOptions(slaSeries),seriesLabel:'Response',valueFormatter:(v)=>`${Math.round(Number(v)||0)} ms`,noDataText:'No data for selected time range.'});
+
+      const cpuLbl=document.getElementById('ndCpuRangeLabel');if(cpuLbl)cpuLbl.textContent=rangeLabel(cpuRange);
+      const memLbl=document.getElementById('ndMemRangeLabel');if(memLbl)memLbl.textContent=rangeLabel(memRange);
+      const slaLbl=document.getElementById('ndSlaRangeLabel');if(slaLbl)slaLbl.textContent=rangeLabel(respRange);
+    }
     function _positionChartRangePicker(anchorEl){const pop=document.getElementById('chartRangePopover');if(!pop)return;const margin=12;const rect=anchorEl?anchorEl.getBoundingClientRect():{left:window.innerWidth/2,right:window.innerWidth/2,top:window.innerHeight/2,bottom:window.innerHeight/2};const popW=Math.min(760,Math.floor(window.innerWidth*0.92));pop.style.width=`${popW}px`;pop.style.transform='none';let left=Math.max(margin,Math.min(rect.right-popW,window.innerWidth-popW-margin));let top=rect.bottom+8;pop.classList.add('show');const popH=pop.offsetHeight||420;if(top+popH>window.innerHeight-margin){top=Math.max(margin,rect.top-popH-8);}if(top+popH>window.innerHeight-margin){top=Math.max(margin,window.innerHeight-popH-margin);}pop.style.left=`${left}px`;pop.style.top=`${top}px`;}
     function openChartRangePicker(panel,evt){monitoringRangePickerPanel=String(panel||'cpu');const range=monitoringChartRanges[monitoringRangePickerPanel]||{type:'relative',minutes:30,label:'Last 30 minutes'};const pop=document.getElementById('chartRangePopover');const dashboard=document.getElementById('monitoringNodeDashboardModal');if(pop&&dashboard&&pop.parentElement!==dashboard){dashboard.appendChild(pop);}const title=document.getElementById('rangePanelTitle');if(title)title.textContent=monitoringRangePickerPanel==='cpu'?'CPU Trend':(monitoringRangePickerPanel==='memory'?'Memory Trend':'Response Time Trend');const bounds=computeRangeBounds(range);const sEl=document.getElementById('rangeStartInput');const eEl=document.getElementById('rangeEndInput');if(sEl)sEl.value=toLocalInputValue(bounds.start);if(eEl)eEl.value=toLocalInputValue(bounds.end);const st=document.getElementById('rangePickerStatus');if(st)st.textContent='';const anchor=(evt&&evt.currentTarget)?evt.currentTarget:document.activeElement;_positionChartRangePicker(anchor);}
     function closeChartRangePicker(){const pop=document.getElementById('chartRangePopover');if(pop)pop.classList.remove('show');}
-    function applyQuickRange(kind){const map={hour:{type:'relative',minutes:60,label:'Last hour'},h2:{type:'relative',minutes:120,label:'Last 2 hours'},h12:{type:'relative',minutes:720,label:'Last 12 hours'},today:{type:'today',label:'Today'},h24:{type:'relative',minutes:1440,label:'Last 24 hours'},d7:{type:'relative',minutes:10080,label:'Last 7 days'},d30:{type:'relative',minutes:43200,label:'Last 30 days'},m12:{type:'relative',minutes:525600,label:'Last 12 months'}};if(!map[kind])return;monitoringChartRanges[monitoringRangePickerPanel]=map[kind];renderMonitoringTrendCharts();closeChartRangePicker();}
-    function applyCustomRange(){const startRaw=String(document.getElementById('rangeStartInput')?.value||'').trim();const endRaw=String(document.getElementById('rangeEndInput')?.value||'').trim();const st=document.getElementById('rangePickerStatus');const start=new Date(startRaw);const end=new Date(endRaw);if(Number.isNaN(start.getTime())||Number.isNaN(end.getTime())){if(st)st.textContent='Please enter valid start and end date/time.';return;}if(start.getTime()>=end.getTime()){if(st)st.textContent='Start must be before End.';return;}const maxMs=366*24*60*60*1000;if((end.getTime()-start.getTime())>maxMs){if(st)st.textContent='Maximum range is 12 months.';return;}monitoringChartRanges[monitoringRangePickerPanel]={type:'absolute',start:start.toISOString(),end:end.toISOString(),label:'Custom range'};renderMonitoringTrendCharts();closeChartRangePicker();}
+    function applyQuickRange(kind){const map={hour:{type:'relative',minutes:60,label:'Last hour'},h2:{type:'relative',minutes:120,label:'Last 2 hours'},h12:{type:'relative',minutes:720,label:'Last 12 hours'},today:{type:'today',label:'Today'},h24:{type:'relative',minutes:1440,label:'Last 24 hours'},d7:{type:'relative',minutes:10080,label:'Last 7 days'},d30:{type:'relative',minutes:43200,label:'Last 30 days'},m12:{type:'relative',minutes:525600,label:'Last 12 months'},y2:{type:'relative',minutes:1051200,label:'Last 2 years'},y5:{type:'relative',minutes:2628000,label:'Last 5 years'}};if(!map[kind])return;monitoringChartRanges[monitoringRangePickerPanel]=map[kind];if(monitoringDashboardDeviceName){openMonitoringNodeDashboard(monitoringDashboardDeviceName,false);}else{renderMonitoringTrendCharts();}closeChartRangePicker();}
+    function applyCustomRange(){const startRaw=String(document.getElementById('rangeStartInput')?.value||'').trim();const endRaw=String(document.getElementById('rangeEndInput')?.value||'').trim();const st=document.getElementById('rangePickerStatus');const start=new Date(startRaw);const end=new Date(endRaw);if(Number.isNaN(start.getTime())||Number.isNaN(end.getTime())){if(st)st.textContent='Please enter valid start and end date/time.';return;}if(start.getTime()>=end.getTime()){if(st)st.textContent='Start must be before End.';return;}const maxMs=50*366*24*60*60*1000;if((end.getTime()-start.getTime())>maxMs){if(st)st.textContent='Maximum range is 50 years.';return;}monitoringChartRanges[monitoringRangePickerPanel]={type:'absolute',start:start.toISOString(),end:end.toISOString(),label:'Custom range'};if(monitoringDashboardDeviceName){openMonitoringNodeDashboard(monitoringDashboardDeviceName,false);}else{renderMonitoringTrendCharts();}closeChartRangePicker();}
     function renderNodeInterfaceUtilization(rows){const holder=document.getElementById('ndInterfaceUtilBody');if(!holder)return;const list=Array.isArray(rows)?rows:[];if(!list.length){holder.innerHTML='<div class="node-util-empty">No monitored interfaces found for this device.</div>';return;}holder.innerHTML=list.map((row)=>{const status=String(row?.status||'unknown').toLowerCase();const dot=`monitor-dot ${dotClass(status)}`;const label=status==='up'?'Up':(status==='down'?'Down':'Unknown');const iface=escapeHtml(String(row?.interface||'-'));const descRaw=String(row?.description||'').trim();const desc=descRaw?escapeHtml(descRaw):'-';const txNum=Number(row?.tx_percent);const rxNum=Number(row?.rx_percent);const txPct=Number.isFinite(txNum)?Math.max(0,Math.min(100,txNum)):0;const rxPct=Number.isFinite(rxNum)?Math.max(0,Math.min(100,rxNum)):0;const txText=Number.isFinite(txNum)?`${Math.round(txPct)}%`:'-';const rxText=Number.isFinite(rxNum)?`${Math.round(rxPct)}%`:'-';return `<div class="node-util-row"><div class="node-util-status"><span class="${dot}"></span><span>${label}</span></div><div class="node-util-iface"><div class="node-util-iface-main">${iface}</div><div class="node-util-iface-desc">${desc}</div></div><div class="node-util-meter"><div class="node-util-bar"><div class="node-util-fill" style="width:${txPct}%"></div></div><div class="node-util-pct">${txText}</div></div><div class="node-util-meter"><div class="node-util-bar"><div class="node-util-fill" style="width:${rxPct}%"></div></div><div class="node-util-pct">${rxText}</div></div></div>`;}).join('');}
     function formatUptime(seconds){const total=Math.max(0,Number(seconds||0));if(!Number.isFinite(total)||total<=0)return'-';const d=Math.floor(total/86400);const h=Math.floor((total%86400)/3600);const m=Math.floor((total%3600)/60);if(d>0)return `${d}d ${h}h`;if(h>0)return `${h}h ${m}m`;return `${m}m`;}
-    function renderWindowsServerCards(payload){const data=(payload&&typeof payload==='object')?payload:{};const isWindows=Boolean(data.is_windows_server);const ifaceBox=document.getElementById('ndInterfaceUtilBox');const diskBox=document.getElementById('ndWindowsDiskBox');const bottom=document.getElementById('ndWindowsBottomRow');if(ifaceBox)ifaceBox.classList.toggle('hidden',isWindows);if(diskBox)diskBox.classList.toggle('hidden',!isWindows);if(bottom)bottom.classList.toggle('hidden',!isWindows);if(!isWindows)return;const diskBody=document.getElementById('ndWindowsDiskBody');if(diskBody){const disks=Array.isArray(data.disk_usage)?data.disk_usage:[];if(!disks.length){diskBody.innerHTML='<div class="node-util-empty">No logical disks data available.</div>';}else{diskBody.innerHTML=disks.map((d)=>{const label=escapeHtml(String(d?.label||'-'));const usedRaw=Number(d?.used_percent);const used=Number.isFinite(usedRaw)?Math.max(0,Math.min(100,usedRaw)):0;const freeRaw=Number(d?.free_gb);const freeText=Number.isFinite(freeRaw)?`${freeRaw.toFixed(2)} GB`:'-';const warn=used>85?' warn':'';return `<div class="node-util-row"><div class="node-util-status">${label}</div><div class="node-util-iface"><div class="node-util-iface-main">${Math.round(used)}%</div><div class="node-util-iface-desc">Used</div></div><div class="node-util-meter"><div class="node-util-bar"><div class="node-util-fill${warn}" style="width:${used}%"></div></div><div class="node-util-pct">${Math.round(used)}%</div></div><div class="node-util-meter"><div class="node-util-pct">${freeText}</div></div></div>`;}).join('');}}const upEl=document.getElementById('ndWinUptime');if(upEl)upEl.textContent=formatUptime(data.uptime_seconds);const bootEl=document.getElementById('ndWinLastBoot');if(bootEl)bootEl.textContent=formatDateTime(data.last_boot||'');const rxEl=document.getElementById('ndWinRx');if(rxEl){const v=Number(data.network_rx_mbps);rxEl.textContent=Number.isFinite(v)?`${v.toFixed(2)} Mbps`:'-';}const txEl=document.getElementById('ndWinTx');if(txEl){const v=Number(data.network_tx_mbps);txEl.textContent=Number.isFinite(v)?`${v.toFixed(2)} Mbps`:'-';}}
+    function formatWinRam(totalMem,freeMem){const total=Number(totalMem);const free=Number(freeMem);const t=(Number.isFinite(total)&&total>0)?`${total.toFixed(2)}GB`:'-';const f=(Number.isFinite(free)&&free>0)?`${free.toFixed(2)}GB`:'-';return `${t} / ${f}`;}
+    function formatWindowsName(caption,version,model){const rawCaption=String(caption||'').replace(/\s+/g,' ').trim();const ver=String(version||'').trim();const mdl=String(model||'').replace(/\s+/g,' ').trim();let text=rawCaption||'Microsoft Windows';if(ver&&!text.toLowerCase().includes(ver.toLowerCase()))text=`${text} ${ver}`.trim();if(mdl)text=`${text} | ${mdl}`;return text||'-';}
+    function applyWindowsServerTextFields(data){const bootEl=document.getElementById('ndWinLastBoot');if(bootEl)bootEl.textContent=formatDateTime(data?.last_boot||'');const osEl=document.getElementById('ndWinOs');if(osEl){osEl.textContent=formatWindowsName(data?.windows_caption,data?.windows_version,data?.computer_model);}const buildEl=document.getElementById('ndWinBuild');if(buildEl)buildEl.textContent=String(data?.windows_build||'-');const archEl=document.getElementById('ndWinArch');if(archEl)archEl.textContent=String(data?.windows_arch||'-');const hostEl=document.getElementById('ndWinHost');if(hostEl)hostEl.textContent=String(data?.computer_name||'-');const domEl=document.getElementById('ndWinDomain');if(domEl)domEl.textContent=String(data?.domain||'-');const ramEl=document.getElementById('ndWinRam');if(ramEl)ramEl.textContent=formatWinRam(data?.total_memory_gb,data?.free_memory_gb);}
+    function renderWindowsServerCards(payload){const data=(payload&&typeof payload==='object')?payload:{};const isWindows=Boolean(data.is_windows_server);const diskBox=document.getElementById('ndWindowsDiskBox');const bottom=document.getElementById('ndWindowsBottomRow');const throughputBox=document.getElementById('ndGaugeThroughputBox');if(diskBox)diskBox.classList.toggle('hidden',!isWindows);if(bottom)bottom.classList.toggle('hidden',!isWindows);if(throughputBox)throughputBox.classList.toggle('hidden',!isWindows);const rxGauge=document.getElementById('ndGaugeRx');const txGauge=document.getElementById('ndGaugeTx');const rxVal=Number(data.network_rx_mbps);const txVal=Number(data.network_tx_mbps);if(rxGauge)rxGauge.textContent=Number.isFinite(rxVal)?`${rxVal.toFixed(2)} Mbps`:'-';if(txGauge)txGauge.textContent=Number.isFinite(txVal)?`${txVal.toFixed(2)} Mbps`:'-';if(!isWindows)return;const diskBody=document.getElementById('ndWindowsDiskBody');if(diskBody){const disks=Array.isArray(data.disk_usage)?data.disk_usage:[];if(!disks.length){diskBody.innerHTML='<div class="node-util-empty">No logical disks data available.</div>';}else{diskBody.innerHTML=disks.map((d)=>{const label=escapeHtml(String(d?.label||'-'));const usedRaw=Number(d?.used_percent);const used=Number.isFinite(usedRaw)?Math.max(0,Math.min(100,usedRaw)):0;const freeRaw=Number(d?.free_gb);const freeText=(Number.isFinite(freeRaw)&&freeRaw>0)?`${freeRaw.toFixed(2)} GB`:'-';const warn=used>85?' warn':'';return `<div class="node-util-row"><div class="node-util-status">${label}</div><div class="node-util-iface"><div class="node-util-iface-main">${Math.round(used)}%</div><div class="node-util-iface-desc">Used</div></div><div class="node-util-meter"><div class="node-util-bar"><div class="node-util-fill${warn}" style="width:${used}%"></div></div><div class="node-util-pct">${Math.round(used)}%</div></div><div class="node-util-meter"><div class="node-util-pct">${freeText}</div></div></div>`;}).join('');}}const upEl=document.getElementById('ndWinUptime');if(upEl)upEl.textContent=formatUptime(data.uptime_seconds);applyWindowsServerTextFields(data);}
+    function stopMonitoringLiveGaugeRefresh(){if(monitoringDashboardLiveGaugeTimer){clearInterval(monitoringDashboardLiveGaugeTimer);monitoringDashboardLiveGaugeTimer=null;}monitoringDashboardLiveGaugeInFlight=false;}
+    function startMonitoringLiveGaugeRefresh(){if(!monitoringDashboardIsWindows||!monitoringDashboardDeviceName)return;const modal=document.getElementById('monitoringNodeDashboardModal');if(!modal||!modal.open)return;if(monitoringDashboardLiveGaugeTimer)return;refreshMonitoringNodeLiveGauges();monitoringDashboardLiveGaugeTimer=setInterval(()=>{refreshMonitoringNodeLiveGauges();},1000);}
+    async function refreshMonitoringNodeLiveGauges(){if(!monitoringDashboardIsWindows||!monitoringDashboardDeviceName)return;if(monitoringDashboardLiveGaugeInFlight)return;const modal=document.getElementById('monitoringNodeDashboardModal');if(!modal||!modal.open)return;monitoringDashboardLiveGaugeInFlight=true;try{const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),9000);const res=await fetch(MONITORING_LIVE_GAUGES_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({device_name:monitoringDashboardDeviceName}),signal:controller.signal});clearTimeout(timer);if(res.status===401){window.location='{{ url_for("login", expired=1) }}';return;}let data={};try{data=await res.json();}catch(_e){data={ok:false};}if(!res.ok||!data?.ok)return;setGaugeRing('ndCpuGauge',Number(data.cpu_percent||0),100);setGaugeRing('ndMemGauge',Number(data.memory_percent||0),100);setGaugeRing('ndSlaGauge',Number(data.sla_ms||0),300);const rxVal=Number(data.network_rx_mbps);const txVal=Number(data.network_tx_mbps);const rxGauge=document.getElementById('ndGaugeRx');const txGauge=document.getElementById('ndGaugeTx');if(rxGauge)rxGauge.textContent=Number.isFinite(rxVal)?`${rxVal.toFixed(2)} Mbps`:'-';if(txGauge)txGauge.textContent=Number.isFinite(txVal)?`${txVal.toFixed(2)} Mbps`:'-';const upEl=document.getElementById('ndWinUptime');if(upEl&&data.uptime_seconds!==undefined&&data.uptime_seconds!==null)upEl.textContent=formatUptime(data.uptime_seconds);applyWindowsServerTextFields(data);const statusRaw=String(data.status||'unknown').trim().toLowerCase();const statusUpper=statusRaw.toUpperCase();const uptimeText=(statusRaw==='up'&&data.uptime_seconds!==undefined&&data.uptime_seconds!==null)?formatUptime(data.uptime_seconds):'-';const statusDisplay=(statusRaw==='up'&&uptimeText&&uptimeText!=='-')?`${statusUpper} / ${uptimeText}`:statusRaw;const ndStatus=document.getElementById('ndStatus');if(ndStatus)ndStatus.textContent=statusDisplay;const ndLast=document.getElementById('ndLast');if(ndLast)ndLast.textContent=formatDateTime(data.sampled_at||'');}catch(_e){}finally{monitoringDashboardLiveGaugeInFlight=false;}}
+    async function acknowledgeMonitoringAlert(alertId){const id=Number(alertId||0);if(!Number.isFinite(id)||id<=0)return;try{const res=await fetch(MONITORING_ACK_ALERT_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({alert_id:id})});const data=await res.json();if(!res.ok||!data?.ok){showRunStatus(String(data?.error||'Failed to acknowledge alert.'),true);return;}if(monitoringDashboardDeviceName)openMonitoringNodeDashboard(monitoringDashboardDeviceName,false);}catch(_e){showRunStatus('Failed to acknowledge alert.',true);}}
+    function renderMonitoringAlerts(alerts){const body=document.getElementById('ndAlertsBody');if(!body)return;const rows=Array.isArray(alerts)?alerts:[];if(!rows.length){body.innerHTML='<div class="node-util-empty">No active alerts.</div>';return;}body.innerHTML=rows.map((a)=>{const id=Number(a?.id||0);const sev=String(a?.severity||'warning').toLowerCase();const status=String(a?.status||'open').toUpperCase();const key=escapeHtml(String(a?.alert_key||'-'));const msg=escapeHtml(String(a?.message||'-'));const upd=escapeHtml(formatDateTime(String(a?.updated_at||'')));const val=(a?.last_value===null||a?.last_value===undefined)?'-':escapeHtml(String(a.last_value));const thr=(a?.threshold_value===null||a?.threshold_value===undefined)?'-':escapeHtml(String(a.threshold_value));const canAck=MONITORING_CAN_MANAGE&&String(a?.status||'').toLowerCase()==='open';const ackBtn=canAck?`<button class="btn" type="button" onclick="acknowledgeMonitoringAlert(${id})">Ack</button>`:'';return `<div class="node-alert-row"><div><div class="node-alert-sev ${sev}">${sev}</div><div class="node-alert-meta">${status} • ${key}</div></div><div><div>${msg}</div><div class="node-alert-meta">Value: ${val} | Threshold: ${thr} | Updated: ${upd}</div></div><div>${ackBtn}</div></div>`;}).join('');}
     function formatDateTime(value){const raw=String(value||'').trim();if(!raw)return'-';const d=new Date(raw);if(Number.isNaN(d.getTime()))return raw;const hh=String(d.getHours()).padStart(2,'0');const mi=String(d.getMinutes()).padStart(2,'0');const dd=String(d.getDate()).padStart(2,'0');const mm=String(d.getMonth()+1).padStart(2,'0');const yyyy=String(d.getFullYear());return `${hh}:${mi} - ${dd}-${mm}-${yyyy}`;}
     async function openMonitoringNodeDashboard(deviceName,forceRefresh){
       const name=String(deviceName||'').trim();
       if(!name)return;
       if(monitoringDashboardDeviceName&&monitoringDashboardDeviceName!==name){monitoringChartRanges={cpu:{type:'relative',minutes:30,label:'Last 30 minutes'},memory:{type:'relative',minutes:30,label:'Last 30 minutes'},response:{type:'relative',minutes:30,label:'Last 30 minutes'}};}
       monitoringDashboardDeviceName=name;
+      monitoringDashboardIsWindows=false;
+      stopMonitoringLiveGaugeRefresh();
       const status=document.getElementById('nodeDashStatus');
       if(status)status.textContent=forceRefresh?'Polling now...':'Loading monitoring data...';
       openSettingsPopup('monitoringNodeDashboardModal');
@@ -371,8 +554,12 @@
         monitoringDashboardAutoRefreshTimer=setInterval(()=>{if(monitoringDashboardDeviceName)refreshMonitoringNodeDashboard();},30000);
       }
       try{
-        const res=await fetch(MONITORING_DASHBOARD_DATA_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({device_name:name,limit:144,force_refresh:Boolean(forceRefresh)})});
-        const data=await res.json();
+        const queryWindow=getDashboardQueryWindow();const requestBody={device_name:name,limit:144,force_refresh:Boolean(forceRefresh)};if(queryWindow&&queryWindow.start&&queryWindow.end){requestBody.range_start=queryWindow.start;requestBody.range_end=queryWindow.end;}
+        const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),20000);
+        const res=await fetch(MONITORING_DASHBOARD_DATA_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(requestBody),signal:controller.signal});
+        clearTimeout(timer);
+        if(res.status===401){window.location='{{ url_for("login", expired=1) }}';return;}
+        let data={};try{data=await res.json();}catch(_e){data={ok:false,error:`HTTP ${res.status}`};}
         if(!res.ok||!data?.ok){
           if(status)status.textContent=String(data?.error||'Failed to load dashboard data.');
           return;
@@ -381,8 +568,9 @@
         const latest=data.latest||{};
         const series=Array.isArray(data.series)?data.series:[];
         const availability=(data&&typeof data.availability==='object'&&data.availability)?data.availability:{};
-        const interfaceUtilization=Array.isArray(data.interface_utilization)?data.interface_utilization:[];
         const windowsServer=(data&&typeof data.windows_server==='object'&&data.windows_server)?data.windows_server:{};
+        monitoringDashboardIsWindows=Boolean(windowsServer?.is_windows_server);
+        const alerts=Array.isArray(data.alerts)?data.alerts:[];
         const set=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=String(val??'-');};
         const statusRaw=String(latest.status||'unknown').trim();
         const statusUpper=statusRaw.toUpperCase();
@@ -400,24 +588,21 @@
         setGaugeRing('ndCpuGauge',Number(latest.cpu_percent||0),100);
         setGaugeRing('ndMemGauge',Number(latest.memory_percent||0),100);
         setGaugeRing('ndSlaGauge',Number(latest.sla_ms||0),300);
-        const ifDown=Number(latest.interfaces_down||0);
-        const ifUp=Number(latest.interfaces_up||0);
-        const downPct=(ifDown+ifUp)>0?(ifDown*100/(ifDown+ifUp)):0;
-        setGaugeRing('ndIfGauge',downPct,100);
         monitoringDashboardSeries=series;
         renderMonitoringTrendCharts();
         setAvailabilityRow('ndAvailWeek',availability.week);
         setAvailabilityRow('ndAvailMonth',availability.month);
         setAvailabilityRow('ndAvailHalfYear',availability.half_year);
         setAvailabilityRow('ndAvailYear',availability.year);
-        renderNodeInterfaceUtilization(interfaceUtilization);
         renderWindowsServerCards(windowsServer);
+        if(monitoringDashboardIsWindows)startMonitoringLiveGaugeRefresh();else stopMonitoringLiveGaugeRefresh();
+        renderMonitoringAlerts(alerts);
         if(status)status.textContent=`Loaded ${series.length} samples.`;
-      }catch(_e){
-        if(status)status.textContent='Failed to load dashboard data.';
+      }catch(error){
+        if(status)status.textContent=(error&&error.name==='AbortError')?'Dashboard load timeout (20s). Try again.':'Failed to load dashboard data.';
       }
     }
-    function refreshMonitoringNodeDashboard(){if(!monitoringDashboardDeviceName)return;openMonitoringNodeDashboard(monitoringDashboardDeviceName,false);}
+    function refreshMonitoringNodeDashboard(){if(!monitoringDashboardDeviceName)return;if(!shouldAutoRefreshNodeDashboard())return;openMonitoringNodeDashboard(monitoringDashboardDeviceName,false);}
     function refreshMonitoringNodeDashboardNow(){if(!monitoringDashboardDeviceName)return;const status=document.getElementById('nodeDashStatus');if(status)status.textContent='Polling now...';openMonitoringNodeDashboard(monitoringDashboardDeviceName,true);}
     function openMonitoringConfigMenu(){openMonitoringNodeManager('edit');}
     function deleteMonitoringNode(deviceName){openMonitoringNodeManager('delete',deviceName);}
@@ -430,10 +615,11 @@
     function syncMonitoringResourceSelection(){const metrics=new Set();const interfaces=new Set();document.querySelectorAll('#mrMetricChecks input[type=\"checkbox\"]').forEach((el)=>{if(el.checked)metrics.add(String(el.value||'').trim().toLowerCase());});document.querySelectorAll('#mrInterfaceChecks input[type=\"checkbox\"]').forEach((el)=>{if(el.checked)interfaces.add(String(el.value||'').trim());});monitoringResourceState.selectedMetrics=metrics;monitoringResourceState.selectedInterfaces=interfaces;}
     async function saveMonitoringResources(){syncMonitoringResourceSelection();const s=document.getElementById('mrStatus');if(s)s.textContent='Saving selection...';try{const res=await fetch(MONITORING_SAVE_RESOURCES_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({device_name:monitoringResourceState.deviceName,metrics:Array.from(monitoringResourceState.selectedMetrics),interfaces:Array.from(monitoringResourceState.selectedInterfaces)})});const data=await res.json();if(!res.ok||!data?.ok){if(s)s.textContent=String(data?.error||'Failed to save resources.');return;}if(s)s.textContent='Saved.';setTimeout(()=>{closeSettingsPopup('monitoringResourcesModal');location.reload();},300);}catch(_e){if(s)s.textContent='Failed to save resources.';}}
     async function testMonitoringSnmp(){const status=document.getElementById('mnSnmpTestStatus');const btn=document.querySelector('#mnSnmpBlock button[onclick=\"testMonitoringSnmp()\"]');if(status){status.className='small';status.textContent='Testing SNMP...';}if(btn)btn.disabled=true;const host=String(document.getElementById('mnIpAddress')?.value||'').trim();const snmpVersion=String(document.getElementById('mnSnmpVersion')?.value||'2c').trim();const snmpPort=String(document.getElementById('mnSnmpPort')?.value||'161').trim();const community=String(document.getElementById('mnCommunity')?.value||'').trim();const payload={host,snmp_version:snmpVersion,snmp_port:snmpPort,community,snmpv3_username:String(document.getElementById('mnSnmpV3Username')?.value||'').trim(),snmpv3_auth_password:String(document.getElementById('mnSnmpV3Auth')?.value||'').trim(),snmpv3_priv_password:String(document.getElementById('mnSnmpV3Priv')?.value||'').trim(),snmpv3_auth_protocol:String(document.getElementById('mnSnmpV3AuthProto')?.value||'sha').trim(),snmpv3_priv_protocol:String(document.getElementById('mnSnmpV3PrivProto')?.value||'aes128').trim()};const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),12000);try{const res=await fetch(MONITORING_TEST_SNMP_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:controller.signal});const data=await res.json();if(!res.ok||!data?.ok){if(status){status.className='err';status.textContent=String(data?.error||'SNMP test failed.');}return;}const details=data.details||{};const cpu=details.cpu_percent===null||details.cpu_percent===undefined?'-':`${details.cpu_percent}%`;const ifn=details.if_number===null||details.if_number===undefined?'-':String(details.if_number);if(status){status.className='info';status.textContent=`SNMP OK | sysName: ${details.sysname||'-'} | ifNumber: ${ifn} | CPU: ${cpu}`;}}catch(error){if(status){status.className='err';status.textContent=(error&&error.name==='AbortError')?'SNMP test timed out (12s). Check reachability/ACL/credentials.':'SNMP test failed.';}}finally{clearTimeout(timer);if(btn)btn.disabled=false;}}
-    function openSettingsPopup(id){ const modal=document.getElementById(id); if(modal&&modal.showModal) modal.showModal(); if(id==='deviceSettingsModal') syncEditDeviceFields(); if(id==='monitoringNodeModal') updateMonitoringNodeFields(); }
+    function syncSelectedButtonCommand(){const select=document.getElementById('editCommandButtonSelect');const box=document.getElementById('editCommandText');if(!select||!box)return;const chosen=select.options[select.selectedIndex];if(!chosen)return;const command=String(chosen.getAttribute('data-command')||'');box.value=command;}
+    function openSettingsPopup(id){ const modal=document.getElementById(id); if(modal&&modal.showModal) modal.showModal(); if(id==='deviceSettingsModal') syncEditDeviceFields(); if(id==='monitoringNodeModal') updateMonitoringNodeFields(); if(id==='commandSettingsModal') syncSelectedButtonCommand(); }
     function openManagementChildPopup(id){ closeSettingsPopup('managementModal'); openSettingsPopup(id); }
-    function closeSettingsPopup(id){ const modal=document.getElementById(id); if(modal&&modal.close) modal.close(); if(String(id)==='monitoringNodeDashboardModal'){closeChartRangePicker(); if(monitoringDashboardAutoRefreshTimer){clearInterval(monitoringDashboardAutoRefreshTimer);monitoringDashboardAutoRefreshTimer=null;}} }
-    document.addEventListener('DOMContentLoaded',async ()=>{updateClock();setInterval(updateClock,1000);await loadBranches();setGatewayPreview();renderList();refreshDeleteBranchOptions();refreshEditBranchOptions();renderDeviceTree();renderCommandPicker();applyMenuAccessVisibility();if(hasMenuAccess('ip_branches'))showBranches();else if(hasMenuAccess('ip_hq'))showIpHq();else if(hasMenuAccess('na_servers'))showNetworkAddresses('servers');else if(hasAnyNetworkAddressAccess())showNetworkAddresses('network','network-devices');else if(CAN_ACCESS_DEVICES_PANEL)showNetDevices('all');else if(CAN_ACCESS_MONITORING_PANEL)showNetMonitoring();document.getElementById('addBase').addEventListener('input',setGatewayPreview);document.getElementById('addCidr').addEventListener('change',setGatewayPreview);document.getElementById('addBranchForm').addEventListener('submit',addBranchInline);const ebs=document.getElementById('editBranchSelect');if(ebs)ebs.addEventListener('change',fillEditBranchForm);const eb=document.getElementById('editBase');if(eb)eb.addEventListener('input',setEditGatewayPreview);const ec=document.getElementById('editCidr');if(ec)ec.addEventListener('change',setEditGatewayPreview);document.getElementById('listSearch').addEventListener('input',renderList);document.getElementById('detailsSearch').addEventListener('input',renderDetails);const ds=document.getElementById('deviceSearch');if(ds)ds.addEventListener('input',renderNetDevicesList);const ms=document.getElementById('monitoringSearch');if(ms)ms.addEventListener('input',renderMonitoringResults);const cs=document.getElementById('deviceCommandSelect');if(cs)cs.addEventListener('change',applySelectedCommand);const modeSel=document.getElementById('deviceCommandMode');if(modeSel)modeSel.addEventListener('change',()=>{toggleCommandModeViews();renderCommandPicker();const sel=document.getElementById('deviceCommandSelect');if(sel)sel.value='';});const es=document.getElementById('editDeviceSelect');if(es)es.addEventListener('change',syncEditDeviceFields);const mnMethod=document.getElementById('mnPollingMethod');if(mnMethod)mnMethod.addEventListener('change',updateMonitoringNodeFields);const mnCategory=document.getElementById('mnCategory');if(mnCategory)mnCategory.addEventListener('change',updateMonitoringNodeFields);const mnSnmpVer=document.getElementById('mnSnmpVersion');if(mnSnmpVer)mnSnmpVer.addEventListener('change',updateMonitoringNodeFields);const nodeDash=document.getElementById('monitoringNodeDashboardModal');if(nodeDash){nodeDash.addEventListener('close',()=>{closeChartRangePicker();if(monitoringDashboardAutoRefreshTimer){clearInterval(monitoringDashboardAutoRefreshTimer);monitoringDashboardAutoRefreshTimer=null;}});}const rangePop=document.getElementById('chartRangePopover');if(rangePop){rangePop.addEventListener('mousedown',(e)=>e.stopPropagation());rangePop.addEventListener('click',(e)=>e.stopPropagation());}document.addEventListener('mousedown',(e)=>{const pop=document.getElementById('chartRangePopover');if(!pop||!pop.classList.contains('show'))return;const target=e.target;if(pop.contains(target))return;if(target&&target.closest&&target.closest('.node-time-btn'))return;closeChartRangePicker();});window.addEventListener('resize',()=>{const pop=document.getElementById('chartRangePopover');if(!pop||!pop.classList.contains('show'))return;});initMonitoringAutoExpand();toggleCommandModeViews();renderCommandPicker();updateMonitoringNodeFields();fetchLiveData();startLiveUpdates();const selectedModal={{ selected_modal|tojson }};if(selectedModal==='notifications'){openSettingsPopup('notificationsModal');}});
+    function closeSettingsPopup(id){ const modal=document.getElementById(id); if(modal&&modal.close) modal.close(); if(String(id)==='monitoringNodeDashboardModal'){closeChartRangePicker();stopMonitoringLiveGaugeRefresh(); if(monitoringDashboardAutoRefreshTimer){clearInterval(monitoringDashboardAutoRefreshTimer);monitoringDashboardAutoRefreshTimer=null;}} }
+    document.addEventListener('DOMContentLoaded',async ()=>{updateClock();setInterval(updateClock,1000);await loadBranches();setGatewayPreview();renderList();refreshDeleteBranchOptions();refreshEditBranchOptions();renderDeviceTree();renderCommandPicker();applyMenuAccessVisibility();if(hasMenuAccess('ip_branches'))showBranches();else if(hasMenuAccess('ip_hq'))showIpHq();else if(hasMenuAccess('na_servers'))showNetworkAddresses('servers');else if(hasAnyNetworkAddressAccess())showNetworkAddresses('network','network-devices');else if(CAN_ACCESS_DEVICES_PANEL)showNetDevices('all');else if(CAN_ACCESS_MONITORING_PANEL)showNetMonitoring();document.getElementById('addBase').addEventListener('input',setGatewayPreview);document.getElementById('addCidr').addEventListener('change',setGatewayPreview);document.getElementById('addBranchForm').addEventListener('submit',addBranchInline);const ebs=document.getElementById('editBranchSelect');if(ebs)ebs.addEventListener('change',fillEditBranchForm);const eb=document.getElementById('editBase');if(eb)eb.addEventListener('input',setEditGatewayPreview);const ec=document.getElementById('editCidr');if(ec)ec.addEventListener('change',setEditGatewayPreview);document.getElementById('listSearch').addEventListener('input',renderList);document.getElementById('detailsSearch').addEventListener('input',renderDetails);const ds=document.getElementById('deviceSearch');if(ds)ds.addEventListener('input',renderNetDevicesList);const ms=document.getElementById('monitoringSearch');if(ms)ms.addEventListener('input',renderMonitoringResults);const cs=document.getElementById('deviceCommandSelect');if(cs)cs.addEventListener('change',applySelectedCommand);const modeSel=document.getElementById('deviceCommandMode');if(modeSel)modeSel.addEventListener('change',()=>{toggleCommandModeViews();renderCommandPicker();const sel=document.getElementById('deviceCommandSelect');if(sel)sel.value='';});const es=document.getElementById('editDeviceSelect');if(es)es.addEventListener('change',syncEditDeviceFields);const mnMethod=document.getElementById('mnPollingMethod');if(mnMethod)mnMethod.addEventListener('change',updateMonitoringNodeFields);const mnCategory=document.getElementById('mnCategory');if(mnCategory)mnCategory.addEventListener('change',updateMonitoringNodeFields);const mnSnmpVer=document.getElementById('mnSnmpVersion');if(mnSnmpVer)mnSnmpVer.addEventListener('change',updateMonitoringNodeFields);const nodeDash=document.getElementById('monitoringNodeDashboardModal');if(nodeDash){nodeDash.addEventListener('close',()=>{closeChartRangePicker();stopMonitoringLiveGaugeRefresh();if(monitoringDashboardAutoRefreshTimer){clearInterval(monitoringDashboardAutoRefreshTimer);monitoringDashboardAutoRefreshTimer=null;}});}const rangePop=document.getElementById('chartRangePopover');if(rangePop){rangePop.addEventListener('mousedown',(e)=>e.stopPropagation());rangePop.addEventListener('click',(e)=>e.stopPropagation());}document.addEventListener('mousedown',(e)=>{const pop=document.getElementById('chartRangePopover');if(!pop||!pop.classList.contains('show'))return;const target=e.target;if(pop.contains(target))return;if(target&&target.closest&&target.closest('.node-time-btn'))return;closeChartRangePicker();});window.addEventListener('resize',()=>{const pop=document.getElementById('chartRangePopover');if(!pop||!pop.classList.contains('show'))return;});initMonitoringAutoExpand();toggleCommandModeViews();renderCommandPicker();updateMonitoringNodeFields();fetchLiveData();startLiveUpdates();const selectedModal={{ selected_modal|tojson }};if(selectedModal==='notifications'){openSettingsPopup('notificationsModal');}});
   </script>
 </head>
 <body>
@@ -756,19 +942,20 @@
               <input class="input" name="new_label" placeholder="Button label">
               <textarea class="cmd-box" name="new_command" placeholder="Command text"></textarea>
               <select class="select" name="new_mode"><option value="show">show</option><option value="config">config</option></select>
-              <select class="select" name="new_audience"><option value="senior">Senior Buttons</option><option value="junior">Junior Buttons</option></select>
+              <select class="select" name="new_audience"><option value="senior">Senior Buttons</option><option value="junior">Junior Buttons</option><option value="both">Both (Junior + Senior)</option></select>
               <button class="btn" type="submit">Add Button</button>
             </form>
             <form method="post" action="{{ url_for('buttons_menu') }}">
               <input type="hidden" name="next" value="ip_addressing">
               <input type="hidden" name="action" value="edit_command">
               <b>Edit Existing Command</b>
-              <select class="select" name="button_id">{% for b in manage_buttons %}<option value="{{ b.id }}">{{ b.label }} ({{ (b.audience or 'senior')|lower }})</option>{% endfor %}</select>
-              <textarea class="cmd-box" name="edit_command_text" placeholder="Updated command text"></textarea>
+              <select id="editCommandButtonSelect" class="select" name="button_id" onchange="syncSelectedButtonCommand()">{% for b in manage_buttons %}<option value="{{ b.id }}" data-command="{{ b.command|e }}">{{ b.label }} ({{ (b.audience or 'senior')|lower }})</option>{% endfor %}</select>
+              <textarea id="editCommandText" class="cmd-box" name="edit_command_text" placeholder="Updated command text"></textarea>
               <select class="select" name="edit_audience">
                 <option value="">Keep current audience</option>
                 <option value="senior">Move to Senior Buttons</option>
                 <option value="junior">Move to Junior Buttons</option>
+                <option value="both">Move to Both (Junior + Senior)</option>
               </select>
               <button class="btn" type="submit">Save Command</button>
             </form>
@@ -996,7 +1183,13 @@
                   <div class="node-gauge"><div id="ndCpuGauge" class="node-gauge-ring"><div class="node-gauge-inner">0</div></div><div class="node-gauge-label">CPU %</div></div>
                   <div class="node-gauge"><div id="ndMemGauge" class="node-gauge-ring"><div class="node-gauge-inner">0</div></div><div class="node-gauge-label">Memory %</div></div>
                   <div class="node-gauge"><div id="ndSlaGauge" class="node-gauge-ring"><div class="node-gauge-inner">0</div></div><div class="node-gauge-label">Response ms</div></div>
-                  <div class="node-gauge"><div id="ndIfGauge" class="node-gauge-ring"><div class="node-gauge-inner">0</div></div><div class="node-gauge-label">Interfaces Down %</div></div>
+                </div>
+                <div id="ndGaugeThroughputBox" class="node-gauge-throughput hidden">
+                  <div class="node-gauge-throughput-label">Network Throughput</div>
+                  <div class="node-gauge-throughput-grid">
+                    <div class="node-gauge-throughput-item"><b>RX</b><span id="ndGaugeRx">-</span></div>
+                    <div class="node-gauge-throughput-item"><b>TX</b><span id="ndGaugeTx">-</span></div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1026,16 +1219,10 @@
                 </div>
               </div>
             </div>
-            <div id="ndInterfaceUtilBox" class="node-util-box">
-              <div class="node-dash-title">Current Interface Utilization</div>
-              <div class="node-util-header">
-                <span>Status</span>
-                <span>Interface</span>
-                <span>Transmit</span>
-                <span>Receive</span>
-              </div>
-              <div id="ndInterfaceUtilBody" class="node-util-list">
-                <div class="node-util-empty">No monitored interfaces found for this device.</div>
+            <div id="ndAlertsBox" class="node-util-box">
+              <div class="node-dash-title">Active Alerts</div>
+              <div id="ndAlertsBody" class="node-util-list">
+                <div class="node-util-empty">No active alerts.</div>
               </div>
             </div>
             <div id="ndWindowsDiskBox" class="node-util-box hidden">
@@ -1054,15 +1241,20 @@
               <div class="node-dash-box">
                 <div class="node-dash-title">Uptime / Boot Info</div>
                 <div class="win-kpi">
-                  <div id="ndWinUptime" class="big">-</div>
-                  <div class="small">Last boot: <span id="ndWinLastBoot">-</span></div>
-                </div>
-              </div>
-              <div class="node-dash-box">
-                <div class="node-dash-title">Network Throughput</div>
-                <div class="win-net-grid">
-                  <div class="win-net-item"><b>Total RX</b><span id="ndWinRx">-</span></div>
-                  <div class="win-net-item"><b>Total TX</b><span id="ndWinTx">-</span></div>
+                  <div class="win-kpi-layout">
+                    <div class="win-kpi-main">
+                      <div id="ndWinUptime" class="big">-</div>
+                      <div class="small">Last boot: <span id="ndWinLastBoot">-</span></div>
+                    </div>
+                    <div class="win-info-grid">
+                      <div class="win-info-item"><b>Win</b><span id="ndWinOs">-</span></div>
+                      <div class="win-info-item"><b>Build</b><span id="ndWinBuild">-</span></div>
+                      <div class="win-info-item"><b>Architecture</b><span id="ndWinArch">-</span></div>
+                      <div class="win-info-item"><b>Host</b><span id="ndWinHost">-</span></div>
+                      <div class="win-info-item"><b>Domain</b><span id="ndWinDomain">-</span></div>
+                      <div class="win-info-item"><b>RAM T/F</b><span id="ndWinRam">-</span></div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1079,6 +1271,8 @@
             <button class="btn" type="button" onclick="applyQuickRange('d7')">Last 7 days</button>
             <button class="btn" type="button" onclick="applyQuickRange('d30')">Last 30 days</button>
             <button class="btn" type="button" onclick="applyQuickRange('m12')">Last 12 months</button>
+            <button class="btn" type="button" onclick="applyQuickRange('y2')">Last 2 years</button>
+            <button class="btn" type="button" onclick="applyQuickRange('y5')">Last 5 years</button>
           </div>
           <div class="range-main">
             <h3 style="margin:0">Time Range - <span id="rangePanelTitle">CPU Trend</span></h3>

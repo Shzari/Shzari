@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import csv
+import atexit
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 import random
@@ -12,6 +14,7 @@ import secrets
 import socket
 import ssl
 import struct
+import sys
 import threading
 import subprocess
 import time
@@ -21,6 +24,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
+from werkzeug.middleware.proxy_fix import ProxyFix
 from config_settings import (
     DEVICES_FILE,
     EXTERNAL_LOGGING_SETTINGS_FILE,
@@ -110,12 +114,129 @@ except Exception:
     WINRM_AVAILABLE = False
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+
+def _env_true(name: str, default: str = "0") -> bool:
+    return str(os.environ.get(name, default)).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _normalize_web_acl_entries(raw_entries: Any) -> tuple[list[str], list[str]]:
+    parts: list[str] = []
+    if isinstance(raw_entries, str):
+        parts = re.split(r"[,\r\n;]+", raw_entries)
+    elif isinstance(raw_entries, (list, tuple, set)):
+        for item in raw_entries:
+            if isinstance(item, str):
+                parts.extend(re.split(r"[,\r\n;]+", item))
+            elif item is not None:
+                parts.append(str(item))
+    elif raw_entries is not None:
+        parts = re.split(r"[,\r\n;]+", str(raw_entries))
+
+    normalized: list[str] = []
+    invalid: list[str] = []
+    seen: set[str] = set()
+    for token in parts:
+        value = str(token or "").strip()
+        if not value:
+            continue
+        try:
+            if "/" in value:
+                parsed = ipaddress.ip_network(value, strict=False)
+                key = str(parsed)
+            else:
+                parsed = ipaddress.ip_address(value)
+                key = str(parsed)
+            if key not in seen:
+                seen.add(key)
+                normalized.append(key)
+        except Exception:
+            invalid.append(value)
+    return normalized, invalid
+
+
+def _is_client_ip_allowed_by_acl(client_ip: str, acl_entries: list[str]) -> bool:
+    ip_text = str(client_ip or "").strip()
+    if not ip_text:
+        return False
+    try:
+        parsed_ip = ipaddress.ip_address(ip_text)
+    except Exception:
+        return False
+    for item in acl_entries:
+        entry = str(item or "").strip()
+        if not entry:
+            continue
+        try:
+            if "/" in entry:
+                if parsed_ip in ipaddress.ip_network(entry, strict=False):
+                    return True
+            else:
+                if parsed_ip == ipaddress.ip_address(entry):
+                    return True
+        except Exception:
+            continue
+    return False
+
+
+_AUTO_RESTART_PENDING = threading.Event()
+
+
+def _schedule_self_restart(delay_seconds: float = 1.0) -> bool:
+    """
+    Restart current process in-place after response is returned.
+    Used to apply HTTP/HTTPS listener changes without manual restart.
+    """
+    if _env_true("APP_DISABLE_AUTO_RESTART", "0"):
+        return False
+    if _AUTO_RESTART_PENDING.is_set():
+        return False
+    _AUTO_RESTART_PENDING.set()
+
+    def _restart() -> None:
+        time.sleep(max(0.3, float(delay_seconds)))
+        argv = [sys.executable] + list(sys.argv)
+        try:
+            os.execv(sys.executable, argv)
+        except Exception:
+            os._exit(0)
+
+    threading.Thread(target=_restart, name="auto-self-restart", daemon=True).start()
+    return True
+
+
+def _session_https_enabled() -> bool:
+    try:
+        if not SESSION_SETTINGS_FILE.exists():
+            return False
+        with SESSION_SETTINGS_FILE.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return False
+        https_enabled = bool(data.get("https_enabled", False))
+        # Backward compatible with older payloads that only had "https_enabled".
+        if "http_enabled" not in data:
+            return https_enabled
+        http_enabled = bool(data.get("http_enabled", True))
+        # Mark cookies as secure only when app is HTTPS-only.
+        return https_enabled and not http_enabled
+    except Exception:
+        return False
+
+
 app = Flask(
     __name__,
     template_folder=os.path.join(PROJECT_ROOT, "templates"),
     static_folder=os.path.join(PROJECT_ROOT, "static"),
 )
 app.secret_key = SECRET_KEY
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = str(os.environ.get("APP_SESSION_SAMESITE", "Lax")).strip() or "Lax"
+if _env_true("APP_HTTPS", "0") or _session_https_enabled() or _env_true("APP_FORCE_SECURE_COOKIES", "0"):
+    app.config["SESSION_COOKIE_SECURE"] = True
+    app.config["PREFERRED_URL_SCHEME"] = "https"
+if _env_true("APP_TRUST_PROXY", "0"):
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)  # type: ignore[assignment]
 
 ACCESS_REQUEST = 1
 ACCESS_ACCEPT = 2
@@ -132,9 +253,19 @@ RUNTIME_SSH_LOCK = threading.Lock()
 MONITORING_POLLER_LOCK = threading.Lock()
 MONITORING_POLLER_THREAD: threading.Thread | None = None
 MONITORING_POLLER_STOP = threading.Event()
+LOGIN_LOCKOUT_STATE: dict[str, dict[str, Any]] = {}
+LOGIN_LOCKOUT_LOCK = threading.Lock()
+LOGIN_LOCKOUT_DB_READY = False
+
+
+def embedded_monitoring_poller_enabled() -> bool:
+    raw = str(os.environ.get("MONITORING_EMBEDDED_POLLER", "0")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
 SQLSERVER_PRIMARY_KEYS: dict[str, list[str]] = {
+    "app_settings": ["setting_key"],
+    "login_lockouts": ["lock_key"],
     "users": ["username"],
     "devices": ["hostname"],
     "device_groups": ["hostname", "group_name"],
@@ -152,6 +283,8 @@ SQLSERVER_PRIMARY_KEYS: dict[str, list[str]] = {
     "audit_logs": ["id"],
     "monitoring_metrics": ["id"],
     "monitoring_device_profiles": ["device_name"],
+    "monitoring_interface_metrics": ["id"],
+    "monitoring_alerts": ["id"],
 }
 
 
@@ -417,6 +550,18 @@ def db_conn() -> DBConnection:
 
 def init_db() -> None:
     with db_conn() as conn:
+        conn.execute(
+            """
+IF OBJECT_ID(N'dbo.app_settings', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.app_settings (
+        setting_key NVARCHAR(128) NOT NULL PRIMARY KEY,
+        setting_json NVARCHAR(MAX) NOT NULL CONSTRAINT DF_app_settings_json DEFAULT '{}',
+        updated_at NVARCHAR(64) NOT NULL CONSTRAINT DF_app_settings_updated DEFAULT ''
+    );
+END
+"""
+        )
         conn.execute(
             """
 IF OBJECT_ID(N'dbo.users', N'U') IS NULL
@@ -694,6 +839,19 @@ END
         )
         conn.execute(
             """
+IF OBJECT_ID(N'dbo.login_lockouts', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.login_lockouts (
+        lock_key NVARCHAR(255) NOT NULL PRIMARY KEY,
+        attempts INT NOT NULL CONSTRAINT DF_login_lockouts_attempts DEFAULT 0,
+        locked_until_utc NVARCHAR(64) NOT NULL CONSTRAINT DF_login_lockouts_locked_until DEFAULT '',
+        updated_at_utc NVARCHAR(64) NOT NULL CONSTRAINT DF_login_lockouts_updated DEFAULT ''
+    );
+END
+"""
+        )
+        conn.execute(
+            """
 IF OBJECT_ID(N'dbo.action_logs', N'U') IS NULL
 BEGIN
     CREATE TABLE dbo.action_logs (
@@ -751,6 +909,18 @@ END
         )
         conn.execute(
             """
+IF COL_LENGTH('dbo.monitoring_metrics', 'collected_at_utc') IS NULL
+    ALTER TABLE dbo.monitoring_metrics ADD collected_at_utc NVARCHAR(64) NOT NULL CONSTRAINT DF_monitoring_metrics_collected_at_utc DEFAULT '';
+"""
+        )
+        conn.execute(
+            """
+IF COL_LENGTH('dbo.monitoring_metrics', 'collected_at_utc') IS NOT NULL
+    UPDATE dbo.monitoring_metrics SET collected_at_utc = collected_at WHERE ISNULL(collected_at_utc, '') = '';
+"""
+        )
+        conn.execute(
+            """
 IF OBJECT_ID(N'dbo.monitoring_device_profiles', N'U') IS NULL
 BEGIN
     CREATE TABLE dbo.monitoring_device_profiles (
@@ -761,6 +931,65 @@ BEGIN
         updated_at NVARCHAR(64) NOT NULL
     );
 END
+"""
+        )
+        conn.execute(
+            """
+IF OBJECT_ID(N'dbo.monitoring_interface_metrics', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.monitoring_interface_metrics (
+        id BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        device_name NVARCHAR(255) NOT NULL,
+        host NVARCHAR(64) NOT NULL CONSTRAINT DF_monitoring_interface_metrics_host DEFAULT '',
+        interface_name NVARCHAR(128) NOT NULL,
+        interface_description NVARCHAR(255) NOT NULL CONSTRAINT DF_monitoring_interface_metrics_desc DEFAULT '',
+        oper_status NVARCHAR(32) NOT NULL CONSTRAINT DF_monitoring_interface_metrics_status DEFAULT 'unknown',
+        tx_percent FLOAT NULL,
+        rx_percent FLOAT NULL,
+        collected_at_utc NVARCHAR(64) NOT NULL,
+        details_json NVARCHAR(MAX) NOT NULL CONSTRAINT DF_monitoring_interface_metrics_details DEFAULT '{}'
+    );
+END
+"""
+        )
+        conn.execute(
+            """
+IF OBJECT_ID(N'dbo.monitoring_alerts', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.monitoring_alerts (
+        id BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        device_name NVARCHAR(255) NOT NULL,
+        host NVARCHAR(64) NOT NULL CONSTRAINT DF_monitoring_alerts_host DEFAULT '',
+        alert_key NVARCHAR(128) NOT NULL,
+        alert_type NVARCHAR(64) NOT NULL,
+        severity NVARCHAR(32) NOT NULL CONSTRAINT DF_monitoring_alerts_severity DEFAULT 'warning',
+        status NVARCHAR(32) NOT NULL CONSTRAINT DF_monitoring_alerts_status DEFAULT 'open',
+        message NVARCHAR(512) NOT NULL CONSTRAINT DF_monitoring_alerts_message DEFAULT '',
+        threshold_value FLOAT NULL,
+        last_value FLOAT NULL,
+        opened_at NVARCHAR(64) NOT NULL,
+        updated_at NVARCHAR(64) NOT NULL,
+        sample_collected_at NVARCHAR(64) NOT NULL CONSTRAINT DF_monitoring_alerts_sample_collected DEFAULT '',
+        acked_by NVARCHAR(255) NOT NULL CONSTRAINT DF_monitoring_alerts_acked_by DEFAULT '',
+        acked_at NVARCHAR(64) NOT NULL CONSTRAINT DF_monitoring_alerts_acked_at DEFAULT '',
+        cleared_at NVARCHAR(64) NOT NULL CONSTRAINT DF_monitoring_alerts_cleared_at DEFAULT '',
+        details_json NVARCHAR(MAX) NOT NULL CONSTRAINT DF_monitoring_alerts_details DEFAULT '{}'
+    );
+END
+"""
+        )
+        conn.execute(
+            """
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_monitoring_metrics_device_collected_at_utc' AND object_id = OBJECT_ID(N'dbo.monitoring_metrics'))
+    CREATE INDEX IX_monitoring_metrics_device_collected_at_utc ON dbo.monitoring_metrics(device_name, collected_at_utc DESC);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_monitoring_interface_metrics_device_collected_at_utc' AND object_id = OBJECT_ID(N'dbo.monitoring_interface_metrics'))
+    CREATE INDEX IX_monitoring_interface_metrics_device_collected_at_utc ON dbo.monitoring_interface_metrics(device_name, collected_at_utc DESC);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_monitoring_interface_metrics_device_interface_time' AND object_id = OBJECT_ID(N'dbo.monitoring_interface_metrics'))
+    CREATE INDEX IX_monitoring_interface_metrics_device_interface_time ON dbo.monitoring_interface_metrics(device_name, interface_name, collected_at_utc DESC);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_monitoring_alerts_device_status' AND object_id = OBJECT_ID(N'dbo.monitoring_alerts'))
+    CREATE INDEX IX_monitoring_alerts_device_status ON dbo.monitoring_alerts(device_name, status, updated_at DESC);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_monitoring_alerts_device_key_status' AND object_id = OBJECT_ID(N'dbo.monitoring_alerts'))
+    CREATE INDEX IX_monitoring_alerts_device_key_status ON dbo.monitoring_alerts(device_name, alert_key, status);
 """
         )
     migrate_legacy_json_to_db()
@@ -1068,11 +1297,35 @@ def save_user_device_creds(account_username: str, auth_mode: str, creds: dict[st
     save_device_creds_store(store)
 
 
+def _load_app_setting_json(setting_key: str, default_value: Any, legacy_file: Any | None = None) -> Any:
+    with db_conn() as conn:
+        row = conn.execute("SELECT setting_json FROM app_settings WHERE setting_key = ?", (setting_key,)).fetchone()
+        if row and str(row["setting_json"] or "").strip():
+            try:
+                return json.loads(str(row["setting_json"]))
+            except Exception:
+                return default_value
+
+    if legacy_file is not None and getattr(legacy_file, "exists", lambda: False)():
+        try:
+            legacy_value = json.loads(legacy_file.read_text(encoding="utf-8"))
+            _save_app_setting_json(setting_key, legacy_value)
+            return legacy_value
+        except Exception:
+            return default_value
+    return default_value
+
+
+def _save_app_setting_json(setting_key: str, payload: Any) -> None:
+    with db_conn() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO app_settings(setting_key, setting_json, updated_at) VALUES (?, ?, ?)",
+            (setting_key, json.dumps(payload), datetime.now(timezone.utc).isoformat()),
+        )
+
+
 def load_user_buttons_store() -> dict[str, list[dict[str, Any]]]:
-    if not USER_BUTTONS_FILE.exists():
-        return {}
-    with USER_BUTTONS_FILE.open("r", encoding="utf-8") as f:
-        data = json.load(f)
+    data = _load_app_setting_json("user_buttons_store", {}, USER_BUTTONS_FILE)
     if not isinstance(data, dict):
         return {}
 
@@ -1083,8 +1336,7 @@ def load_user_buttons_store() -> dict[str, list[dict[str, Any]]]:
 
 
 def save_user_buttons_store(store: dict[str, list[dict[str, Any]]]) -> None:
-    with USER_BUTTONS_FILE.open("w", encoding="utf-8") as f:
-        json.dump(store, f, indent=2)
+    _save_app_setting_json("user_buttons_store", store)
 
 
 def load_user_buttons(account_username: str, auth_mode: str) -> list[dict[str, Any]]:
@@ -1117,26 +1369,88 @@ def save_user_buttons(account_username: str, auth_mode: str, buttons: list[dict[
 def default_session_settings() -> dict[str, Any]:
     return {
         "idle_timeout_minutes": 15,
+        "http_enabled": True,
+        "https_enabled": False,
+        "http_port": 8080,
+        "https_port": 8443,
+        "web_acl_enabled": False,
+        "web_acl_entries": [],
+        "login_lockout_enabled": False,
+        "login_lockout_max_attempts": 5,
+        "login_lockout_seconds": 300,
     }
 
 
 def load_session_settings() -> dict[str, Any]:
-    if not SESSION_SETTINGS_FILE.exists():
-        return default_session_settings()
-    with SESSION_SETTINGS_FILE.open("r", encoding="utf-8") as f:
-        data = json.load(f)
+    data = _load_app_setting_json("session_settings", {}, SESSION_SETTINGS_FILE)
     defaults = default_session_settings()
     defaults.update(data if isinstance(data, dict) else {})
     defaults["idle_timeout_minutes"] = int(defaults.get("idle_timeout_minutes", 15) or 15)
+    raw = data if isinstance(data, dict) else {}
+    https_enabled = bool(defaults.get("https_enabled", False))
+    if "http_enabled" in raw:
+        http_enabled = bool(raw.get("http_enabled", True))
+    else:
+        # Compatibility mode: if legacy payload has https_enabled only,
+        # keep HTTP enabled by default unless explicitly disabled.
+        http_enabled = True
+    defaults["http_enabled"] = bool(http_enabled)
+    defaults["https_enabled"] = bool(https_enabled)
+    if not defaults["http_enabled"] and not defaults["https_enabled"]:
+        defaults["http_enabled"] = True
+    try:
+        http_port = int(defaults.get("http_port", 8080) or 8080)
+    except Exception:
+        http_port = 8080
+    try:
+        https_port = int(defaults.get("https_port", 8443) or 8443)
+    except Exception:
+        https_port = 8443
+    defaults["http_port"] = max(1, min(65535, http_port))
+    defaults["https_port"] = max(1, min(65535, https_port))
+    defaults["web_acl_enabled"] = bool(defaults.get("web_acl_enabled", False))
+    acl_entries, _ = _normalize_web_acl_entries(defaults.get("web_acl_entries", []))
+    defaults["web_acl_entries"] = acl_entries
+    defaults["web_acl_text"] = "\n".join(acl_entries)
+    defaults["login_lockout_enabled"] = bool(defaults.get("login_lockout_enabled", False))
+    try:
+        lock_attempts = int(defaults.get("login_lockout_max_attempts", 5) or 5)
+    except Exception:
+        lock_attempts = 5
+    try:
+        if "login_lockout_seconds" in defaults:
+            lock_seconds = int(defaults.get("login_lockout_seconds", 300) or 300)
+        else:
+            # Backward compatibility with old minutes setting.
+            lock_seconds = int(defaults.get("login_lockout_minutes", 5) or 5) * 60
+    except Exception:
+        lock_seconds = 300
+    defaults["login_lockout_max_attempts"] = max(1, min(20, lock_attempts))
+    defaults["login_lockout_seconds"] = max(1, min(86400, lock_seconds))
     return defaults
 
 
 def save_session_settings(settings: dict[str, Any]) -> None:
+    http_enabled = bool(settings.get("http_enabled", True))
+    https_enabled = bool(settings.get("https_enabled", False))
+    if not http_enabled and not https_enabled:
+        http_enabled = True
+    acl_entries, _ = _normalize_web_acl_entries(settings.get("web_acl_entries", []))
+    lock_attempts = max(1, min(20, int(settings.get("login_lockout_max_attempts", 5) or 5)))
+    lock_seconds = max(1, min(86400, int(settings.get("login_lockout_seconds", 300) or 300)))
     payload = {
         "idle_timeout_minutes": max(1, int(settings.get("idle_timeout_minutes", 15) or 15)),
+        "http_enabled": http_enabled,
+        "https_enabled": https_enabled,
+        "http_port": max(1, min(65535, int(settings.get("http_port", 8080) or 8080))),
+        "https_port": max(1, min(65535, int(settings.get("https_port", 8443) or 8443))),
+        "web_acl_enabled": bool(settings.get("web_acl_enabled", False)),
+        "web_acl_entries": acl_entries,
+        "login_lockout_enabled": bool(settings.get("login_lockout_enabled", False)),
+        "login_lockout_max_attempts": lock_attempts,
+        "login_lockout_seconds": lock_seconds,
     }
-    with SESSION_SETTINGS_FILE.open("w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2)
+    _save_app_setting_json("session_settings", payload)
 
 
 def default_ntp_settings() -> dict[str, Any]:
@@ -1222,7 +1536,7 @@ def save_external_logging_settings(settings: dict[str, Any]) -> None:
 
 def default_monitoring_settings() -> dict[str, Any]:
     return {
-        "enabled": False,
+        "enabled": True,
         "collection_mode": "telemetry",
         "collector_host": "",
         "collector_port": 57000,
@@ -1536,6 +1850,18 @@ def parse_monitoring_metrics(metrics_text: str) -> set[str]:
     return selected or {"cpu", "memory", "interfaces", "sla"}
 
 
+def _cap_percent(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except Exception:
+        return None
+    if not (number == number):  # NaN
+        return None
+    if number == float("inf") or number == float("-inf"):
+        return None
+    return max(0.0, min(100.0, number))
+
+
 def ping_host_status(host: str, timeout_seconds: int = 2) -> tuple[str, float | None]:
     addr = str(host or "").strip()
     if not addr:
@@ -1583,17 +1909,54 @@ def winrm_collect_metrics(host: str, settings: dict[str, Any], timeout_seconds: 
         "last_boot": "",
         "network_rx_mbps": None,
         "network_tx_mbps": None,
+        "windows_caption": "",
+        "windows_version": "",
+        "windows_build": "",
+        "windows_arch": "",
+        "computer_name": "",
+        "computer_model": "",
+        "domain": "",
+        "total_memory_gb": None,
+        "free_memory_gb": None,
         "disk_usage": [],
+        "interface_utilization": [],
     }
+
+    ps_preamble = "$ProgressPreference='SilentlyContinue';$ErrorActionPreference='SilentlyContinue';"
+
     def _parse_num(text: str) -> float | None:
         raw = str(text or "").strip()
         if not raw:
             return None
+        cleaned = raw.replace("%", "").strip()
         candidate = raw.replace(",", ".")
         try:
             return float(candidate)
         except Exception:
-            return None
+            try:
+                candidate = cleaned.replace(",", ".")
+                return float(candidate)
+            except Exception:
+                match = re.search(r"[-+]?\d+(?:[.,]\d+)?", cleaned)
+                if not match:
+                    return None
+                token = match.group(0).replace(",", ".")
+                try:
+                    return float(token)
+                except Exception:
+                    return None
+
+    def _is_ignorable_ps_stderr(text: str) -> bool:
+        raw = str(text or "").strip().lower()
+        if not raw:
+            return True
+        return "preparing modules for first use" in raw and "clixml" in raw
+
+    def _trim_error(text: str, max_len: int = 700) -> str:
+        raw = str(text or "").strip()
+        if len(raw) <= max_len:
+            return raw
+        return raw[:max_len] + "..."
     try:
         session = winrm.Session(target=endpoint, auth=(username, password), transport=auth)
     except Exception as exc:
@@ -1601,30 +1964,30 @@ def winrm_collect_metrics(host: str, settings: dict[str, Any], timeout_seconds: 
 
     try:
         cpu_cmd = (
+            f"{ps_preamble}"
             "$cpu='';"
-            "try{"
-            "$cpu=(Get-Counter '\\Processor(_Total)\\% Processor Time' -SampleInterval 1 -MaxSamples 1).CounterSamples[0].CookedValue;"
-            "}catch{};"
-            "if($cpu -eq '' -or $cpu -eq $null){"
-            "try{$cpu=((Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average)}catch{}"
+            "try{$cpu=((Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average)}catch{"
+            "try{$cpu=((Get-WmiObject Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average)}catch{}"
             "};"
             "if($cpu -ne '' -and $cpu -ne $null){[math]::Round([double]$cpu,2)}else{''}"
         )
         cpu_result = session.run_ps(cpu_cmd)
-        if int(getattr(cpu_result, "status_code", 1) or 1) == 0:
-            cpu_text = (cpu_result.std_out or b"").decode(errors="ignore").strip()
-            if cpu_text:
+        cpu_status = int(getattr(cpu_result, "status_code", 1) or 1)
+        cpu_text = (cpu_result.std_out or b"").decode(errors="ignore").strip()
+        if cpu_text:
                 cpu_num = _parse_num(cpu_text)
                 if cpu_num is not None:
-                    metrics["cpu_percent"] = cpu_num
-        else:
+                    metrics["cpu_percent"] = _cap_percent(cpu_num)
+        if metrics.get("cpu_percent") is None and cpu_status != 0:
             stderr = (cpu_result.std_err or b"").decode(errors="ignore").strip()
-            errors.append(f"cpu:{stderr or 'command_failed'}")
+            if not _is_ignorable_ps_stderr(stderr):
+                errors.append(f"cpu:{_trim_error(stderr or 'command_failed')}")
     except Exception as exc:
         errors.append(f"cpu:{exc}")
 
     try:
         mem_cmd = (
+            f"{ps_preamble}"
             "$os=$null;"
             "try{$os=Get-CimInstance Win32_OperatingSystem}catch{try{$os=Get-WmiObject Win32_OperatingSystem}catch{}};"
             "if($os -and $os.TotalVisibleMemorySize -gt 0){"
@@ -1633,34 +1996,65 @@ def winrm_collect_metrics(host: str, settings: dict[str, Any], timeout_seconds: 
             "}else{''}"
         )
         mem_result = session.run_ps(mem_cmd)
-        if int(getattr(mem_result, "status_code", 1) or 1) == 0:
-            mem_text = (mem_result.std_out or b"").decode(errors="ignore").strip()
-            if mem_text:
-                mem_num = _parse_num(mem_text)
-                if mem_num is not None:
-                    metrics["memory_percent"] = mem_num
-        else:
+        mem_status = int(getattr(mem_result, "status_code", 1) or 1)
+        mem_text = (mem_result.std_out or b"").decode(errors="ignore").strip()
+        if mem_text:
+            mem_num = _parse_num(mem_text)
+            if mem_num is not None:
+                metrics["memory_percent"] = mem_num
+        if metrics.get("memory_percent") is None and mem_status != 0:
             stderr = (mem_result.std_err or b"").decode(errors="ignore").strip()
-            errors.append(f"memory:{stderr or 'command_failed'}")
+            if not _is_ignorable_ps_stderr(stderr):
+                errors.append(f"memory:{_trim_error(stderr or 'command_failed')}")
     except Exception as exc:
         errors.append(f"memory:{exc}")
 
     try:
         extra_cmd = (
+            f"{ps_preamble}"
             "$os=$null;"
             "try{$os=Get-CimInstance Win32_OperatingSystem}catch{try{$os=Get-WmiObject Win32_OperatingSystem}catch{}};"
             "$boot='';$uptime=0;"
             "if($os){$boot=$os.LastBootUpTime; if($boot){$uptime=(New-TimeSpan -Start $boot -End (Get-Date)).TotalSeconds}};"
+            "$boot_iso=''; if($boot){$boot_iso=([DateTime]$boot).ToString('o')};"
+            "$caption='';$version='';$build='';$arch='';$hostn='';$domain='';$model='';$totalMemGb=$null;$freeMemGb=$null;"
+            "if($os){"
+            "$caption=[string]$os.Caption;"
+            "$version=[string]$os.Version;"
+            "$build=[string]$os.BuildNumber;"
+            "$arch=[string]$os.OSArchitecture;"
+            "if($os.TotalVisibleMemorySize -gt 0){$totalMemGb=[Math]::Round(([double]$os.TotalVisibleMemorySize/1024/1024),2)};"
+            "if($os.FreePhysicalMemory -ge 0){$freeMemGb=[Math]::Round(([double]$os.FreePhysicalMemory/1024/1024),2)}"
+            "};"
+            "$hostn=[string]$env:COMPUTERNAME;"
+            "$cs=$null; try{$cs=Get-CimInstance Win32_ComputerSystem}catch{try{$cs=Get-WmiObject Win32_ComputerSystem}catch{}};"
+            "if($cs){$domain=[string]$cs.Domain; $model=[string]$cs.Model};"
+            "$mem=0;"
+            "if($os -and $os.TotalVisibleMemorySize -gt 0){"
+            "$usedMem=([double]$os.TotalVisibleMemorySize-[double]$os.FreePhysicalMemory);"
+            "$mem=[math]::Round(($usedMem*100)/[double]$os.TotalVisibleMemorySize,2)"
+            "};"
             "$rx=0;$tx=0;"
-            "try{$rx=[double]((Get-Counter '\\Network Interface(*)\\Bytes Received/sec').CounterSamples | Measure-Object -Property CookedValue -Sum).Sum}catch{};"
-            "try{$tx=[double]((Get-Counter '\\Network Interface(*)\\Bytes Sent/sec').CounterSamples | Measure-Object -Property CookedValue -Sum).Sum}catch{};"
+            "try{$n=Get-CimInstance Win32_PerfFormattedData_Tcpip_NetworkInterface; if($n){$rx=[double](($n | Measure-Object -Property BytesReceivedPersec -Sum).Sum); $tx=[double](($n | Measure-Object -Property BytesSentPersec -Sum).Sum)}}catch{"
+            "try{$n=Get-WmiObject Win32_PerfFormattedData_Tcpip_NetworkInterface; if($n){$rx=[double](($n | Measure-Object -Property BytesReceivedPersec -Sum).Sum); $tx=[double](($n | Measure-Object -Property BytesSentPersec -Sum).Sum)}}catch{}"
+            "};"
             "$d=@();"
             "try{$d=Get-CimInstance Win32_LogicalDisk -Filter \"DriveType=3\" | Select-Object @{N='label';E={$_.DeviceID}}, @{N='size';E={[double]$_.Size}}, @{N='free';E={[double]$_.FreeSpace}}}catch{"
             "try{$d=Get-WmiObject Win32_LogicalDisk -Filter \"DriveType=3\" | Select-Object @{N='label';E={$_.DeviceID}}, @{N='size';E={[double]$_.Size}}, @{N='free';E={[double]$_.FreeSpace}}}catch{}"
             "};"
             "$payload=[PSCustomObject]@{"
-            "last_boot=($boot ? ([DateTime]$boot).ToString('o') : '');"
+            "last_boot=$boot_iso;"
             "uptime_seconds=[int][Math]::Round([double]$uptime,0);"
+            "windows_caption=$caption;"
+            "windows_version=$version;"
+            "windows_build=$build;"
+            "windows_arch=$arch;"
+            "computer_name=$hostn;"
+            "computer_model=$model;"
+            "domain=$domain;"
+            "total_memory_gb=$totalMemGb;"
+            "free_memory_gb=$freeMemGb;"
+            "memory_percent=[Math]::Round([double]$mem,2);"
             "network_rx_mbps=[Math]::Round(([double]$rx*8/1000000),2);"
             "network_tx_mbps=[Math]::Round(([double]$tx*8/1000000),2);"
             "disks=$d"
@@ -1668,48 +2062,243 @@ def winrm_collect_metrics(host: str, settings: dict[str, Any], timeout_seconds: 
             "$payload|ConvertTo-Json -Depth 5 -Compress"
         )
         extra_result = session.run_ps(extra_cmd)
-        if int(getattr(extra_result, "status_code", 1) or 1) == 0:
-            extra_text = (extra_result.std_out or b"").decode(errors="ignore").strip()
-            if extra_text:
-                try:
-                    parsed = json.loads(extra_text)
-                except Exception:
-                    parsed = {}
-                if isinstance(parsed, dict):
-                    metrics["last_boot"] = str(parsed.get("last_boot", "")).strip()
-                    metrics["uptime_seconds"] = parsed.get("uptime_seconds")
-                    metrics["network_rx_mbps"] = parsed.get("network_rx_mbps")
-                    metrics["network_tx_mbps"] = parsed.get("network_tx_mbps")
-                    raw_disks = parsed.get("disks", [])
-                    disks = raw_disks if isinstance(raw_disks, list) else ([raw_disks] if isinstance(raw_disks, dict) else [])
-                    out_disks: list[dict[str, Any]] = []
-                    for d in disks:
-                        if not isinstance(d, dict):
-                            continue
-                        label = str(d.get("label", "")).strip()
-                        try:
-                            size = float(d.get("size", 0) or 0)
-                            free = float(d.get("free", 0) or 0)
-                        except Exception:
-                            size = 0.0
-                            free = 0.0
-                        used_pct = None
-                        if size > 0:
-                            used_pct = max(0.0, min(100.0, ((size - free) * 100.0) / size))
-                        out_disks.append(
-                            {
-                                "label": label or "-",
-                                "used_percent": used_pct,
-                                "free_gb": round(max(0.0, free) / (1024.0**3), 2),
-                            }
-                        )
-                    metrics["disk_usage"] = out_disks
-        else:
+        extra_status = int(getattr(extra_result, "status_code", 1) or 1)
+        extra_text = (extra_result.std_out or b"").decode(errors="ignore").strip()
+        parsed_ok = False
+        if extra_text:
+            try:
+                parsed = json.loads(extra_text)
+            except Exception:
+                parsed = {}
+            if isinstance(parsed, dict):
+                parsed_ok = True
+                metrics["last_boot"] = str(parsed.get("last_boot", "")).strip()
+                metrics["uptime_seconds"] = parsed.get("uptime_seconds")
+                metrics["windows_caption"] = str(parsed.get("windows_caption", "")).strip()
+                metrics["windows_version"] = str(parsed.get("windows_version", "")).strip()
+                metrics["windows_build"] = str(parsed.get("windows_build", "")).strip()
+                metrics["windows_arch"] = str(parsed.get("windows_arch", "")).strip()
+                metrics["computer_name"] = str(parsed.get("computer_name", "")).strip()
+                metrics["computer_model"] = str(parsed.get("computer_model", "")).strip()
+                metrics["domain"] = str(parsed.get("domain", "")).strip()
+                metrics["total_memory_gb"] = parsed.get("total_memory_gb")
+                metrics["free_memory_gb"] = parsed.get("free_memory_gb")
+                if metrics.get("memory_percent") is None:
+                    mem_extra = _parse_num(str(parsed.get("memory_percent", "")))
+                    if mem_extra is not None:
+                        metrics["memory_percent"] = mem_extra
+                metrics["network_rx_mbps"] = parsed.get("network_rx_mbps")
+                metrics["network_tx_mbps"] = parsed.get("network_tx_mbps")
+                raw_disks = parsed.get("disks", [])
+                disks = raw_disks if isinstance(raw_disks, list) else ([raw_disks] if isinstance(raw_disks, dict) else [])
+                out_disks: list[dict[str, Any]] = []
+                for d in disks:
+                    if not isinstance(d, dict):
+                        continue
+                    label = str(d.get("label", "")).strip()
+                    try:
+                        size = float(d.get("size", 0) or 0)
+                        free = float(d.get("free", 0) or 0)
+                    except Exception:
+                        size = 0.0
+                        free = 0.0
+                    used_pct = None
+                    if size > 0:
+                        used_pct = max(0.0, min(100.0, ((size - free) * 100.0) / size))
+                    out_disks.append(
+                        {
+                            "label": label or "-",
+                            "used_percent": used_pct,
+                            "free_gb": round(max(0.0, free) / (1024.0**3), 2),
+                        }
+                    )
+                metrics["disk_usage"] = out_disks
+        if not parsed_ok and extra_status != 0:
             stderr = (extra_result.std_err or b"").decode(errors="ignore").strip()
-            errors.append(f"extras:{stderr or 'command_failed'}")
+            if not _is_ignorable_ps_stderr(stderr):
+                errors.append(f"extras:{_trim_error(stderr or 'command_failed')}")
     except Exception as exc:
         errors.append(f"extras:{exc}")
 
+    try:
+        iface_cmd = (
+            f"{ps_preamble}"
+            "$rows=@();"
+            "try{"
+            "$n=Get-CimInstance Win32_PerfFormattedData_Tcpip_NetworkInterface;"
+            "if(-not $n){$n=Get-WmiObject Win32_PerfFormattedData_Tcpip_NetworkInterface};"
+            "foreach($i in $n){"
+            "$name=[string]$i.Name;"
+            "if(-not $name){continue};"
+            "$bw=[double]$i.CurrentBandwidth;"
+            "$tx=0;$rx=0;"
+            "if($bw -gt 0){"
+            "$tx=[Math]::Round(([double]$i.BytesSentPersec*8*100)/$bw,2);"
+            "$rx=[Math]::Round(([double]$i.BytesReceivedPersec*8*100)/$bw,2)"
+            "};"
+            "if($tx -lt 0){$tx=0}; if($tx -gt 100){$tx=100};"
+            "if($rx -lt 0){$rx=0}; if($rx -gt 100){$rx=100};"
+            "$rows += [PSCustomObject]@{interface=$name;status='up';description='';tx_percent=$tx;rx_percent=$rx}"
+            "}"
+            "}catch{};"
+            "$rows|ConvertTo-Json -Depth 4 -Compress"
+        )
+        iface_result = session.run_ps(iface_cmd)
+        iface_status = int(getattr(iface_result, "status_code", 1) or 1)
+        iface_text = (iface_result.std_out or b"").decode(errors="ignore").strip()
+        parsed_ifaces: list[dict[str, Any]] = []
+        if iface_text:
+            try:
+                iface_obj = json.loads(iface_text)
+            except Exception:
+                iface_obj = []
+            iface_rows = iface_obj if isinstance(iface_obj, list) else ([iface_obj] if isinstance(iface_obj, dict) else [])
+            for item in iface_rows:
+                if not isinstance(item, dict):
+                    continue
+                iface_name = str(item.get("interface", "")).strip()
+                if not iface_name:
+                    continue
+                tx_val = _parse_num(str(item.get("tx_percent", "")))
+                rx_val = _parse_num(str(item.get("rx_percent", "")))
+                tx_pct = max(0.0, min(100.0, float(tx_val))) if tx_val is not None else None
+                rx_pct = max(0.0, min(100.0, float(rx_val))) if rx_val is not None else None
+                parsed_ifaces.append(
+                    {
+                        "interface": iface_name,
+                        "description": str(item.get("description", "")).strip(),
+                        "status": str(item.get("status", "up") or "up").strip().lower(),
+                        "tx_percent": tx_pct,
+                        "rx_percent": rx_pct,
+                    }
+                )
+        if parsed_ifaces:
+            metrics["interface_utilization"] = parsed_ifaces
+        elif iface_status != 0:
+            stderr = (iface_result.std_err or b"").decode(errors="ignore").strip()
+            if not _is_ignorable_ps_stderr(stderr):
+                errors.append(f"interfaces:{_trim_error(stderr or 'command_failed')}")
+    except Exception as exc:
+        errors.append(f"interfaces:{exc}")
+
+    return metrics, errors
+
+
+def winrm_collect_live_gauges(host: str, settings: dict[str, Any], timeout_seconds: int = 6) -> tuple[dict[str, Any], list[str]]:
+    if not WINRM_AVAILABLE or winrm is None:
+        return {}, ["pywinrm_not_installed"]
+    username = str(settings.get("username", "")).strip()
+    password = str(settings.get("password", "")).strip()
+    if not username or not password:
+        return {}, ["winrm_credentials_missing"]
+    try:
+        winrm_port = max(1, min(65535, int(settings.get("winrm_port", 5985) or 5985)))
+    except Exception:
+        winrm_port = 5985
+    auth = str(settings.get("winrm_auth", "ntlm")).strip().lower() or "ntlm"
+    if auth not in {"ntlm", "kerberos", "basic", "credssp"}:
+        auth = "ntlm"
+    scheme = "https" if winrm_port == 5986 else "http"
+    endpoint = f"{scheme}://{host}:{winrm_port}/wsman"
+    metrics: dict[str, Any] = {
+        "cpu_percent": None,
+        "memory_percent": None,
+        "uptime_seconds": None,
+        "last_boot": "",
+        "network_rx_mbps": None,
+        "network_tx_mbps": None,
+        "windows_caption": "",
+        "windows_version": "",
+        "windows_build": "",
+        "windows_arch": "",
+        "computer_name": "",
+        "computer_model": "",
+        "domain": "",
+        "total_memory_gb": None,
+        "free_memory_gb": None,
+    }
+    errors: list[str] = []
+    try:
+        session = winrm.Session(target=endpoint, auth=(username, password), transport=auth)
+    except Exception as exc:
+        return metrics, [f"session_init:{exc}"]
+
+    ps_cmd = (
+        "$ProgressPreference='SilentlyContinue';$ErrorActionPreference='SilentlyContinue';"
+        "$cpu='';"
+        "try{$cpu=((Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average)}catch{"
+        "try{$cpu=((Get-WmiObject Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average)}catch{}"
+        "};"
+        "$os=$null;"
+        "try{$os=Get-CimInstance Win32_OperatingSystem}catch{try{$os=Get-WmiObject Win32_OperatingSystem}catch{}};"
+        "$boot='';$uptime=0;$mem=$null;$caption='';$version='';$build='';$arch='';$totalMemGb=$null;$freeMemGb=$null;"
+        "if($os){"
+        "$boot=$os.LastBootUpTime;"
+        "if($boot){$uptime=(New-TimeSpan -Start $boot -End (Get-Date)).TotalSeconds};"
+        "$caption=[string]$os.Caption;$version=[string]$os.Version;$build=[string]$os.BuildNumber;$arch=[string]$os.OSArchitecture;"
+        "if($os.TotalVisibleMemorySize -gt 0){"
+        "$usedMem=([double]$os.TotalVisibleMemorySize-[double]$os.FreePhysicalMemory);"
+        "$mem=[math]::Round(($usedMem*100)/[double]$os.TotalVisibleMemorySize,2);"
+        "$totalMemGb=[Math]::Round(([double]$os.TotalVisibleMemorySize/1024/1024),2)"
+        "};"
+        "if($os.FreePhysicalMemory -ge 0){$freeMemGb=[Math]::Round(([double]$os.FreePhysicalMemory/1024/1024),2)}"
+        "};"
+        "$boot_iso=''; if($boot){$boot_iso=([DateTime]$boot).ToString('o')};"
+        "$hostn=[string]$env:COMPUTERNAME;$domain='';$model='';"
+        "$cs=$null; try{$cs=Get-CimInstance Win32_ComputerSystem}catch{try{$cs=Get-WmiObject Win32_ComputerSystem}catch{}};"
+        "if($cs){$domain=[string]$cs.Domain; $model=[string]$cs.Model};"
+        "$rx=$null;$tx=$null;"
+        "try{$n=Get-CimInstance Win32_PerfFormattedData_Tcpip_NetworkInterface; if($n){$rx=[double](($n | Measure-Object -Property BytesReceivedPersec -Sum).Sum); $tx=[double](($n | Measure-Object -Property BytesSentPersec -Sum).Sum)}}catch{"
+        "try{$n=Get-WmiObject Win32_PerfFormattedData_Tcpip_NetworkInterface; if($n){$rx=[double](($n | Measure-Object -Property BytesReceivedPersec -Sum).Sum); $tx=[double](($n | Measure-Object -Property BytesSentPersec -Sum).Sum)}}catch{}"
+        "};"
+        "$cpuVal=$null; if($cpu -ne '' -and $cpu -ne $null){$cpuVal=[math]::Round([double]$cpu,2)};"
+        "$memVal=$null; if($mem -ne '' -and $mem -ne $null){$memVal=[Math]::Round([double]$mem,2)};"
+        "$rxVal=$null; if($rx -ne $null){$rxVal=[Math]::Round(([double]$rx*8/1000000),2)};"
+        "$txVal=$null; if($tx -ne $null){$txVal=[Math]::Round(([double]$tx*8/1000000),2)};"
+        "$payload=[PSCustomObject]@{"
+        "cpu_percent=$cpuVal;"
+        "memory_percent=$memVal;"
+        "last_boot=$boot_iso;"
+        "uptime_seconds=[int][Math]::Round([double]$uptime,0);"
+        "windows_caption=$caption;windows_version=$version;windows_build=$build;windows_arch=$arch;"
+        "computer_name=$hostn;computer_model=$model;domain=$domain;"
+        "total_memory_gb=$totalMemGb;free_memory_gb=$freeMemGb;"
+        "network_rx_mbps=$rxVal;"
+        "network_tx_mbps=$txVal"
+        "};"
+        "$payload|ConvertTo-Json -Depth 4 -Compress"
+    )
+    try:
+        result = session.run_ps(ps_cmd)
+        status = int(getattr(result, "status_code", 1) or 1)
+        out_text = (result.std_out or b"").decode(errors="ignore").strip()
+        if out_text:
+            try:
+                parsed = json.loads(out_text)
+            except Exception:
+                parsed = {}
+            if isinstance(parsed, dict):
+                metrics["cpu_percent"] = _cap_percent(parsed.get("cpu_percent"))
+                metrics["memory_percent"] = _cap_percent(parsed.get("memory_percent"))
+                metrics["last_boot"] = str(parsed.get("last_boot", "")).strip()
+                metrics["uptime_seconds"] = parsed.get("uptime_seconds")
+                metrics["windows_caption"] = str(parsed.get("windows_caption", "")).strip()
+                metrics["windows_version"] = str(parsed.get("windows_version", "")).strip()
+                metrics["windows_build"] = str(parsed.get("windows_build", "")).strip()
+                metrics["windows_arch"] = str(parsed.get("windows_arch", "")).strip()
+                metrics["computer_name"] = str(parsed.get("computer_name", "")).strip()
+                metrics["computer_model"] = str(parsed.get("computer_model", "")).strip()
+                metrics["domain"] = str(parsed.get("domain", "")).strip()
+                metrics["total_memory_gb"] = parsed.get("total_memory_gb")
+                metrics["free_memory_gb"] = parsed.get("free_memory_gb")
+                metrics["network_rx_mbps"] = parsed.get("network_rx_mbps")
+                metrics["network_tx_mbps"] = parsed.get("network_tx_mbps")
+        if status != 0 and not out_text:
+            err_text = (result.std_err or b"").decode(errors="ignore").strip()
+            if err_text:
+                errors.append(f"live:{err_text[:700]}")
+    except Exception as exc:
+        errors.append(f"live:{exc}")
     return metrics, errors
 
 
@@ -1802,7 +2391,18 @@ def snmp_get_value(host: str, settings: dict[str, Any], oid: str, timeout_second
             return None, str(error_status.prettyPrint())
         if not var_binds:
             return None, "empty_response"
-        value = var_binds[0][1]
+        value = None
+        try:
+            value = var_binds[0][1]
+        except Exception:
+            try:
+                first = tuple(var_binds[0])
+                if len(first) >= 2:
+                    value = first[1]
+            except Exception:
+                value = None
+        if value is None:
+            return None, "empty_response"
         return value, ""
     except Exception as exc:
         return None, str(exc)
@@ -1839,10 +2439,21 @@ def snmp_walk_values(
             if error_status:
                 return values, str(error_status.prettyPrint())
             for var_bind in var_binds or []:
-                if len(var_bind) >= 2:
-                    values.append(var_bind[1])
-                    if len(values) >= max(1, int(max_rows)):
-                        return values, ""
+                value_obj = None
+                try:
+                    value_obj = var_bind[1]
+                except Exception:
+                    try:
+                        pair = tuple(var_bind)
+                        if len(pair) >= 2:
+                            value_obj = pair[1]
+                    except Exception:
+                        value_obj = None
+                if value_obj is None:
+                    continue
+                values.append(value_obj)
+                if len(values) >= max(1, int(max_rows)):
+                    return values, ""
         return values, ""
     except Exception as exc:
         return values, str(exc)
@@ -1879,7 +2490,23 @@ def snmp_walk_indexed_values(
                 return out, str(error_indication)
             if error_status:
                 return out, str(error_status.prettyPrint())
-            for name_obj, value_obj in var_binds or []:
+            for var_bind in var_binds or []:
+                name_obj = None
+                value_obj = None
+                try:
+                    name_obj = var_bind[0]
+                    value_obj = var_bind[1]
+                except Exception:
+                    try:
+                        pair = tuple(var_bind)
+                        if len(pair) >= 2:
+                            name_obj = pair[0]
+                            value_obj = pair[1]
+                    except Exception:
+                        name_obj = None
+                        value_obj = None
+                if name_obj is None:
+                    continue
                 oid_text = str(name_obj or "").strip()
                 if not oid_text.startswith(prefix):
                     continue
@@ -1898,7 +2525,16 @@ def snmp_walk_indexed_values(
 def snmp_collect_interface_utilization(
     host: str, settings: dict[str, Any], selected_interfaces: set[str] | None = None, sample_seconds: float = 1.0
 ) -> list[dict[str, Any]]:
-    selected = {str(item).strip().lower() for item in (selected_interfaces or set()) if str(item).strip()}
+    selected_exact: set[str] = set()
+    selected_normalized: set[str] = set()
+    for item in (selected_interfaces or set()):
+        text = str(item).strip()
+        if not text:
+            continue
+        selected_exact.add(text.lower())
+        normalized = _normalize_interface_key(text)
+        if normalized:
+            selected_normalized.add(normalized)
     names, _ = snmp_walk_indexed_values(host, settings, "1.3.6.1.2.1.31.1.1.1.1", max_rows=4096)
     if not names:
         names, _ = snmp_walk_indexed_values(host, settings, "1.3.6.1.2.1.2.2.1.2", max_rows=4096)
@@ -1937,8 +2573,10 @@ def snmp_collect_interface_utilization(
         if_name = str(names.get(idx, "")).strip()
         if not if_name:
             continue
-        if selected and if_name.strip().lower() not in selected:
-            continue
+        if selected_exact or selected_normalized:
+            normalized_if_name = _normalize_interface_key(if_name)
+            if if_name.lower() not in selected_exact and normalized_if_name not in selected_normalized:
+                continue
         if_desc = str(alias.get(idx, "")).strip()
         try:
             oper_code = int(oper.get(idx, 0) or 0)
@@ -1986,6 +2624,83 @@ def snmp_collect_interface_utilization(
     return rows
 
 
+def snmp_collect_memory_percent(host: str, settings: dict[str, Any]) -> tuple[float | None, list[str]]:
+    errors: list[str] = []
+
+    def _to_float(value: Any) -> float | None:
+        if value is None:
+            return None
+        try:
+            return float(int(value))
+        except Exception:
+            try:
+                return float(str(value).strip())
+            except Exception:
+                return None
+
+    # Strategy 1: Cisco memory pool MIB (works for many Cisco network devices).
+    used_values, used_err = snmp_walk_values(host, settings, "1.3.6.1.4.1.9.9.48.1.1.1.5", max_rows=256)
+    free_values, free_err = snmp_walk_values(host, settings, "1.3.6.1.4.1.9.9.48.1.1.1.6", max_rows=256)
+    if not used_err and not free_err and used_values and free_values:
+        try:
+            total_used = float(sum(int(v) for v in used_values))
+            total_free = float(sum(int(v) for v in free_values))
+            denom = total_used + total_free
+            if denom > 0:
+                return (total_used * 100.0) / denom, errors
+        except Exception as exc:
+            errors.append(f"cisco_pool_calc:{exc}")
+    else:
+        if used_err:
+            errors.append(f"cisco_pool_used:{used_err}")
+        if free_err:
+            errors.append(f"cisco_pool_free:{free_err}")
+
+    # Strategy 2: HOST-RESOURCES-MIB (generic devices/servers).
+    type_map, type_err = snmp_walk_indexed_values(host, settings, "1.3.6.1.2.1.25.2.3.1.2", max_rows=1024)
+    size_map, size_err = snmp_walk_indexed_values(host, settings, "1.3.6.1.2.1.25.2.3.1.5", max_rows=1024)
+    used_map, used_err2 = snmp_walk_indexed_values(host, settings, "1.3.6.1.2.1.25.2.3.1.6", max_rows=1024)
+    ram_type_oid = "1.3.6.1.2.1.25.2.1.2"
+    if type_map and size_map and used_map and not (type_err or size_err or used_err2):
+        ram_ratios: list[tuple[float, float]] = []
+        for idx, raw_type in type_map.items():
+            type_text = str(raw_type or "").strip()
+            if type_text != ram_type_oid:
+                continue
+            size_val = _to_float(size_map.get(idx))
+            used_val = _to_float(used_map.get(idx))
+            if size_val is None or used_val is None or size_val <= 0:
+                continue
+            ratio = max(0.0, min(100.0, (used_val * 100.0) / size_val))
+            # Keep size with ratio to prefer the largest RAM entry if multiple exist.
+            ram_ratios.append((size_val, ratio))
+        if ram_ratios:
+            ram_ratios.sort(key=lambda item: item[0], reverse=True)
+            return ram_ratios[0][1], errors
+    else:
+        if type_err:
+            errors.append(f"hrStorage_type:{type_err}")
+        if size_err:
+            errors.append(f"hrStorage_size:{size_err}")
+        if used_err2:
+            errors.append(f"hrStorage_used:{used_err2}")
+
+    # Strategy 3: UCD-SNMP-MIB memory (common on Linux/Unix SNMP agents).
+    total_real, total_err = snmp_get_value(host, settings, "1.3.6.1.4.1.2021.4.5.0")
+    avail_real, avail_err = snmp_get_value(host, settings, "1.3.6.1.4.1.2021.4.6.0")
+    total_num = _to_float(total_real)
+    avail_num = _to_float(avail_real)
+    if total_num is not None and avail_num is not None and total_num > 0:
+        used_num = max(0.0, total_num - avail_num)
+        return max(0.0, min(100.0, (used_num * 100.0) / total_num)), errors
+    if total_err:
+        errors.append(f"ucd_total:{total_err}")
+    if avail_err:
+        errors.append(f"ucd_avail:{avail_err}")
+
+    return None, errors
+
+
 def poll_device_monitoring_sample(
     device: dict[str, Any], settings: dict[str, Any], pre_ping: tuple[str, float | None] | None = None
 ) -> dict[str, Any]:
@@ -2025,7 +2740,7 @@ def poll_device_monitoring_sample(
                 snmp_errors.append(f"cpu:{err}")
             elif cpu_val is not None:
                 try:
-                    cpu_percent = float(int(cpu_val))
+                    cpu_percent = _cap_percent(float(int(cpu_val)))
                     snmp_success += 1
                 except Exception:
                     pass
@@ -2061,23 +2776,14 @@ def poll_device_monitoring_sample(
                 snmp_success += 1
         if "memory" in selected_metrics:
             snmp_attempts += 1
-            used_values, used_err = snmp_walk_values(host, settings, "1.3.6.1.4.1.9.9.48.1.1.1.5", max_rows=256)
-            free_values, free_err = snmp_walk_values(host, settings, "1.3.6.1.4.1.9.9.48.1.1.1.6", max_rows=256)
-            if used_err or free_err or not used_values or not free_values:
-                if used_err:
-                    snmp_errors.append(f"memUsed:{used_err}")
-                if free_err:
-                    snmp_errors.append(f"memFree:{free_err}")
+            memory_value, memory_errors = snmp_collect_memory_percent(host, settings)
+            if memory_value is not None:
+                memory_percent = memory_value
+                snmp_success += 1
             else:
-                try:
-                    total_used = float(sum(int(v) for v in used_values))
-                    total_free = float(sum(int(v) for v in free_values))
-                    denom = total_used + total_free
-                    if denom > 0:
-                        memory_percent = (total_used * 100.0) / denom
-                        snmp_success += 1
-                except Exception as exc:
-                    snmp_errors.append(f"memory_calc:{exc}")
+                for err_text in memory_errors[:6]:
+                    if str(err_text).strip():
+                        snmp_errors.append(f"memory:{err_text}")
         if snmp_errors:
             details["snmp_errors"] = snmp_errors
         # Store per-interface utilization snapshot so dashboard can render from DB only.
@@ -2113,12 +2819,19 @@ def poll_device_monitoring_sample(
                     status_map = {1: "up", 2: "down"}
                     fallback_rows: list[dict[str, Any]] = []
                     selected_ifaces_lc = {str(v).strip().lower() for v in selected_ifaces if str(v).strip()}
+                    selected_ifaces_norm = {
+                        _normalize_interface_key(str(v).strip())
+                        for v in selected_ifaces
+                        if str(v).strip() and _normalize_interface_key(str(v).strip())
+                    }
                     for idx in sorted(name_map.keys()):
                         if_name = str(name_map.get(idx, "")).strip()
                         if not if_name:
                             continue
-                        if selected_ifaces_lc and if_name.lower() not in selected_ifaces_lc:
-                            continue
+                        if selected_ifaces_lc or selected_ifaces_norm:
+                            if_name_norm = _normalize_interface_key(if_name)
+                            if if_name.lower() not in selected_ifaces_lc and if_name_norm not in selected_ifaces_norm:
+                                continue
                         try:
                             oper_code = int(oper_map.get(idx, 0) or 0)
                         except Exception:
@@ -2156,13 +2869,85 @@ def poll_device_monitoring_sample(
             "last_boot": metrics.get("last_boot"),
             "network_rx_mbps": metrics.get("network_rx_mbps"),
             "network_tx_mbps": metrics.get("network_tx_mbps"),
+            "windows_caption": metrics.get("windows_caption"),
+            "windows_version": metrics.get("windows_version"),
+            "windows_build": metrics.get("windows_build"),
+            "windows_arch": metrics.get("windows_arch"),
+            "computer_name": metrics.get("computer_name"),
+            "computer_model": metrics.get("computer_model"),
+            "domain": metrics.get("domain"),
+            "total_memory_gb": metrics.get("total_memory_gb"),
+            "free_memory_gb": metrics.get("free_memory_gb"),
             "disk_usage": metrics.get("disk_usage", []),
         }
+        if "interfaces" in selected_metrics:
+            winrm_attempts += 1
+            selected_ifaces_raw = settings.get("selected_interfaces", [])
+            selected_ifaces = (
+                {str(item).strip() for item in selected_ifaces_raw if str(item).strip()}
+                if isinstance(selected_ifaces_raw, list)
+                else set()
+            )
+            selected_ifaces_lc = {str(v).strip().lower() for v in selected_ifaces if str(v).strip()}
+            selected_ifaces_norm = {
+                _normalize_interface_key(str(v).strip())
+                for v in selected_ifaces
+                if str(v).strip() and _normalize_interface_key(str(v).strip())
+            }
+            iface_rows_raw = metrics.get("interface_utilization", [])
+            iface_rows = iface_rows_raw if isinstance(iface_rows_raw, list) else []
+            normalized_rows: list[dict[str, Any]] = []
+            up_count = 0
+            down_count = 0
+            for row in iface_rows:
+                if not isinstance(row, dict):
+                    continue
+                iface_name = str(row.get("interface", "")).strip()
+                if not iface_name:
+                    continue
+                iface_lc = iface_name.lower()
+                iface_norm = _normalize_interface_key(iface_name) or iface_lc
+                if selected_ifaces_lc or selected_ifaces_norm:
+                    if iface_lc not in selected_ifaces_lc and iface_norm not in selected_ifaces_norm:
+                        continue
+                status_raw = str(row.get("status", "unknown") or "unknown").strip().lower()
+                status_value = status_raw if status_raw in {"up", "down", "unknown"} else "unknown"
+                if status_value == "up":
+                    up_count += 1
+                elif status_value == "down":
+                    down_count += 1
+                try:
+                    tx_val = row.get("tx_percent")
+                    tx_percent = max(0.0, min(100.0, float(tx_val))) if tx_val is not None else None
+                except Exception:
+                    tx_percent = None
+                try:
+                    rx_val = row.get("rx_percent")
+                    rx_percent = max(0.0, min(100.0, float(rx_val))) if rx_val is not None else None
+                except Exception:
+                    rx_percent = None
+                normalized_rows.append(
+                    {
+                        "interface": iface_name,
+                        "description": str(row.get("description", "")).strip(),
+                        "status": status_value,
+                        "tx_percent": tx_percent,
+                        "rx_percent": rx_percent,
+                    }
+                )
+            if normalized_rows:
+                details["interface_utilization"] = normalized_rows
+                interfaces_up = up_count
+                interfaces_down = down_count
+                winrm_success += 1
+            else:
+                details["interface_utilization"] = []
+                winrm_errors.append("interfaces:unavailable")
         if "cpu" in selected_metrics:
             winrm_attempts += 1
             cpu_val = metrics.get("cpu_percent")
             if cpu_val is not None:
-                cpu_percent = float(cpu_val)
+                cpu_percent = _cap_percent(float(cpu_val))
                 winrm_success += 1
             else:
                 winrm_errors.append("cpu:unavailable")
@@ -2200,50 +2985,339 @@ def poll_device_monitoring_sample(
         "collection_mode": mode,
         "status": status,
         "severity": severity,
-        "cpu_percent": cpu_percent,
+        "cpu_percent": _cap_percent(cpu_percent),
         "memory_percent": memory_percent,
         "interfaces_up": interfaces_up,
         "interfaces_down": interfaces_down,
         "sla_ms": sla_ms,
+        "cpu_warn": cpu_warn,
+        "memory_warn": memory_warn,
         "details_json": json.dumps(details),
         "collected_at": datetime.now(timezone.utc).isoformat(),
     }
 
 
 def save_monitoring_sample(sample: dict[str, Any]) -> None:
-    with db_conn() as conn:
-        conn.execute(
+    def _normalized_collected_at(raw_value: Any) -> str:
+        text = str(raw_value or "").strip()
+        if not text:
+            return datetime.now(timezone.utc).isoformat()
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc).isoformat()
+        except Exception:
+            return datetime.now(timezone.utc).isoformat()
+
+    def _safe_float(value: Any) -> float | None:
+        if value is None:
+            return None
+        try:
+            val = float(value)
+        except Exception:
+            return None
+        if not (val == val):  # NaN check
+            return None
+        return val
+
+    def _parse_details(raw_json: str) -> dict[str, Any]:
+        try:
+            obj = json.loads(raw_json)
+        except Exception:
+            return {}
+        return obj if isinstance(obj, dict) else {}
+
+    def _extract_interface_rows(details_obj: dict[str, Any]) -> list[dict[str, Any]]:
+        rows_raw = details_obj.get("interface_utilization", [])
+        if not isinstance(rows_raw, list):
+            return []
+        out: list[dict[str, Any]] = []
+        for row in rows_raw:
+            if not isinstance(row, dict):
+                continue
+            iface = str(row.get("interface", "")).strip()
+            if not iface:
+                continue
+            status = str(row.get("status", "unknown") or "unknown").strip().lower()
+            if status not in {"up", "down", "unknown", "connected", "disable", "notconnected", "err-disable"}:
+                status = "unknown"
+            out.append(
+                {
+                    "interface_name": iface,
+                    "interface_description": str(row.get("description", "")).strip(),
+                    "oper_status": status,
+                    "tx_percent": _safe_float(row.get("tx_percent")),
+                    "rx_percent": _safe_float(row.get("rx_percent")),
+                    "details_json": json.dumps({"source": "poll"}),
+                }
+            )
+        return out
+
+    def _build_active_alerts(sample_obj: dict[str, Any], details_obj: dict[str, Any]) -> list[dict[str, Any]]:
+        alerts: list[dict[str, Any]] = []
+        status = str(sample_obj.get("status", "unknown")).strip().lower()
+        host_name = str(sample_obj.get("host", "")).strip()
+        sample_ts = str(sample_obj.get("collected_at", "")).strip()
+
+        cpu_val = _safe_float(sample_obj.get("cpu_percent"))
+        mem_val = _safe_float(sample_obj.get("memory_percent"))
+        sla_val = _safe_float(sample_obj.get("sla_ms"))
+        cpu_warn = _safe_float(sample_obj.get("cpu_warn"))
+        mem_warn = _safe_float(sample_obj.get("memory_warn"))
+        if_down_raw = sample_obj.get("interfaces_down")
+        try:
+            interfaces_down = int(if_down_raw) if if_down_raw is not None else None
+        except Exception:
+            interfaces_down = None
+
+        if status == "down":
+            alerts.append(
+                {
+                    "alert_key": "device_down",
+                    "alert_type": "availability",
+                    "severity": "critical",
+                    "message": f"Device {host_name or sample_obj.get('device_name', '')} is DOWN",
+                    "threshold_value": None,
+                    "last_value": 0.0,
+                    "details_json": json.dumps({"status": status, "sample_collected_at": sample_ts}),
+                }
+            )
+        if cpu_val is not None and cpu_warn is not None and cpu_val >= cpu_warn:
+            alerts.append(
+                {
+                    "alert_key": "cpu_high",
+                    "alert_type": "cpu",
+                    "severity": "warning",
+                    "message": f"CPU high: {cpu_val:.2f}% >= {cpu_warn:.2f}%",
+                    "threshold_value": cpu_warn,
+                    "last_value": cpu_val,
+                    "details_json": json.dumps({"cpu_percent": cpu_val, "threshold": cpu_warn}),
+                }
+            )
+        if mem_val is not None and mem_warn is not None and mem_val >= mem_warn:
+            alerts.append(
+                {
+                    "alert_key": "memory_high",
+                    "alert_type": "memory",
+                    "severity": "warning",
+                    "message": f"Memory high: {mem_val:.2f}% >= {mem_warn:.2f}%",
+                    "threshold_value": mem_warn,
+                    "last_value": mem_val,
+                    "details_json": json.dumps({"memory_percent": mem_val, "threshold": mem_warn}),
+                }
+            )
+        if interfaces_down is not None and interfaces_down > 0:
+            alerts.append(
+                {
+                    "alert_key": "interfaces_down",
+                    "alert_type": "interfaces",
+                    "severity": "warning",
+                    "message": f"{interfaces_down} interface(s) reported DOWN",
+                    "threshold_value": 0.0,
+                    "last_value": float(interfaces_down),
+                    "details_json": json.dumps({"interfaces_down": interfaces_down}),
+                }
+            )
+        # Response-time warning only for very high values to reduce noise.
+        if sla_val is not None and sla_val >= 5000.0:
+            alerts.append(
+                {
+                    "alert_key": "response_high",
+                    "alert_type": "response",
+                    "severity": "warning",
+                    "message": f"Response time high: {sla_val:.2f} ms",
+                    "threshold_value": 5000.0,
+                    "last_value": sla_val,
+                    "details_json": json.dumps({"sla_ms": sla_val}),
+                }
+            )
+        return alerts
+
+    def _upsert_monitoring_alerts(conn: Any, sample_obj: dict[str, Any], active_alerts: list[dict[str, Any]]) -> None:
+        device_name = str(sample_obj.get("device_name", "")).strip()
+        if not device_name:
+            return
+        host_name = str(sample_obj.get("host", "")).strip()
+        now_iso = datetime.now(timezone.utc).isoformat()
+        sample_ts = str(sample_obj.get("collected_at", now_iso)).strip() or now_iso
+        existing_rows = conn.execute(
             """
-            INSERT INTO monitoring_metrics(
-                device_name, host, collection_mode, status, severity,
-                cpu_percent, memory_percent, interfaces_up, interfaces_down, sla_ms, details_json, collected_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            SELECT id, alert_key, status
+            FROM monitoring_alerts
+            WHERE LOWER(device_name) = LOWER(?) AND status IN ('open', 'acked')
             """,
-            (
-                str(sample.get("device_name", "")),
-                str(sample.get("host", "")),
-                str(sample.get("collection_mode", "")),
-                str(sample.get("status", "unknown")),
-                str(sample.get("severity", "warning")),
-                sample.get("cpu_percent"),
-                sample.get("memory_percent"),
-                sample.get("interfaces_up"),
-                sample.get("interfaces_down"),
-                sample.get("sla_ms"),
-                str(sample.get("details_json", "{}")),
-                str(sample.get("collected_at", datetime.now(timezone.utc).isoformat())),
-            ),
-        )
+            (device_name,),
+        ).fetchall()
+        existing_by_key: dict[str, Any] = {}
+        for row in existing_rows:
+            key = str(row["alert_key"] or "").strip().lower()
+            if key and key not in existing_by_key:
+                existing_by_key[key] = row
+
+        active_keys: set[str] = set()
+        for alert in active_alerts:
+            key = str(alert.get("alert_key", "")).strip().lower()
+            if not key:
+                continue
+            active_keys.add(key)
+            existing = existing_by_key.get(key)
+            if existing:
+                existing_status = str(existing["status"] or "").strip().lower()
+                next_status = "acked" if existing_status == "acked" else "open"
+                conn.execute(
+                    """
+                    UPDATE monitoring_alerts
+                    SET host = ?, alert_type = ?, severity = ?, status = ?, message = ?,
+                        threshold_value = ?, last_value = ?, updated_at = ?, sample_collected_at = ?, details_json = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        host_name,
+                        str(alert.get("alert_type", "generic")).strip().lower() or "generic",
+                        str(alert.get("severity", "warning")).strip().lower() or "warning",
+                        next_status,
+                        str(alert.get("message", "")).strip(),
+                        alert.get("threshold_value"),
+                        alert.get("last_value"),
+                        now_iso,
+                        sample_ts,
+                        str(alert.get("details_json", "{}")),
+                        existing["id"],
+                    ),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO monitoring_alerts(
+                        device_name, host, alert_key, alert_type, severity, status, message,
+                        threshold_value, last_value, opened_at, updated_at, sample_collected_at, details_json
+                    ) VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        device_name,
+                        host_name,
+                        key,
+                        str(alert.get("alert_type", "generic")).strip().lower() or "generic",
+                        str(alert.get("severity", "warning")).strip().lower() or "warning",
+                        str(alert.get("message", "")).strip(),
+                        alert.get("threshold_value"),
+                        alert.get("last_value"),
+                        now_iso,
+                        now_iso,
+                        sample_ts,
+                        str(alert.get("details_json", "{}")),
+                    ),
+                )
+
+        for key, row in existing_by_key.items():
+            if key in active_keys:
+                continue
+            conn.execute(
+                """
+                UPDATE monitoring_alerts
+                SET status = 'cleared', updated_at = ?, cleared_at = ?, sample_collected_at = ?
+                WHERE id = ?
+                """,
+                (now_iso, now_iso, sample_ts, row["id"]),
+            )
+
+    collected_at_iso = _normalized_collected_at(sample.get("collected_at"))
+    details_json = str(sample.get("details_json", "{}"))
+    details_obj = _parse_details(details_json)
+    interface_rows = _extract_interface_rows(details_obj)
+    sample_payload = dict(sample)
+    sample_payload["collected_at"] = collected_at_iso
+    active_alerts = _build_active_alerts(sample_payload, details_obj)
+
+    with db_conn() as conn:
+        try:
+            conn.execute(
+                """
+                INSERT INTO monitoring_metrics(
+                    device_name, host, collection_mode, status, severity,
+                    cpu_percent, memory_percent, interfaces_up, interfaces_down, sla_ms, details_json, collected_at, collected_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(sample.get("device_name", "")),
+                    str(sample.get("host", "")),
+                    str(sample.get("collection_mode", "")),
+                    str(sample.get("status", "unknown")),
+                    str(sample.get("severity", "warning")),
+                    sample.get("cpu_percent"),
+                    sample.get("memory_percent"),
+                    sample.get("interfaces_up"),
+                    sample.get("interfaces_down"),
+                    sample.get("sla_ms"),
+                    details_json,
+                    collected_at_iso,
+                    collected_at_iso,
+                ),
+            )
+        except Exception:
+            conn.execute(
+                """
+                INSERT INTO monitoring_metrics(
+                    device_name, host, collection_mode, status, severity,
+                    cpu_percent, memory_percent, interfaces_up, interfaces_down, sla_ms, details_json, collected_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(sample.get("device_name", "")),
+                    str(sample.get("host", "")),
+                    str(sample.get("collection_mode", "")),
+                    str(sample.get("status", "unknown")),
+                    str(sample.get("severity", "warning")),
+                    sample.get("cpu_percent"),
+                    sample.get("memory_percent"),
+                    sample.get("interfaces_up"),
+                    sample.get("interfaces_down"),
+                    sample.get("sla_ms"),
+                    details_json,
+                    collected_at_iso,
+                ),
+            )
+
+        if interface_rows:
+            for row in interface_rows:
+                conn.execute(
+                    """
+                    INSERT INTO monitoring_interface_metrics(
+                        device_name, host, interface_name, interface_description, oper_status,
+                        tx_percent, rx_percent, collected_at_utc, details_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        str(sample.get("device_name", "")),
+                        str(sample.get("host", "")),
+                        str(row.get("interface_name", "")),
+                        str(row.get("interface_description", "")),
+                        str(row.get("oper_status", "unknown")),
+                        row.get("tx_percent"),
+                        row.get("rx_percent"),
+                        collected_at_iso,
+                        str(row.get("details_json", "{}")),
+                    ),
+                )
+
+        _upsert_monitoring_alerts(conn, sample_payload, active_alerts)
 
 
 def load_latest_monitoring_status_map(max_rows: int = 4000) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     try:
         with db_conn() as conn:
-            rows = conn.execute(
-                "SELECT device_name, status, severity, cpu_percent, memory_percent, interfaces_up, interfaces_down, sla_ms, details_json, collected_at FROM monitoring_metrics ORDER BY collected_at DESC LIMIT ?",
-                (int(max(100, max_rows)),),
-            ).fetchall()
+            try:
+                rows = conn.execute(
+                    "SELECT device_name, status, severity, cpu_percent, memory_percent, interfaces_up, interfaces_down, sla_ms, details_json, collected_at, collected_at_utc FROM monitoring_metrics ORDER BY collected_at_utc DESC LIMIT ?",
+                    (int(max(100, max_rows)),),
+                ).fetchall()
+            except Exception:
+                rows = conn.execute(
+                    "SELECT device_name, status, severity, cpu_percent, memory_percent, interfaces_up, interfaces_down, sla_ms, details_json, collected_at FROM monitoring_metrics ORDER BY collected_at DESC LIMIT ?",
+                    (int(max(100, max_rows)),),
+                ).fetchall()
     except Exception:
         return out
     for row in rows:
@@ -2258,23 +3332,83 @@ def load_latest_monitoring_status_map(max_rows: int = 4000) -> dict[str, dict[st
         out[key] = {
             "status": str(row["status"] or "unknown").strip().lower() or "unknown",
             "severity": str(row["severity"] or "warning").strip().lower() or "warning",
-            "cpu_percent": row["cpu_percent"],
+            "cpu_percent": _cap_percent(row["cpu_percent"]),
             "memory_percent": row["memory_percent"],
             "interfaces_up": row["interfaces_up"],
             "interfaces_down": row["interfaces_down"],
             "sla_ms": row["sla_ms"],
             "details": details_obj,
-            "collected_at": str(row["collected_at"] or ""),
+            "collected_at": str((row["collected_at_utc"] if "collected_at_utc" in row.keys() else row["collected_at"]) or ""),
         }
+    return out
+
+
+def load_monitoring_alerts(device_name: str, statuses: list[str] | None = None, limit: int = 100) -> list[dict[str, Any]]:
+    name = str(device_name or "").strip()
+    if not name:
+        return []
+    wanted = [str(s).strip().lower() for s in (statuses or ["open", "acked"]) if str(s).strip()]
+    if not wanted:
+        wanted = ["open", "acked"]
+    placeholders = ", ".join(["?"] * len(wanted))
+    sql = f"""
+        SELECT TOP (?) id, device_name, host, alert_key, alert_type, severity, status, message,
+               threshold_value, last_value, opened_at, updated_at, sample_collected_at, acked_by, acked_at, cleared_at, details_json
+        FROM monitoring_alerts
+        WHERE LOWER(device_name) = LOWER(?) AND LOWER(status) IN ({placeholders})
+        ORDER BY updated_at DESC
+    """
+    params: list[Any] = [max(1, min(1000, int(limit))), name]
+    params.extend(wanted)
+    try:
+        with db_conn() as conn:
+            rows = conn.execute(sql, tuple(params)).fetchall()
+    except Exception:
+        return []
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        details_raw = str(row["details_json"] or "{}")
+        try:
+            details = json.loads(details_raw)
+        except Exception:
+            details = {}
+        if not isinstance(details, dict):
+            details = {}
+        out.append(
+            {
+                "id": int(row["id"]),
+                "device_name": str(row["device_name"] or "").strip(),
+                "host": str(row["host"] or "").strip(),
+                "alert_key": str(row["alert_key"] or "").strip(),
+                "alert_type": str(row["alert_type"] or "").strip(),
+                "severity": str(row["severity"] or "").strip(),
+                "status": str(row["status"] or "").strip(),
+                "message": str(row["message"] or "").strip(),
+                "threshold_value": row["threshold_value"],
+                "last_value": row["last_value"],
+                "opened_at": str(row["opened_at"] or "").strip(),
+                "updated_at": str(row["updated_at"] or "").strip(),
+                "sample_collected_at": str(row["sample_collected_at"] or "").strip(),
+                "acked_by": str(row["acked_by"] or "").strip(),
+                "acked_at": str(row["acked_at"] or "").strip(),
+                "cleared_at": str(row["cleared_at"] or "").strip(),
+                "details": details,
+            }
+        )
     return out
 
 
 def monitoring_poll_cycle() -> int:
     settings = load_monitoring_settings()
     profiles = load_monitoring_device_profiles()
-    if not bool(settings.get("enabled", False)):
-        return max(5, int(settings.get("interval_seconds", 30) or 30))
     selected = {str(item).strip().lower() for item in settings.get("monitored_devices", []) if str(item).strip()}
+    polling_enabled = bool(settings.get("enabled", False))
+    # Keep polling active when there are monitored devices, even if the profile
+    # checkbox was left disabled by mistake.
+    if not polling_enabled and selected:
+        polling_enabled = True
+    if not polling_enabled:
+        return max(5, int(settings.get("interval_seconds", 30) or 30))
     all_devices = load_devices()
     by_name = {str(device.get("name", "")).strip().lower(): device for device in all_devices if str(device.get("name", "")).strip()}
     if selected:
@@ -2321,6 +3455,8 @@ def monitoring_poll_cycle() -> int:
                     "interfaces_up": None,
                     "interfaces_down": None,
                     "sla_ms": ping_latency,
+                    "cpu_warn": max(1, min(100, int(effective.get("cpu_warn", 90) or 90))),
+                    "memory_warn": max(1, min(100, int(effective.get("memory_warn", 90) or 90))),
                     "details_json": json.dumps({"ping_latency_ms": ping_latency, "poll_skipped_reason": "icmp_down"}),
                     "collected_at": datetime.now(timezone.utc).isoformat(),
                 }
@@ -2363,6 +3499,43 @@ def ensure_monitoring_poller_started() -> None:
             daemon=True,
         )
         MONITORING_POLLER_THREAD.start()
+
+
+def stop_monitoring_poller(wait_seconds: float = 2.0) -> None:
+    global MONITORING_POLLER_THREAD
+    with MONITORING_POLLER_LOCK:
+        thread = MONITORING_POLLER_THREAD
+        MONITORING_POLLER_STOP.set()
+    if thread is None:
+        return
+    if thread is not threading.current_thread() and thread.is_alive():
+        try:
+            thread.join(timeout=max(0.1, float(wait_seconds)))
+        except Exception:
+            pass
+    with MONITORING_POLLER_LOCK:
+        if MONITORING_POLLER_THREAD is thread and not thread.is_alive():
+            MONITORING_POLLER_THREAD = None
+
+
+def _stop_monitoring_poller_on_exit() -> None:
+    stop_monitoring_poller(wait_seconds=1.5)
+
+
+atexit.register(_stop_monitoring_poller_on_exit)
+
+
+if hasattr(app, "before_serving"):
+    @app.before_serving
+    def _start_monitoring_poller_before_serving() -> None:
+        if embedded_monitoring_poller_enabled():
+            ensure_monitoring_poller_started()
+
+
+if hasattr(app, "after_serving"):
+    @app.after_serving
+    def _stop_monitoring_poller_after_serving() -> None:
+        stop_monitoring_poller(wait_seconds=1.5)
 
 
 def seed_monitoring_sample_async(device_name: str, ip_address: str, category: str, profile: dict[str, Any], requester: str) -> None:
@@ -2519,6 +3692,20 @@ def category_allowed_for_monitoring_add(role: str, category: str) -> bool:
         key = str(category or "").strip().lower()
         return key in {"server", "servers"}
     return False
+
+
+def monitoring_user_allowed_for_category(username: str, auth_mode: str, category: str) -> bool:
+    user = find_user(load_users(), username)
+    role = normalize_role(str((user or {}).get("role", "junior")))
+    if role in {"senior", "sysadmin"}:
+        return True
+    allowed = user_allowed_categories_by_panel(username, auth_mode, "monitoring")
+    if allowed is None:
+        return True
+    if not isinstance(allowed, list) or not allowed:
+        return True
+    category_name = str(category or "").strip() or DEFAULT_CATEGORY
+    return category_name in set(allowed)
 
 
 def normalize_auth_source(value: Any) -> str:
@@ -2893,6 +4080,159 @@ def write_login_audit_log(username: str, auth_source: str, success: bool, reason
         details=details,
         created_at=created_at,
     )
+
+
+def _login_client_ip() -> str:
+    return str(
+        request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+        or request.remote_addr
+        or ""
+    )
+
+
+def _login_lock_key(username: str, client_ip: str) -> str:
+    uname = str(username or "").strip().lower() or "__unknown__"
+    # Lock by username to avoid bypass when client IP changes behind proxies/NAT.
+    _ = str(client_ip or "")
+    return uname
+
+
+def _format_lockout_countdown(seconds_left: int) -> str:
+    total = max(1, int(seconds_left or 0))
+    return f"{total}s"
+
+
+def _lockout_epoch_to_iso(epoch: float) -> str:
+    try:
+        return datetime.fromtimestamp(float(epoch), tz=timezone.utc).isoformat()
+    except Exception:
+        return ""
+
+
+def _lockout_iso_to_epoch(value: Any) -> float:
+    text = str(value or "").strip()
+    if not text:
+        return 0.0
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return float(parsed.astimezone(timezone.utc).timestamp())
+    except Exception:
+        return 0.0
+
+
+def _load_lockout_state_from_db(key: str) -> dict[str, Any] | None:
+    global LOGIN_LOCKOUT_DB_READY
+    try:
+        with db_conn() as conn:
+            row = conn.execute(
+                "SELECT attempts, locked_until_utc FROM login_lockouts WHERE lock_key = ?",
+                (key,),
+            ).fetchone()
+        LOGIN_LOCKOUT_DB_READY = True
+        if not row:
+            return None
+        return {
+            "attempts": int(row["attempts"] or 0),
+            "locked_until": _lockout_iso_to_epoch(row["locked_until_utc"]),
+        }
+    except Exception:
+        return None
+
+
+def _save_lockout_state_to_db(key: str, attempts: int, locked_until: float) -> bool:
+    global LOGIN_LOCKOUT_DB_READY
+    try:
+        with db_conn() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO login_lockouts(lock_key, attempts, locked_until_utc, updated_at_utc) VALUES (?, ?, ?, ?)",
+                (
+                    key,
+                    max(0, int(attempts or 0)),
+                    _lockout_epoch_to_iso(locked_until) if float(locked_until or 0) > 0 else "",
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+        LOGIN_LOCKOUT_DB_READY = True
+        LOGIN_LOCKOUT_STATE.pop(key, None)
+        return True
+    except Exception:
+        return False
+
+
+def _delete_lockout_state_from_db(key: str) -> bool:
+    global LOGIN_LOCKOUT_DB_READY
+    try:
+        with db_conn() as conn:
+            conn.execute("DELETE FROM login_lockouts WHERE lock_key = ?", (key,))
+        LOGIN_LOCKOUT_DB_READY = True
+        LOGIN_LOCKOUT_STATE.pop(key, None)
+        return True
+    except Exception:
+        return False
+
+
+def _clear_all_lockout_state_db() -> bool:
+    global LOGIN_LOCKOUT_DB_READY
+    try:
+        with db_conn() as conn:
+            conn.execute("DELETE FROM login_lockouts")
+        LOGIN_LOCKOUT_DB_READY = True
+        LOGIN_LOCKOUT_STATE.clear()
+        return True
+    except Exception:
+        return False
+
+
+def _is_login_temporarily_locked(username: str, client_ip: str) -> tuple[bool, int]:
+    key = _login_lock_key(username, client_ip)
+    now = time.time()
+    with LOGIN_LOCKOUT_LOCK:
+        state = _load_lockout_state_from_db(key)
+        if not isinstance(state, dict) and not LOGIN_LOCKOUT_DB_READY:
+            state = LOGIN_LOCKOUT_STATE.get(key)
+        if not isinstance(state, dict):
+            return False, 0
+        locked_until = float(state.get("locked_until", 0) or 0)
+        if locked_until <= 0:
+            return False, 0
+        if locked_until <= now:
+            if not _delete_lockout_state_from_db(key):
+                LOGIN_LOCKOUT_STATE.pop(key, None)
+            return False, 0
+        return True, max(1, int(locked_until - now))
+
+
+def _register_login_failure(username: str, client_ip: str, lock_settings: dict[str, Any]) -> tuple[bool, int, int]:
+    key = _login_lock_key(username, client_ip)
+    now = time.time()
+    max_attempts = max(1, int(lock_settings.get("login_lockout_max_attempts", 5) or 5))
+    lock_seconds = max(1, int(lock_settings.get("login_lockout_seconds", 300) or 300))
+    with LOGIN_LOCKOUT_LOCK:
+        state = _load_lockout_state_from_db(key)
+        if not isinstance(state, dict) and not LOGIN_LOCKOUT_DB_READY:
+            state = LOGIN_LOCKOUT_STATE.get(key, {})
+        attempts = int(state.get("attempts", 0) or 0)
+        locked_until = float(state.get("locked_until", 0) or 0)
+        if locked_until > now:
+            return True, max(1, int(locked_until - now)), attempts
+        attempts += 1
+        if attempts >= max_attempts:
+            new_locked_until = now + lock_seconds
+            if not _save_lockout_state_to_db(key, 0, new_locked_until):
+                LOGIN_LOCKOUT_STATE[key] = {"attempts": 0, "locked_until": new_locked_until}
+            return True, max(1, int(new_locked_until - now)), attempts
+        if not _save_lockout_state_to_db(key, attempts, 0.0):
+            LOGIN_LOCKOUT_STATE[key] = {"attempts": attempts, "locked_until": 0}
+        return False, 0, attempts
+
+
+def _clear_login_failure_state(username: str, client_ip: str) -> None:
+    key = _login_lock_key(username, client_ip)
+    with LOGIN_LOCKOUT_LOCK:
+        if not _delete_lockout_state_from_db(key):
+            LOGIN_LOCKOUT_STATE.pop(key, None)
 
 
 def write_action_log(
@@ -3719,7 +5059,7 @@ def normalize_buttons(raw_buttons: Any) -> list[dict[str, Any]]:
         if isinstance(categories_raw, list):
             categories = [str(cat).strip() for cat in categories_raw if str(cat).strip()]
         audience = str(item.get("audience", "senior")).strip().lower()
-        if audience not in {"junior", "senior"}:
+        if audience not in {"junior", "senior", "both"}:
             audience = "senior"
 
         if mode == "config":
@@ -3744,7 +5084,11 @@ def button_audience_for_role(role: str) -> str:
 
 def buttons_for_role(role: str) -> list[dict[str, Any]]:
     audience = button_audience_for_role(role)
-    return [item for item in get_buttons() if str(item.get("audience", "senior")).strip().lower() == audience]
+    return [
+        item
+        for item in get_buttons()
+        if str(item.get("audience", "senior")).strip().lower() in {audience, "both"}
+    ]
 
 
 def get_buttons() -> list[dict[str, Any]]:
@@ -4612,13 +5956,49 @@ def root() -> Any:
 
 @app.before_request
 def enforce_dashboard_session_timeout() -> Any:
-    ensure_monitoring_poller_started()
+    if _env_true("APP_FORCE_HTTPS", "0"):
+        endpoint = request.endpoint or ""
+        if endpoint != "static":
+            forwarded_proto = str(request.headers.get("X-Forwarded-Proto", request.scheme)).split(",")[0].strip().lower()
+            if forwarded_proto != "https" and request.scheme != "https":
+                secure_url = request.url.replace("http://", "https://", 1)
+                return redirect(secure_url, code=301)
+    if embedded_monitoring_poller_enabled():
+        ensure_monitoring_poller_started()
+    endpoint = request.endpoint or ""
+    if endpoint != "static":
+        settings = load_session_settings()
+        if bool(settings.get("web_acl_enabled", False)):
+            client_ip = str(
+                request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+                or request.remote_addr
+                or ""
+            )
+            acl_entries = settings.get("web_acl_entries", [])
+            if not _is_client_ip_allowed_by_acl(client_ip, acl_entries if isinstance(acl_entries, list) else []):
+                if request.path.startswith("/api/") or str(request.accept_mimetypes.best).lower() == "application/json":
+                    return jsonify({
+                        "ok": False,
+                        "error": "Access denied by Web ACL.",
+                        "client_ip": client_ip,
+                    }), 403
+                return (
+                    f"Access denied by Web ACL. Your IP {client_ip or 'unknown'} is not allowed.",
+                    403,
+                )
+    # Super-admin verification is scoped only to settings/super-admin pages.
+    # As soon as user navigates elsewhere (dashboard/app pages), drop the privileged flag.
+    if session.get("super_admin_verified"):
+        current_path = str(request.path or "")
+        if not (current_path.startswith("/settings/") or current_path.startswith("/super-admin/")):
+            session.pop("super_admin_verified", None)
     if "creds" not in session:
         return None
 
     endpoint = request.endpoint or ""
     if endpoint in {"static", "login", "logout", "setup_super_admin", "change_password"}:
         return None
+    passive_endpoints = {"ip_addressing_live_data_api"}
 
     role = current_user_role()
     if role == "audit":
@@ -4640,10 +6020,24 @@ def enforce_dashboard_session_timeout() -> Any:
     if now - last_activity > timeout_seconds:
         session.clear()
         session["login_info"] = "Session expired due to inactivity. Please log in again."
-        return redirect(url_for("login"))
+        if endpoint in passive_endpoints:
+            return jsonify({"ok": False, "error": "Session expired due to inactivity.", "expired": True}), 401
+        return redirect(url_for("login", expired=1))
 
-    session["last_activity_ts"] = now
+    # Do not treat background auto-refresh APIs as user activity.
+    if endpoint not in passive_endpoints:
+        session["last_activity_ts"] = now
     return None
+
+
+@app.after_request
+def add_no_cache_headers(response: Any) -> Any:
+    endpoint = request.endpoint or ""
+    if endpoint != "static":
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0, private"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
 
 
 @app.route("/super-admin/setup", methods=["GET", "POST"])
@@ -4672,6 +6066,9 @@ def setup_super_admin() -> Any:
 def verify_super_admin_route() -> Any:
     if not super_admin_exists():
         return redirect(url_for("setup_super_admin"))
+    if request.method == "GET" and request.args.get("exit") == "1":
+        session.pop("super_admin_verified", None)
+        return redirect(url_for("dashboard"))
 
     error = ""
     if request.method == "POST":
@@ -4683,6 +6080,13 @@ def verify_super_admin_route() -> Any:
         error = "Invalid super admin credentials."
 
     return render_template("super_admin_verify.html", error=error)
+
+
+@app.route("/super-admin/exit", methods=["GET"])
+def super_admin_exit() -> Any:
+    # Exit privileged settings mode and require fresh super-admin verification next time.
+    session.pop("super_admin_verified", None)
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/settings/ise", methods=["GET", "POST"])
@@ -5093,7 +6497,20 @@ def session_settings_page() -> Any:
     if not session.get("super_admin_verified"):
         return redirect(url_for("verify_super_admin_route"))
 
+    current_settings = load_session_settings()
     timeout_raw = request.form.get("idle_timeout_minutes", "15").strip()
+    http_port_raw = request.form.get("http_port", "8080").strip()
+    https_port_raw = request.form.get("https_port", "8443").strip()
+    web_acl_enabled = request.form.get("web_acl_enabled") == "on"
+    web_acl_raw = request.form.get("web_acl_entries", "")
+    lockout_enabled = request.form.get("login_lockout_enabled") == "on"
+    lockout_attempts_raw = request.form.get("login_lockout_max_attempts", "5").strip()
+    lockout_seconds_raw = request.form.get("login_lockout_seconds", request.form.get("login_lockout_minutes", "300")).strip()
+    http_enabled = request.form.get("http_enabled") == "on"
+    https_enabled = request.form.get("https_enabled") == "on"
+    if not http_enabled and not https_enabled:
+        session["settings_error"] = "Select at least one active web mode (HTTP or HTTPS)."
+        return redirect(url_for("ise_settings_page", modal="session"))
     try:
         timeout_minutes = int(timeout_raw or 15)
         if timeout_minutes < 1:
@@ -5102,10 +6519,96 @@ def session_settings_page() -> Any:
         session["settings_error"] = "Session timeout must be a positive number of minutes."
         return redirect(url_for("ise_settings_page", modal="session"))
 
+    try:
+        lockout_attempts = int(lockout_attempts_raw or 5)
+        if lockout_attempts < 1 or lockout_attempts > 20:
+            raise ValueError
+    except ValueError:
+        session["settings_error"] = "Lockout failed attempts must be between 1 and 20."
+        return redirect(url_for("ise_settings_page", modal="session"))
+
+    try:
+        lockout_seconds = int(lockout_seconds_raw or 300)
+        if lockout_seconds < 1 or lockout_seconds > 86400:
+            raise ValueError
+    except ValueError:
+        session["settings_error"] = "Lockout countdown must be between 1 and 86400 seconds."
+        return redirect(url_for("ise_settings_page", modal="session"))
+
+    current_http_port = int(current_settings.get("http_port", 8080) or 8080)
+    current_https_port = int(current_settings.get("https_port", 8443) or 8443)
+
+    if http_enabled:
+        try:
+            http_port = int(http_port_raw or current_http_port)
+            if http_port < 1 or http_port > 65535:
+                raise ValueError
+        except ValueError:
+            session["settings_error"] = "HTTP port must be between 1 and 65535."
+            return redirect(url_for("ise_settings_page", modal="session"))
+    else:
+        http_port = current_http_port
+
+    if https_enabled:
+        try:
+            https_port = int(https_port_raw or current_https_port)
+            if https_port < 1 or https_port > 65535:
+                raise ValueError
+        except ValueError:
+            session["settings_error"] = "HTTPS port must be between 1 and 65535."
+            return redirect(url_for("ise_settings_page", modal="session"))
+    else:
+        https_port = current_https_port
+
+    acl_entries, acl_invalid = _normalize_web_acl_entries(web_acl_raw)
+    if web_acl_enabled:
+        if acl_invalid:
+            session["settings_error"] = f"Invalid ACL entry: {acl_invalid[0]}. Use IP or CIDR (example: 192.168.1.10 or 192.168.1.0/24)."
+            return redirect(url_for("ise_settings_page", modal="session"))
+        if not acl_entries:
+            session["settings_error"] = "Web ACL is enabled but no allowed IP/CIDR was provided."
+            return redirect(url_for("ise_settings_page", modal="session"))
+        current_ip = str(
+            request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+            or request.remote_addr
+            or ""
+        )
+        if not _is_client_ip_allowed_by_acl(current_ip, acl_entries):
+            session["settings_error"] = f"Your current IP {current_ip or 'unknown'} is not in ACL list. Add it before enabling ACL."
+            return redirect(url_for("ise_settings_page", modal="session"))
+
     save_session_settings({
         "idle_timeout_minutes": timeout_minutes,
+        "http_enabled": http_enabled,
+        "https_enabled": https_enabled,
+        "http_port": http_port,
+        "https_port": https_port,
+        "web_acl_enabled": web_acl_enabled,
+        "web_acl_entries": acl_entries,
+        "login_lockout_enabled": lockout_enabled,
+        "login_lockout_max_attempts": lockout_attempts,
+        "login_lockout_seconds": lockout_seconds,
     })
-    session["settings_info"] = "Idle logout settings updated."
+    if not lockout_enabled:
+        with LOGIN_LOCKOUT_LOCK:
+            LOGIN_LOCKOUT_STATE.clear()
+            _clear_all_lockout_state_db()
+    active_modes: list[str] = []
+    if http_enabled:
+        active_modes.append(f"HTTP:{http_port}")
+    if https_enabled:
+        active_modes.append(f"HTTPS:{https_port}")
+    modes_text = ", ".join(active_modes)
+    listener_changed = (
+        bool(current_settings.get("http_enabled", True)) != http_enabled
+        or bool(current_settings.get("https_enabled", False)) != https_enabled
+        or int(current_settings.get("http_port", 8080) or 8080) != int(http_port)
+        or int(current_settings.get("https_port", 8443) or 8443) != int(https_port)
+    )
+    if listener_changed and _schedule_self_restart(1.0):
+        session["settings_info"] = f"Settings updated. Applying web listeners automatically ({modes_text}). Reconnect in a few seconds."
+    else:
+        session["settings_info"] = f"Settings updated. Active web listeners: {modes_text}."
     return redirect(url_for("ise_settings_page", modal="session"))
 
 
@@ -5200,8 +6703,8 @@ def monitoring_settings_page() -> Any:
     if transport not in {"grpc", "tcp", "udp", "http"}:
         session["settings_error"] = "Transport must be grpc, tcp, udp, or http."
         return redirect(url_for("ise_settings_page", modal="monitoring"))
-    if enabled and not collector_host:
-        session["settings_error"] = "Collector host is required when monitoring is enabled."
+    if enabled and collection_mode in {"telemetry", "api"} and not collector_host:
+        session["settings_error"] = "Collector host is required for telemetry/api monitoring mode."
         return redirect(url_for("ise_settings_page", modal="monitoring"))
 
     current_settings = load_monitoring_settings()
@@ -5293,8 +6796,12 @@ def monitoring_node_add_page() -> Any:
     if not device_name:
         session["dashboard_error"] = "Device name is required."
         return redirect(url_for("ip_addressing_dashboard"))
-    if original_device_name and normalize_role(role) == "sysadmin":
+    if original_device_name:
         existing_category = _monitoring_effective_category(original_device_name)
+        if not monitoring_user_allowed_for_category(current_username, auth_mode, existing_category):
+            session["dashboard_error"] = "You are not allowed to edit this monitoring device category."
+            return redirect(url_for("ip_addressing_dashboard"))
+    if original_device_name and normalize_role(role) == "sysadmin":
         if not category_allowed_for_monitoring_add(role, existing_category):
             session["dashboard_error"] = "SysAdmin can edit only monitoring devices in Servers category."
             return redirect(url_for("ip_addressing_dashboard"))
@@ -5303,6 +6810,9 @@ def monitoring_node_add_page() -> Any:
             return redirect(url_for("ip_addressing_dashboard"))
     if not original_device_name and not category_allowed_for_monitoring_add(role, category):
         session["dashboard_error"] = "SysAdmin can add monitoring devices only in Servers category."
+        return redirect(url_for("ip_addressing_dashboard"))
+    if not monitoring_user_allowed_for_category(current_username, auth_mode, category):
+        session["dashboard_error"] = "You are not allowed to assign this monitoring category."
         return redirect(url_for("ip_addressing_dashboard"))
     if not is_valid_ipv4(ip_address):
         session["dashboard_error"] = "Valid IPv4 address is required."
@@ -5377,6 +6887,7 @@ def monitoring_node_add_page() -> Any:
     if device_name not in selected:
         selected.append(device_name)
     settings["monitored_devices"] = selected
+    settings["enabled"] = True
     save_monitoring_settings(settings)
 
     write_audit_log_safe(
@@ -5402,13 +6913,24 @@ def monitoring_node_delete_page() -> Any:
 
     current_username = str(session.get("creds", {}).get("username", "")).strip()
     auth_mode = str(session.get("auth_mode", "local"))
+    role = current_user_role()
     if not user_has_panel_access(current_username, auth_mode, "monitoring"):
         session["dashboard_error"] = "You do not have access to Monitoring."
+        return redirect(url_for("ip_addressing_dashboard"))
+    if not can_manage_monitoring_nodes(role):
+        session["dashboard_error"] = "Only senior/sysadmin users can manage monitoring devices."
         return redirect(url_for("ip_addressing_dashboard"))
 
     device_name = str(request.form.get("device_name", "")).strip()
     if not device_name:
         session["dashboard_error"] = "Device name is required for delete."
+        return redirect(url_for("ip_addressing_dashboard"))
+    device_category = _monitoring_effective_category(device_name)
+    if not category_allowed_for_monitoring_add(role, device_category):
+        session["dashboard_error"] = "You can delete monitoring devices only in allowed categories."
+        return redirect(url_for("ip_addressing_dashboard"))
+    if not monitoring_user_allowed_for_category(current_username, auth_mode, device_category):
+        session["dashboard_error"] = "You are not allowed to delete this monitoring device category."
         return redirect(url_for("ip_addressing_dashboard"))
 
     delete_device_everywhere(device_name)
@@ -5552,8 +7074,11 @@ def monitoring_node_test_snmp_api() -> Any:
 
     current_username = str(session.get("creds", {}).get("username", "")).strip()
     auth_mode = str(session.get("auth_mode", "local"))
+    role = current_user_role()
     if not user_has_panel_access(current_username, auth_mode, "monitoring"):
         return jsonify({"ok": False, "error": "Access denied."}), 403
+    if not can_manage_monitoring_nodes(role):
+        return jsonify({"ok": False, "error": "Only Senior/SysAdmin can test SNMP settings."}), 403
 
     payload = request.get_json(silent=True) or {}
     host = str(payload.get("host", "")).strip()
@@ -5622,7 +7147,7 @@ def monitoring_node_test_snmp_api() -> Any:
     cpu_value: float | None = None
     try:
         if cpu is not None:
-            cpu_value = float(int(cpu))
+            cpu_value = _cap_percent(float(int(cpu)))
     except Exception:
         cpu_value = None
 
@@ -5649,8 +7174,11 @@ def monitoring_node_resources_pull_api() -> Any:
 
     current_username = str(session.get("creds", {}).get("username", "")).strip()
     auth_mode = str(session.get("auth_mode", "local"))
+    role = current_user_role()
     if not user_has_panel_access(current_username, auth_mode, "monitoring"):
         return jsonify({"ok": False, "error": "Access denied."}), 403
+    if not can_manage_monitoring_nodes(role):
+        return jsonify({"ok": False, "error": "Only Senior/SysAdmin can manage monitoring resources."}), 403
 
     payload = request.get_json(silent=True) or {}
     device_name = str(payload.get("device_name", "")).strip()
@@ -5659,6 +7187,11 @@ def monitoring_node_resources_pull_api() -> Any:
         return jsonify({"ok": False, "error": "Device name is required."}), 400
 
     _base_device, profile, host = _monitoring_device_lookup(device_name)
+    profile_category = _monitoring_effective_category(device_name)
+    if not category_allowed_for_monitoring_add(role, profile_category):
+        return jsonify({"ok": False, "error": "You can manage resources only for allowed monitoring categories."}), 403
+    if not monitoring_user_allowed_for_category(current_username, auth_mode, profile_category):
+        return jsonify({"ok": False, "error": "You are not allowed to access this device category."}), 403
     if not host:
         return jsonify({"ok": False, "error": "Device host/IP is not configured."}), 400
 
@@ -5803,8 +7336,11 @@ def monitoring_node_resources_save_api() -> Any:
 
     current_username = str(session.get("creds", {}).get("username", "")).strip()
     auth_mode = str(session.get("auth_mode", "local"))
+    role = current_user_role()
     if not user_has_panel_access(current_username, auth_mode, "monitoring"):
         return jsonify({"ok": False, "error": "Access denied."}), 403
+    if not can_manage_monitoring_nodes(role):
+        return jsonify({"ok": False, "error": "Only Senior/SysAdmin can save monitoring resources."}), 403
 
     payload = request.get_json(silent=True) or {}
     device_name = str(payload.get("device_name", "")).strip()
@@ -5827,6 +7363,11 @@ def monitoring_node_resources_save_api() -> Any:
     )
 
     base_device, profile, host = _monitoring_device_lookup(device_name)
+    profile_category = _monitoring_effective_category(device_name)
+    if not category_allowed_for_monitoring_add(role, profile_category):
+        return jsonify({"ok": False, "error": "You can manage resources only for allowed monitoring categories."}), 403
+    if not monitoring_user_allowed_for_category(current_username, auth_mode, profile_category):
+        return jsonify({"ok": False, "error": "You are not allowed to access this device category."}), 403
     if not host:
         host = str(base_device.get("host", "")).strip()
     if not host:
@@ -5861,6 +7402,55 @@ def monitoring_node_resources_save_api() -> Any:
     return jsonify({"ok": True, "message": "Monitoring resources saved."})
 
 
+@app.route("/monitoring/alerts/ack", methods=["POST"])
+def monitoring_alert_ack_api() -> Any:
+    if "creds" not in session:
+        return jsonify({"ok": False, "error": "Authentication required."}), 401
+
+    current_username = str(session.get("creds", {}).get("username", "")).strip()
+    auth_mode = str(session.get("auth_mode", "local"))
+    role = current_user_role()
+    if not user_has_panel_access(current_username, auth_mode, "monitoring"):
+        return jsonify({"ok": False, "error": "Access denied."}), 403
+    if not can_manage_monitoring_nodes(role):
+        return jsonify({"ok": False, "error": "Only Senior/SysAdmin can acknowledge alerts."}), 403
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        alert_id = int(payload.get("alert_id", 0) or 0)
+    except Exception:
+        alert_id = 0
+    if alert_id <= 0:
+        return jsonify({"ok": False, "error": "Valid alert_id is required."}), 400
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    acked_ok = False
+    try:
+        with db_conn() as conn:
+            conn.execute(
+                """
+                UPDATE monitoring_alerts
+                SET status = 'acked', acked_by = ?, acked_at = ?, updated_at = ?
+                WHERE id = ? AND status = 'open'
+                """,
+                (current_username, now_iso, now_iso, alert_id),
+            )
+            row = conn.execute("SELECT status FROM monitoring_alerts WHERE id = ?", (alert_id,)).fetchone()
+            acked_ok = bool(row and str(row["status"] or "").strip().lower() == "acked")
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"Failed to acknowledge alert: {exc}"}), 500
+
+    if not acked_ok:
+        return jsonify({"ok": False, "error": "Alert not found or already acknowledged/cleared."}), 404
+
+    write_audit_log_safe(
+        "monitoring_alert_acknowledged",
+        details={"alert_id": alert_id},
+        requester=current_username,
+    )
+    return jsonify({"ok": True, "message": "Alert acknowledged."})
+
+
 @app.route("/monitoring/node/dashboard-data", methods=["POST"])
 def monitoring_node_dashboard_data_api() -> Any:
     if "creds" not in session:
@@ -5868,6 +7458,7 @@ def monitoring_node_dashboard_data_api() -> Any:
 
     current_username = str(session.get("creds", {}).get("username", "")).strip()
     auth_mode = str(session.get("auth_mode", "local"))
+    role = current_user_role()
     if not user_has_panel_access(current_username, auth_mode, "monitoring"):
         return jsonify({"ok": False, "error": "Access denied."}), 403
 
@@ -5878,6 +7469,26 @@ def monitoring_node_dashboard_data_api() -> Any:
         limit = max(10, min(500, int(payload.get("limit", 120) or 120)))
     except Exception:
         limit = 120
+    range_start_raw = str(payload.get("range_start", "")).strip()
+    range_end_raw = str(payload.get("range_end", "")).strip()
+
+    def _parse_payload_dt(raw: str) -> datetime | None:
+        text = str(raw or "").strip()
+        if not text:
+            return None
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc)
+        except Exception:
+            return None
+
+    range_start_dt = _parse_payload_dt(range_start_raw)
+    range_end_dt = _parse_payload_dt(range_end_raw)
+    if range_start_dt and range_end_dt and range_start_dt >= range_end_dt:
+        range_start_dt = None
+        range_end_dt = None
     if not device_name:
         return jsonify({"ok": False, "error": "Device name is required."}), 400
 
@@ -5900,6 +7511,8 @@ def monitoring_node_dashboard_data_api() -> Any:
     if not profile_category:
         base_groups = base_device.get("groups", []) if isinstance(base_device.get("groups", []), list) else []
         profile_category = str(base_groups[0]).strip() if base_groups else DEFAULT_CATEGORY
+    if not monitoring_user_allowed_for_category(current_username, auth_mode, profile_category):
+        return jsonify({"ok": False, "error": "You are not allowed to access this device category."}), 403
     is_windows_node = is_windows_servers_category(profile_category)
 
     def _selected_interface_set() -> set[str]:
@@ -5980,7 +7593,6 @@ def monitoring_node_dashboard_data_api() -> Any:
                     state_at_start = state
                 else:
                     break
-            # If state at window start is unknown, there is not enough data for this window.
             if state_at_start is None:
                 return None
 
@@ -6017,11 +7629,84 @@ def monitoring_node_dashboard_data_api() -> Any:
             "year": _window_availability(windows["year"]),
         }
 
-    def _load_interface_utilization() -> list[dict[str, Any]]:
-        if not rows:
+    def _load_interface_utilization(series_rows: list[dict[str, Any]], latest_row: dict[str, Any]) -> list[dict[str, Any]]:
+        selected_ifaces_raw = [str(v).strip() for v in _selected_interface_set() if str(v).strip()]
+        selected_ifaces_exact = {v.lower() for v in selected_ifaces_raw}
+        selected_ifaces_normalized = {_normalize_interface_key(v) for v in selected_ifaces_raw if _normalize_interface_key(v)}
+        normalized: list[dict[str, Any]] = []
+
+        # Primary source: dedicated per-interface history table.
+        try:
+            with db_conn() as conn:
+                if range_start_dt and range_end_dt:
+                    db_rows = conn.execute(
+                        """
+                        SELECT TOP (10000) interface_name, interface_description, oper_status, tx_percent, rx_percent, collected_at_utc
+                        FROM monitoring_interface_metrics
+                        WHERE LOWER(device_name) = LOWER(?) AND collected_at_utc >= ? AND collected_at_utc <= ?
+                        ORDER BY collected_at_utc DESC
+                        """,
+                        (device_name, range_start_dt.isoformat(), range_end_dt.isoformat()),
+                    ).fetchall()
+                else:
+                    db_rows = conn.execute(
+                        """
+                        SELECT TOP (10000) interface_name, interface_description, oper_status, tx_percent, rx_percent, collected_at_utc
+                        FROM monitoring_interface_metrics
+                        WHERE LOWER(device_name) = LOWER(?)
+                        ORDER BY collected_at_utc DESC
+                        """,
+                        (device_name,),
+                    ).fetchall()
+            per_iface: dict[str, dict[str, Any]] = {}
+            for row in db_rows:
+                iface = str(row["interface_name"] or "").strip()
+                if not iface:
+                    continue
+                iface_lower = iface.lower()
+                iface_key = _normalize_interface_key(iface) or iface_lower
+                if iface_key in per_iface:
+                    continue
+                if selected_ifaces_exact or selected_ifaces_normalized:
+                    if iface_lower not in selected_ifaces_exact and iface_key not in selected_ifaces_normalized:
+                        continue
+                status_raw = str(row["oper_status"] or "unknown").strip().lower()
+                if status_raw in {"connected"}:
+                    status_value = "up"
+                elif status_raw in {"disable", "err-disable", "notconnected"}:
+                    status_value = "down"
+                elif status_raw in {"up", "down", "unknown"}:
+                    status_value = status_raw
+                else:
+                    status_value = "unknown"
+                try:
+                    tx_val = row["tx_percent"]
+                    tx_percent = max(0.0, min(100.0, float(tx_val))) if tx_val is not None else None
+                except Exception:
+                    tx_percent = None
+                try:
+                    rx_val = row["rx_percent"]
+                    rx_percent = max(0.0, min(100.0, float(rx_val))) if rx_val is not None else None
+                except Exception:
+                    rx_percent = None
+                per_iface[iface_key] = {
+                    "status": status_value,
+                    "interface": iface,
+                    "description": str(row["interface_description"] or "").strip(),
+                    "tx_percent": tx_percent,
+                    "rx_percent": rx_percent,
+                }
+            normalized = sorted(per_iface.values(), key=lambda item: str(item.get("interface", "")).lower())
+            if normalized:
+                return normalized
+        except Exception:
+            pass
+
+        # Backward-compatible fallback: legacy JSON details stored in monitoring_metrics.
+        if not series_rows and not latest_row:
             return []
         raw_rows: list[Any] = []
-        for sample in reversed(rows):
+        for sample in reversed(series_rows):
             details_obj = sample.get("details", {}) if isinstance(sample, dict) else {}
             if not isinstance(details_obj, dict):
                 continue
@@ -6029,15 +7714,26 @@ def monitoring_node_dashboard_data_api() -> Any:
             if isinstance(candidate, list) and candidate:
                 raw_rows = candidate
                 break
+        if not raw_rows and isinstance(latest_row, dict):
+            details_obj = latest_row.get("details", {})
+            if isinstance(details_obj, dict):
+                candidate = details_obj.get("interface_utilization", [])
+                if isinstance(candidate, list) and candidate:
+                    raw_rows = candidate
         if not raw_rows:
             return []
-        normalized: list[dict[str, Any]] = []
+        normalized = []
         for row in raw_rows:
             if not isinstance(row, dict):
                 continue
             interface_name = str(row.get("interface", "")).strip()
             if not interface_name:
                 continue
+            interface_lower = interface_name.lower()
+            interface_key = _normalize_interface_key(interface_name) or interface_lower
+            if selected_ifaces_exact or selected_ifaces_normalized:
+                if interface_lower not in selected_ifaces_exact and interface_key not in selected_ifaces_normalized:
+                    continue
             status_value = str(row.get("status", "unknown") or "unknown").strip().lower()
             if status_value not in {"up", "down", "unknown"}:
                 status_value = "unknown"
@@ -6090,46 +7786,185 @@ def monitoring_node_dashboard_data_api() -> Any:
             "last_boot": str(winrm.get("last_boot", "")).strip(),
             "network_rx_mbps": winrm.get("network_rx_mbps"),
             "network_tx_mbps": winrm.get("network_tx_mbps"),
+            "windows_caption": str(winrm.get("windows_caption", "")).strip(),
+            "windows_version": str(winrm.get("windows_version", "")).strip(),
+            "windows_build": str(winrm.get("windows_build", "")).strip(),
+            "windows_arch": str(winrm.get("windows_arch", "")).strip(),
+            "computer_name": str(winrm.get("computer_name", "")).strip(),
+            "computer_model": str(winrm.get("computer_model", "")).strip(),
+            "domain": str(winrm.get("domain", "")).strip(),
+            "total_memory_gb": winrm.get("total_memory_gb"),
+            "free_memory_gb": winrm.get("free_memory_gb"),
             "disk_usage": out_disks,
         }
 
+    def _serialize_sample_ts(raw_value: Any) -> str:
+        if isinstance(raw_value, datetime):
+            dt = raw_value
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(timezone.utc).isoformat()
+        text = str(raw_value or "").strip()
+        if not text:
+            return ""
+        parsed = _parse_collected_at(text)
+        return parsed.isoformat() if parsed is not None else text
+
+    def _row_to_sample(sample_row: Any, include_details: bool = True) -> dict[str, Any]:
+        details: dict[str, Any] = {}
+        if include_details:
+            try:
+                details_json = str(sample_row["details_json"] or "{}")
+            except Exception:
+                details_json = "{}"
+            try:
+                loaded = json.loads(details_json)
+            except Exception:
+                loaded = {}
+            if isinstance(loaded, dict):
+                details = loaded
+        collected_value = ""
+        try:
+            collected_value = _serialize_sample_ts(sample_row["collected_at_utc"])
+        except Exception:
+            pass
+        if not collected_value:
+            try:
+                collected_value = _serialize_sample_ts(sample_row["collected_at"])
+            except Exception:
+                collected_value = ""
+        return {
+            "status": str(sample_row["status"] or "").strip().lower(),
+            "severity": str(sample_row["severity"] or "").strip().lower(),
+            "cpu_percent": _cap_percent(sample_row["cpu_percent"]),
+            "memory_percent": sample_row["memory_percent"],
+            "interfaces_up": sample_row["interfaces_up"],
+            "interfaces_down": sample_row["interfaces_down"],
+            "sla_ms": sample_row["sla_ms"],
+            "details": details,
+            "collected_at": collected_value,
+        }
+
+    def _load_latest_sample() -> dict[str, Any]:
+        queries = [
+            """
+            SELECT TOP (1) status, severity, cpu_percent, memory_percent, interfaces_up, interfaces_down, sla_ms, details_json, collected_at, collected_at_utc
+            FROM monitoring_metrics
+            WHERE LOWER(device_name) = LOWER(?)
+            ORDER BY collected_at_utc DESC
+            """,
+            """
+            SELECT TOP (1) status, severity, cpu_percent, memory_percent, interfaces_up, interfaces_down, sla_ms, details_json, collected_at
+            FROM monitoring_metrics
+            WHERE LOWER(device_name) = LOWER(?)
+            ORDER BY collected_at DESC
+            """,
+        ]
+        for sql_text in queries:
+            try:
+                with db_conn() as conn:
+                    latest_row = conn.execute(sql_text, (device_name,)).fetchone()
+                if latest_row:
+                    return _row_to_sample(latest_row, include_details=True)
+            except Exception:
+                continue
+        return {}
+
     def _load_samples() -> list[dict[str, Any]]:
         out_rows: list[dict[str, Any]] = []
+        using_rollup = False
+        range_start_iso = range_start_dt.isoformat() if range_start_dt else ""
+        range_end_iso = range_end_dt.isoformat() if range_end_dt else ""
+        range_seconds = max(0.0, (range_end_dt - range_start_dt).total_seconds()) if (range_start_dt and range_end_dt) else 0.0
+
         with db_conn() as conn:
-            sample_rows = conn.execute(
-                """
-                SELECT TOP (?) status, severity, cpu_percent, memory_percent, interfaces_up, interfaces_down, sla_ms, details_json, collected_at
-                FROM monitoring_metrics
-                WHERE LOWER(device_name) = LOWER(?)
-                ORDER BY collected_at DESC
-                """,
-                (limit, device_name),
-            ).fetchall()
+            sample_rows: list[Any] = []
+
+            # For long windows, use hourly rollups when available.
+            if range_start_dt and range_end_dt and range_seconds >= (48 * 3600):
+                try:
+                    sample_rows = conn.execute(
+                        """
+                        SELECT bucket_start_utc, cpu_avg AS cpu_percent, memory_avg AS memory_percent, sla_avg_ms AS sla_ms, availability_pct
+                        FROM monitoring_rollup_hourly
+                        WHERE LOWER(device_name) = LOWER(?) AND bucket_start_utc >= ? AND bucket_start_utc <= ?
+                        ORDER BY bucket_start_utc ASC
+                        """,
+                        (device_name, range_start_iso, range_end_iso),
+                    ).fetchall()
+                    using_rollup = bool(sample_rows)
+                except Exception:
+                    sample_rows = []
+                    using_rollup = False
+
+            if not sample_rows:
+                if range_start_dt and range_end_dt:
+                    try:
+                        sample_rows = conn.execute(
+                            """
+                            SELECT TOP (20000) status, severity, cpu_percent, memory_percent, interfaces_up, interfaces_down, sla_ms, details_json, collected_at, collected_at_utc
+                            FROM monitoring_metrics
+                            WHERE LOWER(device_name) = LOWER(?) AND collected_at_utc >= ? AND collected_at_utc <= ?
+                            ORDER BY collected_at_utc DESC
+                            """,
+                            (device_name, range_start_iso, range_end_iso),
+                        ).fetchall()
+                    except Exception:
+                        sample_rows = conn.execute(
+                            """
+                            SELECT TOP (20000) status, severity, cpu_percent, memory_percent, interfaces_up, interfaces_down, sla_ms, details_json, collected_at
+                            FROM monitoring_metrics
+                            WHERE LOWER(device_name) = LOWER(?) AND collected_at >= ? AND collected_at <= ?
+                            ORDER BY collected_at DESC
+                            """,
+                            (device_name, range_start_iso, range_end_iso),
+                        ).fetchall()
+                else:
+                    try:
+                        sample_rows = conn.execute(
+                            """
+                            SELECT TOP (?) status, severity, cpu_percent, memory_percent, interfaces_up, interfaces_down, sla_ms, details_json, collected_at, collected_at_utc
+                            FROM monitoring_metrics
+                            WHERE LOWER(device_name) = LOWER(?)
+                            ORDER BY collected_at_utc DESC
+                            """,
+                            (limit, device_name),
+                        ).fetchall()
+                    except Exception:
+                        sample_rows = conn.execute(
+                            """
+                            SELECT TOP (?) status, severity, cpu_percent, memory_percent, interfaces_up, interfaces_down, sla_ms, details_json, collected_at
+                            FROM monitoring_metrics
+                            WHERE LOWER(device_name) = LOWER(?)
+                            ORDER BY collected_at DESC
+                            """,
+                            (limit, device_name),
+                        ).fetchall()
+
+        if using_rollup:
+            for row in sample_rows:
+                out_rows.append(
+                    {
+                        "status": "up",
+                        "severity": "ok",
+                        "cpu_percent": _cap_percent(row["cpu_percent"]),
+                        "memory_percent": row["memory_percent"],
+                        "interfaces_up": None,
+                        "interfaces_down": None,
+                        "sla_ms": row["sla_ms"],
+                        "details": {},
+                        "collected_at": _serialize_sample_ts(row["bucket_start_utc"]),
+                    }
+                )
+            return out_rows
+
         for sample_row in sample_rows:
-            details_json = str(sample_row["details_json"] or "{}")
-            try:
-                details = json.loads(details_json)
-            except Exception:
-                details = {}
-            if not isinstance(details, dict):
-                details = {}
-            out_rows.append(
-                {
-                    "status": str(sample_row["status"] or "").strip().lower(),
-                    "severity": str(sample_row["severity"] or "").strip().lower(),
-                    "cpu_percent": sample_row["cpu_percent"],
-                    "memory_percent": sample_row["memory_percent"],
-                    "interfaces_up": sample_row["interfaces_up"],
-                    "interfaces_down": sample_row["interfaces_down"],
-                    "sla_ms": sample_row["sla_ms"],
-                    "details": details,
-                    "collected_at": str(sample_row["collected_at"] or ""),
-                }
-            )
+            out_rows.append(_row_to_sample(sample_row, include_details=True))
         out_rows.reverse()
         return out_rows
 
     rows: list[dict[str, Any]] = _load_samples()
+    latest = _load_latest_sample()
     interval_seconds = int(profile.get("interval_seconds", 30) or 30)
     if force_refresh:
         try:
@@ -6153,6 +7988,8 @@ def monitoring_node_dashboard_data_api() -> Any:
                     "interfaces_up": None,
                     "interfaces_down": None,
                     "sla_ms": ping_latency,
+                    "cpu_warn": max(1, min(100, int(effective.get("cpu_warn", 90) or 90))),
+                    "memory_warn": max(1, min(100, int(effective.get("memory_warn", 90) or 90))),
                     "details_json": json.dumps({"ping_latency_ms": ping_latency, "poll_skipped_reason": "icmp_down", "forced_refresh": True}),
                     "collected_at": datetime.now(timezone.utc).isoformat(),
                 }
@@ -6160,19 +7997,26 @@ def monitoring_node_dashboard_data_api() -> Any:
                 forced_sample = poll_device_monitoring_sample(poll_device, effective, pre_ping=(ping_state, ping_latency))
             save_monitoring_sample(forced_sample)
             rows = _load_samples()
+            latest = _load_latest_sample()
         except Exception as exc:
             write_audit_log_safe(
                 "monitoring_dashboard_force_refresh_failed",
                 details={"device_name": device_name, "host": host, "error": str(exc)},
                 requester=current_username,
             )
-    latest = rows[-1] if rows else {}
     availability = _compute_availability_windows()
-    interface_utilization = _load_interface_utilization()
+    interface_utilization = _load_interface_utilization(rows, latest)
     windows_server = _extract_windows_server_data(latest)
+    active_alerts = load_monitoring_alerts(device_name, ["open", "acked"], limit=50)
     write_audit_log_safe(
         "monitoring_dashboard_data_viewed",
-        details={"device_name": device_name, "sample_count": len(rows), "interface_rows": len(interface_utilization), "windows_server": bool(windows_server.get("is_windows_server"))},
+        details={
+            "device_name": device_name,
+            "sample_count": len(rows),
+            "interface_rows": len(interface_utilization),
+            "windows_server": bool(windows_server.get("is_windows_server")),
+            "active_alerts": len(active_alerts),
+        },
         requester=current_username,
     )
     return jsonify(
@@ -6191,6 +8035,132 @@ def monitoring_node_dashboard_data_api() -> Any:
             "availability": availability,
             "interface_utilization": interface_utilization,
             "windows_server": windows_server,
+            "alerts": active_alerts,
+        }
+    )
+
+
+@app.route("/monitoring/node/live-gauges", methods=["POST"])
+def monitoring_node_live_gauges_api() -> Any:
+    if "creds" not in session:
+        return jsonify({"ok": False, "error": "Authentication required."}), 401
+
+    current_username = str(session.get("creds", {}).get("username", "")).strip()
+    auth_mode = str(session.get("auth_mode", "local"))
+    if not user_has_panel_access(current_username, auth_mode, "monitoring"):
+        return jsonify({"ok": False, "error": "Access denied."}), 403
+
+    payload = request.get_json(silent=True) or {}
+    device_name = str(payload.get("device_name", "")).strip()
+    if not device_name:
+        return jsonify({"ok": False, "error": "Device name is required."}), 400
+
+    base_device, profile, host = _monitoring_device_lookup(device_name)
+    if not host:
+        host = str(base_device.get("host", "")).strip()
+    if not host:
+        return jsonify({"ok": False, "error": "Device host/IP is not configured."}), 400
+
+    profile_category = str(profile.get("category", "")).strip()
+    if not profile_category:
+        base_groups = base_device.get("groups", []) if isinstance(base_device.get("groups", []), list) else []
+        profile_category = str(base_groups[0]).strip() if base_groups else DEFAULT_CATEGORY
+    if not monitoring_user_allowed_for_category(current_username, auth_mode, profile_category):
+        return jsonify({"ok": False, "error": "You are not allowed to access this device category."}), 403
+    if not is_windows_servers_category(profile_category):
+        return jsonify({"ok": False, "error": "Live gauges are available only for Windows Servers."}), 400
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    effective = monitoring_effective_settings(load_monitoring_settings(), profile)
+    effective["collection_mode"] = "winrm"
+    ping_state, ping_latency = ping_host_status(host, 1)
+    live_metrics, live_errors = winrm_collect_live_gauges(host, effective, timeout_seconds=6)
+    winrm_obj = live_metrics if isinstance(live_metrics, dict) else {}
+    live_has_data = any(
+        winrm_obj.get(k) not in (None, "")
+        for k in (
+            "cpu_percent",
+            "memory_percent",
+            "uptime_seconds",
+            "last_boot",
+            "windows_caption",
+            "network_rx_mbps",
+            "network_tx_mbps",
+        )
+    )
+    status_value = "up" if (ping_state == "up" or live_has_data) else "down"
+    sample = {
+        "status": status_value,
+        "cpu_percent": winrm_obj.get("cpu_percent"),
+        "memory_percent": winrm_obj.get("memory_percent"),
+        "sla_ms": ping_latency,
+        "collected_at": now_iso,
+    }
+    if live_errors:
+        sample["details_json"] = json.dumps({"winrm_errors": live_errors, "live_only": True})
+
+    # Fallback to latest stored sample if live WinRM returned empty fields.
+    if not live_has_data:
+        try:
+            with db_conn() as conn:
+                latest_row = conn.execute(
+                    """
+                    SELECT TOP (1) status, cpu_percent, memory_percent, sla_ms, details_json, collected_at_utc, collected_at
+                    FROM monitoring_metrics
+                    WHERE LOWER(device_name)=LOWER(?)
+                    ORDER BY collected_at_utc DESC
+                    """,
+                    (device_name,),
+                ).fetchone()
+            if latest_row:
+                sample["status"] = str(latest_row["status"] or sample.get("status", "unknown")).strip().lower() or "unknown"
+                sample["cpu_percent"] = latest_row["cpu_percent"] if latest_row["cpu_percent"] is not None else sample.get("cpu_percent")
+                sample["memory_percent"] = (
+                    latest_row["memory_percent"] if latest_row["memory_percent"] is not None else sample.get("memory_percent")
+                )
+                sample["sla_ms"] = latest_row["sla_ms"] if latest_row["sla_ms"] is not None else sample.get("sla_ms")
+                collected = str(latest_row["collected_at_utc"] or latest_row["collected_at"] or "").strip()
+                if collected:
+                    sample["collected_at"] = collected
+                try:
+                    details_obj = json.loads(str(latest_row["details_json"] or "{}"))
+                except Exception:
+                    details_obj = {}
+                if isinstance(details_obj, dict):
+                    prev_winrm = details_obj.get("winrm", {})
+                    if isinstance(prev_winrm, dict):
+                        merged = dict(prev_winrm)
+                        for key, value in winrm_obj.items():
+                            if value not in (None, ""):
+                                merged[key] = value
+                        winrm_obj = merged
+        except Exception:
+            pass
+
+    sampled_at = str(sample.get("collected_at", "")).strip() or now_iso
+    return jsonify(
+        {
+            "ok": True,
+            "device_name": device_name,
+            "host": host,
+            "status": str(sample.get("status", "unknown") or "unknown").strip().lower(),
+            "cpu_percent": _cap_percent(sample.get("cpu_percent")),
+            "memory_percent": _cap_percent(sample.get("memory_percent")),
+            "sla_ms": sample.get("sla_ms"),
+            "sampled_at": sampled_at,
+            "network_rx_mbps": winrm_obj.get("network_rx_mbps"),
+            "network_tx_mbps": winrm_obj.get("network_tx_mbps"),
+            "uptime_seconds": winrm_obj.get("uptime_seconds"),
+            "last_boot": str(winrm_obj.get("last_boot", "")).strip(),
+            "windows_caption": str(winrm_obj.get("windows_caption", "")).strip(),
+            "windows_version": str(winrm_obj.get("windows_version", "")).strip(),
+            "windows_build": str(winrm_obj.get("windows_build", "")).strip(),
+            "windows_arch": str(winrm_obj.get("windows_arch", "")).strip(),
+            "computer_name": str(winrm_obj.get("computer_name", "")).strip(),
+            "computer_model": str(winrm_obj.get("computer_model", "")).strip(),
+            "domain": str(winrm_obj.get("domain", "")).strip(),
+            "total_memory_gb": winrm_obj.get("total_memory_gb"),
+            "free_memory_gb": winrm_obj.get("free_memory_gb"),
         }
     )
 
@@ -6206,14 +8176,28 @@ def login() -> Any:
         info = "Session expired due to inactivity. Please log in again."
     ldap_settings = load_ldap_settings()
     users = load_users()
+    session_settings = load_session_settings()
+    lockout_enabled = bool(session_settings.get("login_lockout_enabled", False))
 
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         timeout = int(request.form.get("timeout", "8") or 8)
+        client_ip = _login_client_ip()
         auth_source = "unknown"
         failure_reason = ""
         user_role = ""
+
+        if lockout_enabled and username:
+            locked, seconds_left = _is_login_temporarily_locked(username, client_ip)
+            if locked:
+                error = (
+                    "Too many failed login attempts. "
+                    f"Try again in {_format_lockout_countdown(seconds_left)}."
+                )
+                failure_reason = "login_locked"
+                write_login_audit_log(username, auth_source, False, failure_reason)
+                return render_template("login.html", error=error, info=info)
 
         if not username:
             error = "Username is required."
@@ -6258,8 +8242,18 @@ def login() -> Any:
             session["buttons"] = load_user_buttons(username, "local") or default_buttons()
             session.setdefault("run_history", [])
             session["last_activity_ts"] = int(time.time())
+            if lockout_enabled and username:
+                _clear_login_failure_state(username, client_ip)
             write_login_audit_log(username, auth_source, True, f"login_success role={user_role or 'unknown'}")
             return redirect(url_for("dashboard"))
+        if lockout_enabled and username and failure_reason != "login_locked":
+            now_locked, seconds_left, _attempts = _register_login_failure(username, client_ip, session_settings)
+            if now_locked:
+                error = (
+                    "Too many failed login attempts. "
+                    f"Account locked for {_format_lockout_countdown(seconds_left)}."
+                )
+                failure_reason = "login_locked"
         write_login_audit_log(username, auth_source, False, failure_reason or error or "login_failed")
 
     return render_template("login.html", error=error, info=info)
@@ -7383,6 +9377,7 @@ def ip_branch_state_api() -> Any:
 def dashboard() -> Any:
     if "creds" not in session:
         return redirect(url_for("login"))
+    session.pop("super_admin_verified", None)
 
     current_username = str(session.get("creds", {}).get("username", ""))
     auth_mode = str(session.get("auth_mode", "local"))
@@ -7988,7 +9983,7 @@ def buttons_menu() -> Any:
         selected_categories: list[str] = []
         if mode not in {"show", "config"}:
             mode = "show"
-        if audience not in {"junior", "senior"}:
+        if audience not in {"junior", "senior", "both"}:
             audience = "senior"
         if label and command:
             button_id = f"custom-{int(datetime.now(timezone.utc).timestamp() * 1000)}"
@@ -8041,7 +10036,7 @@ def buttons_menu() -> Any:
         button_id = request.form.get("button_id", "").strip()
         new_command_text = request.form.get("edit_command_text", "").strip()
         new_audience = request.form.get("edit_audience", "").strip().lower()
-        if new_audience not in {"junior", "senior"}:
+        if new_audience not in {"junior", "senior", "both"}:
             new_audience = ""
         if button_id and (new_command_text or new_audience):
             old_command = ""
@@ -9203,6 +11198,6 @@ def inject_common_context() -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-    if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
+    if embedded_monitoring_poller_enabled() and (os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug):
         ensure_monitoring_poller_started()
     app.run(host="0.0.0.0", port=8080, debug=True)

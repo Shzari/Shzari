@@ -120,7 +120,7 @@
       "command": "show interfaces status",
       "mode": "show",
       "categories": [],
-      "audience": "senior"
+      "audience": "junior"
     },
     {
       "id": "show-logging",

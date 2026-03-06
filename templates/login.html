@@ -12,7 +12,7 @@
     <p>Only users added in Super Admin Users can log in. Each user uses their assigned auth source.</p>
 
     <div class="action-row">
-      <a class="btn" href="{{ url_for('verify_super_admin_route') }}">Settings (Super Admin)</a>
+      <a class="btn" href="{{ url_for('verify_super_admin_route') }}">Super Admin</a>
     </div>
     {% if info %}<div class="info">{{ info }}</div>{% endif %}
     {% if error %}<div class="error">{{ error }}</div>{% endif %}

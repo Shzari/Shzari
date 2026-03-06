@@ -101,6 +101,33 @@ python -m pip install -r requirements.txt
 python run.py
 ```
 
+## Run With HTTPS
+
+You can now run the app directly with TLS from `run.py`/`app.py` using environment variables.
+
+### Windows PowerShell (real cert/key files)
+```powershell
+$env:APP_HTTPS="1"
+$env:APP_SSL_CERT="C:\certs\server.crt"
+$env:APP_SSL_KEY="C:\certs\server.key"
+$env:APP_HOST="0.0.0.0"
+$env:APP_PORT="8443"
+python run.py
+```
+
+### Windows PowerShell (quick dev HTTPS, self-generated cert)
+```powershell
+$env:APP_HTTPS="1"
+$env:APP_SSL_ADHOC="1"
+$env:APP_HOST="0.0.0.0"
+$env:APP_PORT="8443"
+python run.py
+```
+
+Optional hardening flags:
+- `APP_FORCE_HTTPS=1` to redirect all HTTP requests to HTTPS
+- `APP_TRUST_PROXY=1` when running behind reverse proxy (IIS/Nginx)
+
 ### Windows (Command Prompt)
 ```bat
 py -m venv .venv
@@ -116,6 +143,31 @@ Compatibility entrypoint is still available:
 ```bash
 python app.py
 ```
+
+## Monitoring Collector (Separate Worker)
+
+Monitoring collection can run as a separate process (recommended), independent from web login/session/browser.
+
+### Start web UI
+```bash
+python run.py
+```
+
+### Start monitoring worker (separate terminal)
+```bash
+python monitoring_worker.py
+```
+
+Windows shortcut:
+```bat
+start_monitoring_worker.bat
+```
+
+Notes:
+- Worker polls continuously based on configured interval (default 30s) and writes to SQL DB.
+- Node Dashboard reads stored DB history; it does not require browser to stay open.
+- Embedded Flask poller is disabled by default. Enable only if needed with:
+  - `MONITORING_EMBEDDED_POLLER=1`
 
 ## Refactor Layout
 
