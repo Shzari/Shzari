@@ -1,0 +1,46 @@
+﻿<dialog id="monitoringModal" class="device-modal">
+    <form method="post" action="{{ url_for('monitoring_settings_page') }}">
+      <h3>Monitoring Configuration</h3>
+      <p>Prepare monitoring collection settings for telemetry/SNMP/SSH/API polling.</p>
+      <label><input type="checkbox" name="enabled" {% if monitoring.enabled %}checked{% endif %}> Enable monitoring profile</label>
+
+      <label>Collection Mode</label>
+      <select name="collection_mode">
+        <option value="telemetry" {% if monitoring.collection_mode == 'telemetry' %}selected{% endif %}>Telemetry</option>
+        <option value="snmp" {% if monitoring.collection_mode == 'snmp' %}selected{% endif %}>SNMP</option>
+        <option value="snmp_v2" {% if monitoring.collection_mode == 'snmp_v2' %}selected{% endif %}>SNMP v2</option>
+        <option value="snmp_v3" {% if monitoring.collection_mode == 'snmp_v3' %}selected{% endif %}>SNMP v3</option>
+        <option value="ssh" {% if monitoring.collection_mode == 'ssh' %}selected{% endif %}>SSH Polling</option>
+        <option value="api" {% if monitoring.collection_mode == 'api' %}selected{% endif %}>API Polling</option>
+      </select>
+      <label>Collector Host</label>
+      <input name="collector_host" type="text" value="{{ monitoring.collector_host }}" placeholder="e.g., 10.20.30.50">
+      <label>Collector Port</label>
+      <input name="collector_port" type="number" min="1" max="65535" value="{{ monitoring.collector_port }}">
+      <label>Transport</label>
+      <select name="transport">
+        <option value="grpc" {% if monitoring.transport == 'grpc' %}selected{% endif %}>gRPC</option>
+        <option value="tcp" {% if monitoring.transport == 'tcp' %}selected{% endif %}>TCP</option>
+        <option value="udp" {% if monitoring.transport == 'udp' %}selected{% endif %}>UDP</option>
+        <option value="http" {% if monitoring.transport == 'http' %}selected{% endif %}>HTTP</option>
+      </select>
+      <label>Username</label>
+      <input name="username" type="text" value="{{ monitoring.username }}" placeholder="Optional auth username">
+      <label>Password</label>
+      <input name="password" type="password" value="{{ monitoring.password }}" placeholder="Optional auth password">
+      <label>Token</label>
+      <input name="token" type="password" value="{{ monitoring.token }}" placeholder="Optional API/telemetry token">
+      <label>Poll/Push Interval (seconds)</label>
+      <input name="interval_seconds" type="number" min="5" max="3600" value="{{ monitoring.interval_seconds }}">
+      <label>Metrics List</label>
+      <input name="metrics" type="text" value="{{ monitoring.metrics }}" placeholder="cpu,memory,interfaces,sla">
+      <label>Notes</label>
+      <textarea name="notes" rows="3" placeholder="Optional notes">{{ monitoring.notes }}</textarea>
+
+      <div class="action-row">
+        <button class="btn run" type="submit">Save Monitoring</button>
+        <button class="btn ghost" type="button" onclick="closeMonitoringModal()">Close</button>
+      </div>
+    </form>
+  </dialog>
+

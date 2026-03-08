@@ -1,0 +1,244 @@
+# Project Refactor Progress
+
+Date: 2026-03-06
+
+## Completed
+
+- Added shared base template: `templates/layouts/base.html`
+- Converted all page templates to extend base:
+  - `templates/login.html`
+  - `templates/change_password.html`
+  - `templates/super_admin_setup.html`
+  - `templates/super_admin_verify.html`
+  - `templates/output.html`
+  - `templates/audit_dashboard.html`
+  - `templates/ise_settings.html`
+  - `templates/ip_addressing.html`
+- Added reusable components:
+  - `templates/components/messages.html`
+  - `templates/components/back_to_login_strip.html`
+  - `templates/components/user_auth_strip.html`
+- Extracted IP Addressing ISP panels into partials:
+  - `templates/ip_addressing/panels/isp_branches_panel.html`
+  - `templates/ip_addressing/panels/isp_atms_panel.html`
+- Extracted all current Network Addressing sub-panels in IP Addressing into partials:
+  - `na_servers_panel.html`
+  - `na_network_devices_panel.html`
+  - `na_isp_internet_panel.html`
+  - `na_dmvpn_branches_panel.html`
+  - `na_dmvpn_atms_panel.html`
+  - `na_sim_cards_panel.html`
+  - `na_site_to_site_panel.html`
+  - `na_nat_panel.html`
+- Extracted IP Addressing shell into sections:
+  - `templates/ip_addressing/sections/top_bar.html`
+  - `templates/ip_addressing/sections/sidebar_nav.html`
+  - `templates/ip_addressing/sections/*.html` (views and dialogs bundle)
+- Moved IP Addressing inline CSS and script into dedicated files:
+  - `static/css/ip_addressing/page.css`
+  - `templates/ip_addressing/scripts/page_script.html`
+- Refactored ISE Settings into modular sections + dialogs:
+  - `templates/ise_settings/sections/main_panel.html`
+  - `templates/ise_settings/dialogs/*.html` (10 modal files)
+- Moved ISE Settings inline CSS and script into dedicated files:
+  - `static/css/ise_settings/page.css`
+  - `templates/ise_settings/scripts/page_script.html`
+- Moved Audit Dashboard inline CSS into:
+  - `static/css/audit_dashboard/page.css`
+- Moved Login inline JavaScript into:
+  - `static/js/login/page.js`
+- Started backend extraction from `legacy.py`:
+  - Added `app/services/audit_store_service.py` for DB audit persistence and paged audit log loading.
+  - `legacy.py` now delegates audit DB write/load helpers to service layer.
+- Continued backend extraction from `legacy.py` into handler modules:
+  - Added `app/services/legacy_settings_handlers.py` for super-admin settings and user-management handlers.
+  - Added `app/services/legacy_monitoring_handlers.py` for monitoring panel handlers and APIs.
+  - Added `app/services/legacy_ipam_handlers.py` for IP addressing/device/request handlers.
+  - `legacy.py` now uses thin delegator functions for these extracted handler blocks.
+- Added DB/bootstrap extraction:
+  - `app/services/legacy_db_init_handlers.py` now contains `init_db` and `migrate_legacy_json_to_db`.
+- Added monitoring collector extraction:
+  - `app/services/legacy_monitoring_collectors.py` now contains WinRM/SNMP collection and sample-persistence functions.
+- Added command/helpdesk extraction:
+  - `app/services/legacy_command_handlers.py` now contains command execution, SSH-session APIs, ping helper, and helpdesk interface API.
+- Added monitoring poller/orchestration extraction:
+  - `app/services/legacy_monitoring_poller.py` now contains effective-settings merge, alert/status loaders, and poller loop/start-stop helpers.
+- Route modules now call extracted handler modules directly for moved endpoints (reduced dynamic legacy `getattr` delegations).
+- Added IP branch/device credentials extraction:
+  - `app/services/legacy_ip_branch_handlers.py` now contains IP branch actions/state APIs and device credential/connectivity handlers.
+- Removed route-level direct legacy imports for key domains:
+  - `app/routes/auth.py`
+  - `app/routes/ipam.py`
+  - `app/routes/devices.py`
+- Added domain package scaffold:
+  - `app/domains/auth/`
+  - `app/domains/ipam/`
+  - `app/domains/monitoring/`
+  - `app/domains/settings/`
+  - `app/domains/commands/`
+- Replaced runtime `_bind_legacy_globals` pattern in extracted modules with explicit legacy symbol binding + import-time fallback.
+- Moved primary schema DDL into versioned SQL migration:
+  - `sql/migrations/001_primary_schema.sql`
+  - `legacy_db_init_handlers.py` now runs migrations from `sql/migrations` and tracks applied versions in `schema_migrations`.
+- Added quality/tooling baseline:
+  - `pyproject.toml` (ruff/black/mypy/pytest config)
+  - `.github/workflows/quality.yml`
+- Added route/auth regression tests:
+  - `tests/test_auth_routes.py`
+  - `tests/test_route_wiring.py`
+  - `tests/conftest.py`
+- Removed remaining route-level `legacy` bridges:
+  - `app/routes/dashboard.py` now calls extracted services directly.
+  - `app/routes/audit.py` now uses `auth_service` + `audit_store_service` + `notifications_service`.
+  - Current `app/routes/*` no longer import `from app import legacy` or use dynamic `getattr(legacy, ...)`.
+- Added utility extraction modules:
+  - `app/services/legacy_dashboard_handlers.py` (dashboard + notification + pending-cleanup handlers)
+  - `app/services/legacy_auth_helpers.py` (LDAP/RADIUS/ISE auth helpers)
+  - `app/services/legacy_network_rows_helpers.py` (ISP branch/ATM row table helpers)
+  - `app/services/legacy_timeout_handlers.py` (session timeout enforcement)
+  - `app/services/notifications_service.py`
+- Added core data/permission/session helper extraction:
+  - `app/services/legacy_core_helpers.py`
+  - Includes user/device/category/menu/button helpers, ISE/LDAP settings helpers, and runtime SSH session helper functions.
+- Added audit + pending helper extraction:
+  - `app/services/legacy_audit_helpers.py`
+  - `app/services/legacy_pending_helpers.py`
+  - Includes SQL audit settings/write helpers, audit page loaders, notification helpers, and pending request helper functions.
+- `app/legacy.py` reduced further to ~3.9k lines.
+- `app/legacy.py` reduced further to ~3.4k lines.
+- `app/legacy.py` reduced further to ~2.8k lines.
+- Added session/IP-branch/monitoring-config/network-check helper extraction:
+  - `app/services/legacy_ip_branch_state_helpers.py`
+  - `app/services/legacy_session_acl_helpers.py`
+  - `app/services/legacy_monitoring_config_helpers.py`
+  - `app/services/legacy_network_checks_helpers.py`
+- `app/legacy.py` reduced further to ~2.3k lines.
+- Extracted additional core persistence/account logic from `legacy.py` into `legacy_core_helpers`:
+  - super-admin CRUD/verify helpers
+  - device credentials store helpers
+  - app settings JSON helpers
+  - user buttons store/load/save helpers
+  - `is_current_session_super_admin` and `set_user_password`
+- `app/services/auth_service.py` refactored to lazy helper imports (removes direct service-level `legacy` dependency while preserving startup safety).
+- Refactored small service facades to lazy helper-based adapters:
+  - `app/services/devices_service.py`
+  - `app/services/ipam_service.py`
+  - `app/services/logs_service.py`
+  - `app/services/monitoring_service.py` (fixes stale `poll_monitoring_device_now` mapping)
+  - `app/services/notifications_service.py`
+- `app/services/legacy_ip_branch_handlers.py` rewritten with direct service imports (removed large static legacy symbol map).
+- Simplified large extracted handler headers by removing 100s of static legacy symbol assignments and retaining compact runtime fallback:
+  - `legacy_ipam_handlers.py`
+  - `legacy_settings_handlers.py`
+  - `legacy_monitoring_handlers.py`
+  - `legacy_command_handlers.py`
+  - `legacy_monitoring_collectors.py`
+- Added command utility extraction:
+  - `app/services/legacy_command_utils.py`
+  - moved command parsing/shell-read/interface-normalization/helpdesk-creds helpers from `legacy.py`.
+- Added role/access utility extraction:
+  - `app/services/legacy_role_helpers.py`
+  - moved monitoring-role and helpdesk-role helper logic from `legacy.py`.
+- Added file-settings utility extraction:
+  - `app/services/legacy_file_settings_helpers.py`
+  - moved NTP + external logging file settings helpers from `legacy.py`.
+- Added SQL/backend utility extraction:
+  - `app/services/legacy_sql_backend_helpers.py`
+  - moved SQL rewrite/adaptation and SQL client connect helpers from `legacy.py`.
+- Added request/context utility extraction:
+  - `app/services/legacy_request_context_helpers.py`
+  - moved no-cache response hook, context processor payload helper, and audit-executor shutdown helper from `legacy.py`.
+- Added logging/runtime utility extraction:
+  - `app/services/legacy_logging_helpers.py`
+  - moved `_safe_int`, client IP/actor helpers, and app logging setup function from `legacy.py`.
+- Moved `DBCursor` and `DBConnection` classes into:
+  - `app/services/legacy_sql_backend_helpers.py`
+- Split large public handler modules into thin wrappers + implementation modules:
+  - `legacy_ipam_handlers.py` -> `legacy_ipam_handlers_impl.py`
+  - `legacy_settings_handlers.py` -> `legacy_settings_handlers_impl.py`
+  - `legacy_monitoring_handlers.py` -> `legacy_monitoring_handlers_impl.py`
+  - `legacy_command_handlers.py` -> `legacy_command_handlers_impl.py`
+  - `legacy_monitoring_collectors.py` -> `legacy_monitoring_collectors_impl.py`
+- `app/legacy.py` reduced further to ~1.01k lines.
+- Moved heavy implementation modules from `app/services` into domain folders and kept service compatibility wrappers:
+  - `app/domains/ipam/handlers_impl.py`, `ip_branch_handlers_impl.py`, `branch_state_impl.py`, `network_rows_impl.py`, `dashboard_impl.py`
+  - `app/domains/monitoring/handlers_impl.py`, `collectors_impl.py`, `poller_impl.py`, `config_impl.py`, `network_checks_impl.py`
+  - `app/domains/settings/handlers_impl.py`, `session_acl_impl.py`, `timeout_impl.py`, `file_settings_impl.py`
+  - `app/domains/commands/handlers_impl.py`, `utils_impl.py`
+  - `app/domains/auth/auth_helpers_impl.py`, `pending_impl.py`, `role_impl.py`
+  - `app/domains/shared/core_helpers_impl.py`, `db_init_impl.py`, `sql_backend_impl.py`, `logging_impl.py`, `request_context_impl.py`
+  - `app/domains/audit/helpers_impl.py`
+- `app/services/*` now acts as a thin compatibility layer and is significantly smaller.
+- Added transitional app factory module:
+  - `app/factory.py`
+  - `app/__init__.py` now imports `create_app` from `app.factory`.
+- Cleared `app/legacy.py` into a thin compatibility shim:
+  - runtime content moved to `app/compat/legacy_runtime.py`
+  - `app/legacy.py` now re-exports symbols from `app.compat.legacy_runtime` (14 lines).
+- Updated bootstrap and domain imports to bypass `app.legacy` during startup:
+  - `app/factory.py` and `app/services/db_service.py` now import `app.compat.legacy_runtime`.
+  - domain implementation modules now reference `app.compat.legacy_runtime` instead of `app.legacy`.
+- Extracted audit routes from `legacy.py` into:
+  - `app/routes/audit.py`
+  - Registered with explicit legacy endpoint names (`audit_dashboard`, `audit_dashboard_logs_api`) to keep compatibility.
+- Extracted auth routes from `legacy.py` into:
+  - `app/routes/auth.py`
+  - Includes `/`, `/login`, `/logout`, `/change-password`, and super-admin setup/verify/exit routes.
+- Extracted route bindings (wrapper modules) for:
+  - `app/routes/dashboard.py` (`/dashboard`)
+  - `app/routes/ipam.py` (`/ip-addressing`)
+  - `app/routes/settings.py` (all `/settings/*` endpoints, including `/settings/users`)
+- Added centralized route bootstrap:
+  - `app/routes/__init__.py::register_all_routes(...)`
+  - `legacy.py` now registers modular routes through one call.
+- Expanded modular route binding to all remaining API domains:
+  - `app/routes/monitoring.py`
+  - `app/routes/devices.py`
+  - `app/routes/helpdesk.py`
+  - `app/routes/api.py`
+  - `app/routes/ipam.py` now includes branch state/live-data endpoints.
+  - `app/routes/dashboard.py` now includes notification/pending-request endpoints.
+- `legacy.py` now contains **0** `@app.route(...)` decorators (routing fully externalized).
+- Added Audit Dashboard lazy-loading API and client paging:
+  - `/audit-dashboard/logs`
+  - `static/js/audit_dashboard/page.js`
+
+## Validation
+
+- Jinja template compile check passes for all HTML templates.
+- Basic GET route smoke checks passed (no 500 errors).
+- Python compile check passes for entry modules:
+  - `app/legacy.py`
+  - `app.py`
+  - `run.py`
+- Python compile check passes for extracted handler modules:
+  - `app/services/legacy_settings_handlers.py`
+  - `app/services/legacy_monitoring_handlers.py`
+  - `app/services/legacy_ipam_handlers.py`
+- Audit logs pagination endpoint returns DB-backed JSON with `has_more` + `next_offset`.
+- Endpoint presence smoke check confirms expected route endpoints are registered (55/55 in current check list).
+- Representative route smoke checks return expected auth-gated statuses (`200` / `302` / `401`).
+- Flask URL map check confirms all extracted endpoint names are still registered (0 missing in current check list).
+- Additional endpoint check confirms command/helpdesk/monitoring/settings/IPAM extracted endpoints remain registered (0 missing in current check list).
+- Quality checks pass locally:
+  - `ruff check app/routes app/services tests`
+  - `black --check app/routes app/services tests`
+  - `mypy app/routes/auth.py app/services/auth_service.py tests`
+  - `pytest -q` (5 passed)
+- Post-refactor verification (latest pass):
+  - `.\\venv\\Scripts\\python.exe -m compileall -q app`
+  - `.\\venv\\Scripts\\python.exe -m ruff check app/routes app/services tests`
+  - `.\\venv\\Scripts\\python.exe -m pytest -q` (5 passed)
+- Additional validation after domain migration:
+  - `ruff check app/routes app/services app/domains tests`
+  - Flask route-map smoke checks against expected endpoint names (no missing endpoints in current list).
+- Post-shim validation:
+  - `compileall`, `ruff`, and `pytest` all pass (`5 passed`).
+  - Flask endpoint smoke check reports no missing endpoints for current check list.
+
+## Next
+
+1. Continue reducing `legacy.py` by moving shared utility clusters (`_authenticate_radius_server`, ACL/session/timeouts, network row table helpers) into domain services.
+2. Incrementally replace remaining `app/services/legacy_*` modules with explicit domain-native service/repository modules.
+3. Expand tests to cover authenticated permissions matrix and DB-backed save/load flows for ISP Branches/ATMs.
+4. Add migration for future schema updates as separate incremental SQL files (`002_*.sql`, `003_*.sql`, ...).

@@ -1,45 +1,97 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import atexit
+import errno
 import os
-import json
 import threading
 import time
 from pathlib import Path
 from typing import Any
 
 from app import create_app
-from app.legacy import embedded_monitoring_poller_enabled, ensure_monitoring_poller_started
-from config_settings import SESSION_SETTINGS_FILE
+from app.legacy import embedded_monitoring_poller_enabled, ensure_monitoring_poller_started, load_session_settings
 from werkzeug.serving import make_server
 
 app = create_app()
+_APP_LOCK_HANDLE: Any | None = None
+_APP_LOCK_PATH = Path(".app_runtime.lock")
+
+
+def _acquire_single_instance_lock() -> None:
+    global _APP_LOCK_HANDLE
+    if _APP_LOCK_HANDLE is not None:
+        return
+    lock_file = _APP_LOCK_PATH.resolve()
+    lock_file.parent.mkdir(parents=True, exist_ok=True)
+    lock_handle = open(lock_file, "a+")
+    try:
+        import msvcrt  # Windows file lock used by this deployment.
+
+        lock_handle.seek(0)
+        try:
+            msvcrt.locking(lock_handle.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError as exc:
+            if getattr(exc, "errno", None) in {errno.EACCES, errno.EDEADLK, errno.EAGAIN, 13}:
+                lock_handle.close()
+                raise RuntimeError(
+                    "Another app.py instance is already running. Stop existing process before starting a new one."
+                ) from exc
+            raise
+        lock_handle.write(str(os.getpid()))
+        lock_handle.flush()
+        _APP_LOCK_HANDLE = lock_handle
+    except Exception:
+        lock_handle.close()
+        raise
+
+
+def _release_single_instance_lock() -> None:
+    global _APP_LOCK_HANDLE
+    if _APP_LOCK_HANDLE is None:
+        return
+    try:
+        import msvcrt
+
+        _APP_LOCK_HANDLE.seek(0)
+        msvcrt.locking(_APP_LOCK_HANDLE.fileno(), msvcrt.LK_UNLCK, 1)
+    except Exception:
+        pass
+    try:
+        _APP_LOCK_HANDLE.close()
+    except Exception:
+        pass
+    _APP_LOCK_HANDLE = None
+
+
+atexit.register(_release_single_instance_lock)
 
 
 def _is_true(value: str | None) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _announce(message: str) -> None:
+    print(message)
+    try:
+        app.logger.info(message)
+    except Exception:
+        pass
+
+
 def _load_web_runtime_settings() -> dict[str, Any]:
     defaults: dict[str, Any] = {
         "http_enabled": True,
-        "https_enabled": False,
+        "https_enabled": True,
         "http_port": 8080,
         "https_port": 8443,
     }
     try:
-        if not SESSION_SETTINGS_FILE.exists():
-            return defaults
-        with SESSION_SETTINGS_FILE.open("r", encoding="utf-8") as f:
-            data = json.load(f)
+        data = load_session_settings()
         if not isinstance(data, dict):
             return defaults
+        http_enabled = bool(data.get("http_enabled", True))
         https_enabled = bool(data.get("https_enabled", False))
-        if "http_enabled" in data:
-            http_enabled = bool(data.get("http_enabled", True))
-        else:
-            # Backward compatibility with older settings payload.
-            http_enabled = True
         if not http_enabled and not https_enabled:
             http_enabled = True
         defaults["http_enabled"] = http_enabled
@@ -88,18 +140,19 @@ def _run_dual_web_servers(host: str, http_port: int, https_port: int, ssl_contex
     http_thread.start()
     https_thread.start()
 
-    print(f"Starting web app on http://{host}:{http_port}")
-    print(f"Starting web app on https://{host}:{https_port}")
+    _announce(f"Starting web app on http://{host}:{http_port}")
+    _announce(f"Starting web app on https://{host}:{https_port}")
     if debug_mode:
-        print("Dual HTTP+HTTPS mode runs without Flask reloader.")
+        _announce("Dual HTTP+HTTPS mode runs without Flask reloader.")
     try:
         while http_thread.is_alive() and https_thread.is_alive():
             time.sleep(0.5)
     except KeyboardInterrupt:
-        print("Stopping web app...")
+        _announce("Stopping web app...")
 
 
 if __name__ == "__main__":
+    _acquire_single_instance_lock()
     if embedded_monitoring_poller_enabled() and (os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug):
         ensure_monitoring_poller_started()
     settings = _load_web_runtime_settings()
@@ -121,15 +174,15 @@ if __name__ == "__main__":
         use_https = https_enabled and not http_enabled
         ssl_context = _resolve_ssl_context(use_https)
         scheme = "https" if ssl_context else "http"
-        print(f"Starting web app on {scheme}://{host}:{port}")
+        _announce(f"Starting web app on {scheme}://{host}:{port}")
         app.run(host=host, port=port, debug=debug_mode, ssl_context=ssl_context)
     elif http_enabled and https_enabled:
         ssl_context = _resolve_ssl_context(True)
         _run_dual_web_servers(host, http_port, https_port, ssl_context, debug_mode)
     elif https_enabled:
         ssl_context = _resolve_ssl_context(True)
-        print(f"Starting web app on https://{host}:{https_port}")
+        _announce(f"Starting web app on https://{host}:{https_port}")
         app.run(host=host, port=https_port, debug=debug_mode, ssl_context=ssl_context)
     else:
-        print(f"Starting web app on http://{host}:{http_port}")
+        _announce(f"Starting web app on http://{host}:{http_port}")
         app.run(host=host, port=http_port, debug=debug_mode, ssl_context=None)

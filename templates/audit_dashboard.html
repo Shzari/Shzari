@@ -1,43 +1,39 @@
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Audit Dashboard</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <style>
-    .audit-wrap { margin-top: 14px; }
-    .audit-table-wrap { background: rgba(255,255,255,.92); border-radius: 14px; border: 1px solid #d7e0f5; overflow: auto; }
-    .audit-table { width: 100%; border-collapse: collapse; min-width: 980px; }
-    .audit-table th, .audit-table td { padding: 10px 12px; border-bottom: 1px solid #e5ecfb; vertical-align: top; }
-    .audit-table th { background: #eef3ff; text-align: left; }
-      </style>
-</head>
-<body>
-  <div class="page-bg"></div>
+{% extends "layouts/base.html" %}
+{% block page_title %}Audit Dashboard{% endblock %}
+{% block head_extra %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/audit_dashboard/page.css') }}">
+{% endblock %}
+{% block body %}
   <div class="user-strip">
     <div class="chip center-chip">Audit Dashboard</div>
-    <div class="chip">👤 {{ current_user or 'Unknown' }}/{{ current_user_role|upper }}</div>
-    <div class="chip">🔐 {{ auth_mode|upper }}</div>
+    <div class="chip">{{ current_user or 'Unknown' }}/{{ current_user_role|upper }}</div>
+    <div class="chip">{{ auth_mode|upper }}</div>
     <a class="btn-top" href="{{ url_for('logout') }}">Logout</a>
   </div>
 
   <div class="topbar glass">
-    <h2>📜 Audit Logs</h2>
+    <h2>Audit Logs</h2>
     <p>Read-only activity trail. Audit role has access only to this view.</p>
   </div>
 
-  {% if info %}<div class="info">{{ info }}</div>{% endif %}
-  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  {% include "components/messages.html" %}
 
   <div class="audit-wrap">
-    <div class="audit-table-wrap">
+    <div
+      id="auditTableContainer"
+      class="audit-table-wrap"
+      data-api-url="{{ url_for('audit_dashboard_logs_api') }}"
+      data-page-size="{{ logs_page_size|default(100)|int }}"
+      data-has-more="{{ 'true' if logs_has_more else 'false' }}"
+      data-initial-count="{{ logs|length }}"
+    >
       <table class="audit-table">
         <thead>
           <tr>
             <th>ID</th><th>Timestamp</th><th>Action</th><th>Requester</th><th>Approver</th><th>Target</th><th>Log Summary</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="auditTableBody">
           {% for item in logs %}
           <tr>
             <td>{{ item.id }}</td>
@@ -49,12 +45,13 @@
             <td>{{ item.summary }}</td>
           </tr>
           {% endfor %}
-          {% if not logs %}
-          <tr><td colspan="7">No audit logs found.</td></tr>
-          {% endif %}
+          {% if not logs %}<tr id="noAuditLogsRow"><td colspan="7">No audit logs found.</td></tr>{% endif %}
         </tbody>
       </table>
     </div>
+    <div id="auditLoadState" class="audit-load-state"></div>
   </div>
-</body>
-</html>
+{% endblock %}
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/audit_dashboard/page.js') }}"></script>
+{% endblock %}

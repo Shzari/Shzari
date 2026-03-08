@@ -144,6 +144,34 @@ Compatibility entrypoint is still available:
 python app.py
 ```
 
+## SQL Server Bootstrap (New Empty DB)
+
+The app now bootstraps schema automatically on startup:
+
+- If `APP_SQL_DATABASE` does not exist and `APP_SQL_AUTO_CREATE_DB=1` (default), app creates the database.
+- Then startup migrations from `sql/migrations/*.sql` run automatically and create all required tables.
+
+Required SQL env vars:
+
+- `APP_SQL_HOST`
+- `APP_SQL_PORT`
+- `APP_SQL_DATABASE`
+- `APP_SQL_USER`
+- `APP_SQL_PASSWORD`
+- Optional: `APP_SQL_DRIVER`, `APP_SQL_CLIENT` (`auto|pymssql|pyodbc`), `APP_SQL_AUTO_CREATE_DB` (`1|0`)
+
+Example (PowerShell):
+
+```powershell
+$env:APP_SQL_HOST="KS_EVE-NG\\EVENG"
+$env:APP_SQL_PORT="1433"
+$env:APP_SQL_DATABASE="NDMC_NEW"
+$env:APP_SQL_USER="sa"
+$env:APP_SQL_PASSWORD="your_password"
+$env:APP_SQL_AUTO_CREATE_DB="1"
+python app.py
+```
+
 ## Monitoring Collector (Separate Worker)
 
 Monitoring collection can run as a separate process (recommended), independent from web login/session/browser.

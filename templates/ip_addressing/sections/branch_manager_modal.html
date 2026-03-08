@@ -1,0 +1,41 @@
+﻿        <div id="branchManagerModal" class="branch-modal-backdrop" onclick="if(event.target===this){closeBranchManager();}">
+          <div class="branch-modal" role="dialog" aria-modal="true" aria-label="Edit/Add Branches">
+            <div class="head">
+              <h3 style="margin:0;">Edit/Add Branches</h3>
+              <button class="btn" type="button" onclick="closeBranchManager()">Close</button>
+            </div>
+            <div class="branch-submenu">
+              <button id="branchTab-add" class="btn" type="button" onclick="switchBranchSubMenu('add')">Add Branch</button>
+              <button id="branchTab-edit" class="btn active" type="button" onclick="switchBranchSubMenu('edit')">Edit Branch</button>
+              <button id="branchTab-delete" class="btn" type="button" onclick="switchBranchSubMenu('delete')">Delete Branch</button>
+            </div>
+            <div id="branchSection-add" class="branch-section">
+              <p class="section-title">Add Branch</p>
+              <form id="addBranchForm" class="branch-grid">
+                <div class="field"><label>Branch Name</label><input id="addName" class="input" placeholder="e.g., B902 - East Campus"></div>
+                <div class="field"><label>City/Site</label><input id="addSite" class="input" placeholder="e.g., Regional Office"></div>
+                <div class="field"><label>Network Base</label><input id="addBase" class="input" placeholder="e.g., 10.10.10.0"></div>
+                <div class="field"><label>Subnet/CIDR</label><select id="addCidr" class="select"><option>/24</option><option>/25</option><option>/26</option><option>/27</option><option>/28</option><option>/29</option></select></div>
+                <div class="field"><label>Gateway (Auto)</label><input id="addGateway" class="input gw-read" readonly></div>
+              </form>
+              <div class="right"><button type="button" class="btn" onclick="cancelInline()">Cancel</button><button type="button" class="btn pri" onclick="addBranchInline(event)">Add Branch</button></div>
+              <div class="right"><input id="branchCsvFile" class="input" type="file" accept=".csv,text/csv"><button type="button" class="btn" onclick="importBranchesCsv()">Import CSV</button></div>
+            </div>
+            <div id="branchSection-edit" class="branch-section show">
+              <p class="section-title">Edit Branch</p>
+              <form id="editBranchForm" class="branch-grid" onsubmit="event.preventDefault(); applyEditBranchInline();">
+                <div class="field"><label>Select Branch</label><select id="editBranchSelect" class="select"></select></div>
+                <div class="field"><label>Branch Name</label><input id="editName" class="input" placeholder="e.g., B902 - East Campus"></div>
+                <div class="field"><label>City/Site</label><input id="editSite" class="input" placeholder="e.g., Regional Office"></div>
+                <div class="field"><label>Network Base</label><input id="editBase" class="input" placeholder="e.g., 10.10.20.0"></div>
+                <div class="field"><label>Subnet/CIDR</label><select id="editCidr" class="select"><option>/24</option><option>/25</option><option>/26</option><option>/27</option><option>/28</option><option>/29</option></select></div>
+                <div class="field"><label>Gateway (Auto)</label><input id="editGateway" class="input gw-read" readonly></div>
+              </form>
+              <div class="right"><button type="button" class="btn" onclick="fillEditBranchForm()">Reset</button><button type="button" class="btn pri" onclick="applyEditBranchInline()">Save Changes</button></div>
+            </div>
+            <div id="branchSection-delete" class="branch-section">
+              <p class="section-title">Delete Branch</p>
+              <div class="delete-row"><div class="field"><label>Select branch to delete</label><select id="deleteBranchSelect" class="select"></select></div><button type="button" class="btn" onclick="deleteSelectedBranch()">Delete Selected Branch</button></div>
+            </div>
+          </div>
+        </div>

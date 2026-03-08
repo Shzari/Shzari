@@ -1,8 +1,12 @@
 from __future__ import annotations
 
-from app import legacy
+from core_models import DBError, DBOperationalError, DBRow
 
-DBError = legacy.DBError
-DBOperationalError = legacy.DBOperationalError
-DBRow = legacy.DBRow
-db_conn = legacy.db_conn
+
+def db_conn():
+    from app.compat import legacy_runtime as legacy
+
+    return legacy.db_conn()
+
+
+__all__ = ["DBError", "DBOperationalError", "DBRow", "db_conn"]

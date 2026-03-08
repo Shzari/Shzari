@@ -1,0 +1,36 @@
+﻿<dialog id="ldapConfigModal" class="device-modal">
+    <form method="post" action="{{ url_for('ldap_settings_page') }}">
+      <h3>LDAP Configuration</h3>
+      <label>LDAP Server</label>
+      <input name="server" type="text" value="{{ ldap.server }}" placeholder="ad.company.local">
+      <label>Port</label>
+      <input name="port" type="number" value="{{ ldap.port }}" min="1" max="65535">
+      <label>Timeout (seconds)</label>
+      <input name="timeout" type="number" value="{{ ldap.timeout }}" min="1" max="30">
+
+      <div class="action-row">
+        <label><input name="use_ssl" type="checkbox" {% if ldap.use_ssl %}checked{% endif %}> Use SSL (LDAPS)</label>
+        <label><input name="start_tls" type="checkbox" {% if ldap.start_tls %}checked{% endif %}> Use StartTLS</label>
+      </div>
+
+      <h4>User Resolution</h4>
+      <label>User DN Template (optional)</label>
+      <input name="user_dn_template" type="text" value="{{ ldap.user_dn_template }}" placeholder="CN={username},OU=Users,DC=company,DC=local">
+      <label>Base DN (used with search filter)</label>
+      <input name="base_dn" type="text" value="{{ ldap.base_dn }}" placeholder="DC=company,DC=local">
+      <label>User Search Filter</label>
+      <input name="user_search_filter" type="text" value="{{ ldap.user_search_filter }}" placeholder="(sAMAccountName={username})">
+
+      <h4>Service Bind (optional)</h4>
+      <label>Bind DN</label>
+      <input name="bind_dn" type="text" value="{{ ldap.bind_dn }}" placeholder="CN=svc_ldap,OU=Service,DC=company,DC=local">
+      <label>Bind Password</label>
+      <input name="bind_password" type="password" value="{{ ldap.bind_password }}">
+
+      <div class="action-row">
+        <button class="btn run" type="submit">Save LDAP Settings</button>
+        <button class="btn ghost" type="button" onclick="closeLdapModal()">Close</button>
+      </div>
+    </form>
+  </dialog>
+

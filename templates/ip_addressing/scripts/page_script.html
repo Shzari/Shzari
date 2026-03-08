@@ -1,0 +1,1350 @@
+<script>
+let branches=[];let selectedBranchId=null;let detailsEditEnabled=false;let deviceTreeOpen=true;let currentDeviceCategory='all';let ipAddressingTreeOpen=true;let currentIpAddressingSection='branches';let networkAddressTreeOpen=true;let networkSubTreeOpen=false;let networkSystemTreeOpen=false;let networkSystemHoOpen=false;let networkSystemDrsOpen=false;let networkIspTreeOpen=false;let networkDmvpnTreeOpen=false;let currentNetworkAddressSection='servers';let currentNetworkAddressSub='ho-vm';let currentMonitoringCategory='all';let currentMonitoringStatus='all';let monitoringExpandedCategories={};let monitoringExpandedStatuses={};let monitoringLeftCollapsed=true;let monitoringRightCollapsed=true;let monitoringLeftHoverTimer=null;let monitoringRightHoverTimer=null;let monitoringResourceState={deviceName:'',host:'',interfaces:[],metrics:[],selectedMetrics:new Set(),selectedInterfaces:new Set()};let monitoringDashboardDeviceName='';let monitoringDashboardAutoRefreshTimer=null;let monitoringDashboardLiveGaugeTimer=null;let monitoringDashboardLiveGaugeInFlight=false;let monitoringDashboardIsWindows=false;let monitoringDashboardSeries=[];let monitoringChartRanges={cpu:{type:'relative',minutes:30,label:'Last 30 minutes'},memory:{type:'relative',minutes:30,label:'Last 30 minutes'},response:{type:'relative',minutes:30,label:'Last 30 minutes'}};let monitoringRangePickerPanel='cpu';let helpdeskLastShowDevices=[];let ispBranchRows=[];let ispBranchesSaveTimer=null;let ispBranchSelectedIndex=-1;let ispBranchEditingIndex=-1;let ispBranchManualEditIndex=-1;let ispAtmRows=[];let ispAtmsSaveTimer=null;let ispAtmSelectedIndex=-1;let ispAtmEditingIndex=-1;let ispAtmManualEditIndex=-1;let ispInternetRows=[];let ispInternetSaveTimer=null;let ispInternetSelectedIndex=-1;let ispInternetEditingIndex=-1;let ispInternetManualEditIndex=-1;
+    const STORE_KEY='ipam_branches_v2';
+    const BRANCH_STATE_URL="{{ url_for('ip_branch_state_api') }}";
+    const ISP_BRANCH_STATE_URL="/network-addresses/isp-branches/state";
+    const ISP_ATM_STATE_URL="/network-addresses/isp-atms/state";
+    const ISP_INTERNET_STATE_URL="/network-addresses/isp-internet/state";
+    const SERVER_BRANCH_NAMES={{ branches|tojson }};
+    let DEVICE_DATA={{ devices|tojson }};
+    let MONITORING_DEVICE_DATA={{ monitoring_devices|tojson }};
+    let DEVICE_CATEGORIES={{ categories|tojson }};
+    const COMMAND_BUTTONS={{ buttons|tojson }};
+    const CAN_ACCESS_DEVICES_PANEL_BASE={{ can_access_devices_panel|tojson }};
+    const CAN_ACCESS_MONITORING_PANEL={{ can_access_monitoring_panel|tojson }};
+    const MENU_ACCESS={{ menu_access|tojson }};
+    const CAN_WRITE_NA_ISP_BRANCHES={{ can_write_na_isp_branches|tojson }};
+    const CAN_WRITE_NA_ISP_ATM={{ can_write_na_isp_atm|tojson }};
+    const CAN_WRITE_NA_ISP_INTERNET={{ can_write_na_isp_internet|tojson }};
+    const CANONICAL_MENU_ACCESS_KEYS=new Set([
+      'ip_branches','ip_hq',
+      'na_system','na_system_ho','na_system_ho_vm','na_system_ho_physical','na_system_ho_storage',
+      'na_system_drs','na_system_drs_vm','na_system_drs_physical','na_system_drs_storage',
+      'na_network','na_network_devices','na_isp','na_isp_branches','na_isp_atm','na_isp_internet',
+      'na_dmvpn','na_dmvpn_branches','na_dmvpn_atms','na_sim_cards','na_site_to_site','na_nat',
+      'nd_all_devices','nd_categories'
+    ]);
+    const HAS_ND_MENU_KEYS=Object.prototype.hasOwnProperty.call((MENU_ACCESS||{}),'nd_all_devices')||Object.prototype.hasOwnProperty.call((MENU_ACCESS||{}),'nd_categories');
+    const CAN_ACCESS_DEVICES_PANEL=Boolean(CAN_ACCESS_DEVICES_PANEL_BASE)&&(!HAS_ND_MENU_KEYS||Boolean((MENU_ACCESS||{}).nd_all_devices)||Boolean((MENU_ACCESS||{}).nd_categories));
+    let MONITORED_DEVICE_NAMES={{ monitored_device_names|tojson }};
+    let MONITORING_NODE_PROFILES={{ monitoring_profiles|tojson }};
+    let MONITORING_EDITABLE_DEVICE_NAMES={{ monitoring_editable_device_names|tojson }};
+    const MONITORING_PULL_RESOURCES_URL="{{ url_for('monitoring_node_resources_pull_api') }}";
+    const MONITORING_SAVE_RESOURCES_URL="{{ url_for('monitoring_node_resources_save_api') }}";
+    const MONITORING_DASHBOARD_DATA_URL="{{ url_for('monitoring_node_dashboard_data_api') }}";
+    const MONITORING_LIVE_GAUGES_URL="{{ url_for('monitoring_node_live_gauges_api') }}";
+    const MONITORING_TEST_SNMP_URL="{{ url_for('monitoring_node_test_snmp_api') }}";
+    const MONITORING_ACK_ALERT_URL="{{ url_for('monitoring_alert_ack_api') }}";
+    const LIVE_DATA_URL="{{ url_for('ip_addressing_live_data_api') }}";
+    const CURRENT_USER_ROLE={{ current_user_role|tojson }};
+    const MONITORING_CAN_MANAGE={{ monitoring_can_manage|tojson }};
+    const MONITORING_SERVERS_ONLY={{ monitoring_servers_only|tojson }};
+    const MONITORING_CATEGORY_ORDER=['All Devices','Router','Switch','ATM','Servers','Firewalls'];
+    const HELP_DESK_MODE=String(CURRENT_USER_ROLE||'').toLowerCase()==='helpdesk';
+    const RESTRICTED_COMMAND_MODE=['junior','helpdesk','manager'].includes(String(CURRENT_USER_ROLE||'').toLowerCase());
+    const SENIOR_MODE=['senior','sysadmin'].includes(String(CURRENT_USER_ROLE||'').toLowerCase());
+    function nowStamp(){return new Date().toLocaleString();} function updateClock(){const e=document.getElementById('clockPill');if(e)e.textContent=nowStamp();}
+    function hasMenuAccess(key){
+      const map=(MENU_ACCESS||{});
+      if(Object.prototype.hasOwnProperty.call(map,key))return Boolean(map[key]);
+      const hasCanonicalMap=Object.keys(map).some((menuKey)=>CANONICAL_MENU_ACCESS_KEYS.has(String(menuKey||'')));
+      if(hasCanonicalMap)return false;
+      const k=String(key||'');
+      const legacyAny=(keys)=>keys.some((legacyKey)=>Object.prototype.hasOwnProperty.call(map,legacyKey)&&Boolean(map[legacyKey]));
+      if(k==='na_system'||k==='na_system_ho'||k==='na_system_drs'||k==='na_system_ho_vm'||k==='na_system_ho_physical'||k==='na_system_ho_storage'||k==='na_system_drs_vm'||k==='na_system_drs_physical'||k==='na_system_drs_storage'){
+        return legacyAny(['na_servers']);
+      }
+      if(k==='na_isp'||k==='na_isp_branches'||k==='na_isp_atm'||k==='na_isp_internet'){
+        return legacyAny(['na_branches_isp']);
+      }
+      if(k==='na_dmvpn'||k==='na_dmvpn_branches'||k==='na_dmvpn_atms'){
+        return legacyAny(['na_dmvpn']);
+      }
+      if(k==='na_network'){
+        return legacyAny(['na_network_devices','na_branches_isp','na_dmvpn','na_sim_cards','na_site_to_site','na_nat']);
+      }
+      if(k==='nd_all_devices'||k==='nd_categories'){
+        return Boolean(CAN_ACCESS_DEVICES_PANEL_BASE);
+      }
+      return false;
+    }
+    const NA_SYSTEM_HO_MENU_KEYS=['na_system_ho_vm','na_system_ho_physical','na_system_ho_storage'];
+    const NA_SYSTEM_DRS_MENU_KEYS=['na_system_drs_vm','na_system_drs_physical','na_system_drs_storage'];
+    const NA_SYSTEM_MENU_KEYS=['na_system','na_system_ho',...NA_SYSTEM_HO_MENU_KEYS,'na_system_drs',...NA_SYSTEM_DRS_MENU_KEYS];
+    const NA_ISP_MENU_KEYS=['na_isp','na_isp_branches','na_isp_atm','na_isp_internet'];
+    const NA_DMVPN_MENU_KEYS=['na_dmvpn','na_dmvpn_branches','na_dmvpn_atms'];
+    const NA_NETWORK_MENU_KEYS=['na_network','na_network_devices',...NA_ISP_MENU_KEYS,...NA_DMVPN_MENU_KEYS,'na_sim_cards','na_site_to_site','na_nat'];
+    const ND_MENU_KEYS=['nd_all_devices','nd_categories'];
+    function hasAnyMenuAccess(keys){return (keys||[]).some((key)=>hasMenuAccess(key));}
+    function canWriteIspBranches(){return Boolean(CAN_WRITE_NA_ISP_BRANCHES)&&hasMenuAccess('na_isp_branches');}
+    function canWriteIspAtm(){return Boolean(CAN_WRITE_NA_ISP_ATM)&&hasMenuAccess('na_isp_atm');}
+    function canWriteIspInternet(){return Boolean(CAN_WRITE_NA_ISP_INTERNET)&&hasMenuAccess('na_isp_internet');}
+    function hasHoTreeAccess(){return hasMenuAccess('na_system')&&hasMenuAccess('na_system_ho')&&hasAnyMenuAccess(NA_SYSTEM_HO_MENU_KEYS);}
+    function hasDrsTreeAccess(){return hasMenuAccess('na_system')&&hasMenuAccess('na_system_drs')&&hasAnyMenuAccess(NA_SYSTEM_DRS_MENU_KEYS);}
+    function hasSystemTreeAccess(){return hasHoTreeAccess()||hasDrsTreeAccess();}
+    function hasIspTreeAccess(){return hasMenuAccess('na_network')&&hasMenuAccess('na_isp')&&hasAnyMenuAccess(['na_isp_branches','na_isp_atm','na_isp_internet']);}
+    function hasDmvpnTreeAccess(){return hasMenuAccess('na_network')&&hasMenuAccess('na_dmvpn')&&hasAnyMenuAccess(['na_dmvpn_branches','na_dmvpn_atms']);}
+    function hasNetworkTreeAccess(){return hasMenuAccess('na_network')&&(hasMenuAccess('na_network_devices')||hasIspTreeAccess()||hasDmvpnTreeAccess()||hasMenuAccess('na_sim_cards')||hasMenuAccess('na_site_to_site')||hasMenuAccess('na_nat'));}
+    function hasAnyNetworkAddressAccess(){return hasSystemTreeAccess()||hasNetworkTreeAccess();}
+    function canAccessSystemSub(sub){
+      const keyMap={'ho-vm':'na_system_ho_vm','ho-physical':'na_system_ho_physical','ho-storage':'na_system_ho_storage','drs-vm':'na_system_drs_vm','drs-physical':'na_system_drs_physical','drs-storage':'na_system_drs_storage'};
+      const key=keyMap[String(sub||'')];
+      if(!key)return false;
+      if(String(sub||'').startsWith('ho-'))return hasMenuAccess('na_system')&&hasMenuAccess('na_system_ho')&&hasMenuAccess(key);
+      return hasMenuAccess('na_system')&&hasMenuAccess('na_system_drs')&&hasMenuAccess(key);
+    }
+    function canAccessNetworkSub(sub){
+      const sb=String(sub||'');
+      if(sb==='network-devices')return hasMenuAccess('na_network')&&hasMenuAccess('na_network_devices');
+      if(sb.startsWith('isp-')){
+        const keyMap={'isp-branches':'na_isp_branches','isp-atms':'na_isp_atm','isp-internet':'na_isp_internet'};
+        return hasMenuAccess('na_network')&&hasMenuAccess('na_isp')&&hasMenuAccess(keyMap[sb]||'na_isp_branches');
+      }
+      if(sb.startsWith('dmvpn-')){
+        const keyMap={'dmvpn-branches':'na_dmvpn_branches','dmvpn-atms':'na_dmvpn_atms'};
+        return hasMenuAccess('na_network')&&hasMenuAccess('na_dmvpn')&&hasMenuAccess(keyMap[sb]||'na_dmvpn_branches');
+      }
+      if(sb==='sim-cards')return hasMenuAccess('na_network')&&hasMenuAccess('na_sim_cards');
+      if(sb==='site-to-site')return hasMenuAccess('na_network')&&hasMenuAccess('na_site_to_site');
+      if(sb==='nat')return hasMenuAccess('na_network')&&hasMenuAccess('na_nat');
+      return false;
+    }
+    function applyMenuAccessVisibility(){
+      const toggle=(id,show)=>{const el=document.getElementById(id);if(el)el.classList.toggle('hidden',!show);};
+      const systemAny=hasSystemTreeAccess();
+      const networkAny=hasNetworkTreeAccess();
+      const ispAny=hasIspTreeAccess();
+      const dmvpnAny=hasDmvpnTreeAccess();
+      toggle('navIpRoot',hasMenuAccess('ip_branches')||hasMenuAccess('ip_hq'));
+      toggle('navIpBranches',hasMenuAccess('ip_branches'));
+      toggle('navIpHq',hasMenuAccess('ip_hq'));
+      toggle('navNetworkAddressesRoot',systemAny||networkAny);
+      toggle('navNaServers',systemAny);
+      toggle('navNaSystemHo',hasMenuAccess('na_system')&&hasMenuAccess('na_system_ho')&&hasAnyMenuAccess(NA_SYSTEM_HO_MENU_KEYS));
+      toggle('navNaSystemDrs',hasMenuAccess('na_system')&&hasMenuAccess('na_system_drs')&&hasAnyMenuAccess(NA_SYSTEM_DRS_MENU_KEYS));
+      toggle('navNaSystemHoVm',canAccessSystemSub('ho-vm'));
+      toggle('navNaSystemHoPhysical',canAccessSystemSub('ho-physical'));
+      toggle('navNaSystemHoStorage',canAccessSystemSub('ho-storage'));
+      toggle('navNaSystemDrsVm',canAccessSystemSub('drs-vm'));
+      toggle('navNaSystemDrsPhysical',canAccessSystemSub('drs-physical'));
+      toggle('navNaSystemDrsStorage',canAccessSystemSub('drs-storage'));
+      toggle('navNaNetwork',networkAny);
+      toggle('navNaNetworkDevices',canAccessNetworkSub('network-devices'));
+      toggle('navNaIsp',ispAny);
+      toggle('navNaIspBranches',canAccessNetworkSub('isp-branches'));
+      toggle('navNaIspAtm',canAccessNetworkSub('isp-atms'));
+      toggle('navNaIspInternet',canAccessNetworkSub('isp-internet'));
+      toggle('navNaDmvpn',dmvpnAny);
+      toggle('navNaDmvpnBranches',canAccessNetworkSub('dmvpn-branches'));
+      toggle('navNaDmvpnAtms',canAccessNetworkSub('dmvpn-atms'));
+      toggle('navNaSimCards',canAccessNetworkSub('sim-cards'));
+      toggle('navNaSiteToSite',canAccessNetworkSub('site-to-site'));
+      toggle('navNaNat',canAccessNetworkSub('nat'));
+      toggle('navNetDevicesRoot',CAN_ACCESS_DEVICES_PANEL&&hasAnyMenuAccess(ND_MENU_KEYS));
+      toggle('navNetDevicesAll',CAN_ACCESS_DEVICES_PANEL&&hasMenuAccess('nd_all_devices'));
+      toggle('navNetDevicesCategoriesRoot',CAN_ACCESS_DEVICES_PANEL&&hasMenuAccess('nd_categories'));
+      toggle('navMonitoringRoot',CAN_ACCESS_MONITORING_PANEL);
+    }
+    function firstAccessibleSystemSub(){
+      const order=['ho-vm','ho-physical','ho-storage','drs-vm','drs-physical','drs-storage'];
+      return order.find((item)=>canAccessSystemSub(item))||'ho-vm';
+    }
+    function firstAccessibleHoSub(){
+      const order=['ho-vm','ho-physical','ho-storage'];
+      return order.find((item)=>canAccessSystemSub(item))||'ho-vm';
+    }
+    function firstAccessibleDrsSub(){
+      const order=['drs-vm','drs-physical','drs-storage'];
+      return order.find((item)=>canAccessSystemSub(item))||'drs-vm';
+    }
+    function firstAccessibleIspSub(){
+      const order=['isp-branches','isp-atms','isp-internet'];
+      return order.find((item)=>canAccessNetworkSub(item))||'isp-branches';
+    }
+    function firstAccessibleDmvpnSub(){
+      const order=['dmvpn-branches','dmvpn-atms'];
+      return order.find((item)=>canAccessNetworkSub(item))||'dmvpn-branches';
+    }
+    function firstAccessibleNetworkSub(){
+      const order=['network-devices','isp-branches','isp-atms','isp-internet','dmvpn-branches','dmvpn-atms','sim-cards','site-to-site','nat'];
+      return order.find((item)=>canAccessNetworkSub(item))||'network-devices';
+    }
+    function branchSortValue(name){const raw=String(name||'').trim();if(/^\d+$/.test(raw))return {num:Number(raw),text:''};const m=raw.match(/(\d+)/);if(m)return {num:Number(m[1]),text:raw.toLowerCase()};return {num:Number.POSITIVE_INFINITY,text:raw.toLowerCase()};}
+    function sortBranchesInPlace(){branches.sort((a,b)=>{const av=branchSortValue(a?.name);const bv=branchSortValue(b?.name);if(av.num!==bv.num)return av.num-bv.num;return av.text.localeCompare(bv.text);});}
+    function ipToInt(ip){const p=String(ip).split('.').map(Number);return (((p[0]<<24)>>>0)+((p[1]<<16)>>>0)+((p[2]<<8)>>>0)+(p[3]>>>0))>>>0;} function intToIp(n){n=Number(n)>>>0;return `${(n>>>24)&255}.${(n>>>16)&255}.${(n>>>8)&255}.${n&255}`;}
+    function cidrToMask(c){const bits=(0xffffffff << (32-Number(c)))>>>0;return intToIp(bits);} function blockSizeFromCidr(c){return 2**(32-Number(c));}
+    function isNetworkAligned(baseIp,cidr){const i=ipToInt(baseIp);return i % blockSizeFromCidr(cidr)===0;} function doesSubnetOverlap(existing, baseIp, cidr){const s=ipToInt(baseIp),e=s+blockSizeFromCidr(cidr)-1;return existing.some((b)=>{const bs=ipToInt(b.networkBase),be=bs+blockSizeFromCidr(b.cidr)-1;return s<=be && bs<=e;});}
+    function utilClass(v){if(v>85)return'r';if(v>=70)return'y';return'g';}
+    function makeIpRows(base,cidr){const baseInt=ipToInt(base);const block=blockSizeFromCidr(cidr);const gateway=baseInt+1;const broadcast=baseInt+block-1;const rows=[];for(let i=baseInt+2;i<=broadcast-1;i++){rows.push({ip:intToIp(i),hostname:'',enduser:'',status:'FREE'});}return {gateway:intToIp(gateway),broadcast:intToIp(broadcast),ipRows:rows};}
+    function calcUtil(b){const total=b.ipRows.length||1;const assigned=b.ipRows.filter((r)=>r.status==='ASSIGNED').length;return Math.round((assigned/total)*100);}
+    function seedFromServer(){const names=SERVER_BRANCH_NAMES;if(!Array.isArray(names)||!names.length)return [];const base='10.10.10.0';const cidr=27;const block=blockSizeFromCidr(cidr);const start=ipToInt(base);return names.map((n,idx)=>{const nb=intToIp(start+idx*block);const gen=makeIpRows(nb,cidr);return {id:`b-${idx+1}`,name:n,site:'Site',networkBase:nb,cidr,subnetMask:cidrToMask(cidr),gateway:gen.gateway,broadcast:gen.broadcast,createdAt:nowStamp(),updatedAt:nowStamp(),ipRows:gen.ipRows};});}
+    function reconcileBranchesWithServer(){const serverNames=Array.isArray(SERVER_BRANCH_NAMES)?SERVER_BRANCH_NAMES:[];if(!serverNames.length)return;const serverSet=new Set(serverNames.map((n)=>String(n).trim().toLowerCase()).filter(Boolean));branches=branches.filter((b)=>serverSet.has(String(b.name||'').trim().toLowerCase()));const localSet=new Set(branches.map((b)=>String(b.name||'').trim().toLowerCase()));seedFromServer().forEach((b)=>{const key=String(b.name||'').trim().toLowerCase();if(key&&!localSet.has(key))branches.push(b);});}
+    async function loadBranches(){try{const response=await fetch(BRANCH_STATE_URL,{method:'GET'});const payload=await response.json();if(response.ok&&payload&&payload.ok&&Array.isArray(payload.branches)){branches=payload.branches;sortBranchesInPlace();localStorage.setItem(STORE_KEY,JSON.stringify(branches));return;}}catch(_e){}try{const r=JSON.parse(localStorage.getItem(STORE_KEY)||'[]');if(Array.isArray(r)&&r.length){branches=r;reconcileBranchesWithServer();sortBranchesInPlace();return;}}catch(_e){}branches=seedFromServer();sortBranchesInPlace();await saveBranches();}
+    async function saveBranches(){sortBranchesInPlace();localStorage.setItem(STORE_KEY, JSON.stringify(branches));try{await fetch(BRANCH_STATE_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({branches})});}catch(_e){}}
+    const ISP_SHARED_IPV4_KEYS=new Set(['primary_wan','primary_gateway','secondary_wan','secondary_gateway','public_ip','gateway']);
+    const ISP_WAN_GATEWAY_KEYS=new Set(['primary_wan','primary_gateway','secondary_wan','secondary_gateway']);
+    const ISP_BRANCH_CIDR_KEYS=new Set(['primary_cidr','secondary_cidr']);
+    const ISP_ATM_CIDR_KEYS=new Set(['primary_cidr','secondary_cidr']);
+    const ISP_INTERNET_CIDR_KEYS=new Set(['subnet']);
+    const ISP_BRANCH_BANDWIDTH_KEYS=new Set(['primary_bandwidth','secondary_bandwidth']);
+    const ISP_ATM_BANDWIDTH_KEYS=new Set(['primary_bandwidth','secondary_bandwidth']);
+    const ISP_INTERNET_BANDWIDTH_KEYS=new Set(['bandwidth']);
+    function digitsOnly(value,maxLen){const raw=String(value??'').replace(/\D/g,'');return Number.isFinite(maxLen)?raw.slice(0,Math.max(0,Number(maxLen))):raw;}
+    function sanitizeIpv4Typing(value,opts={}){
+      const suppressAutoDot=Boolean(opts&&opts.suppressAutoDot);
+      const disallowFourthOctetStartsWithZero=Boolean(opts&&opts.disallowFourthOctetStartsWithZero);
+      const raw=String(value??'').replace(/[^\d.]/g,'').replace(/\.{2,}/g,'.');
+      const sourceParts=raw.split('.').slice(0,4);
+      const cleanParts=sourceParts.map((part,partIndex)=>{
+        let out='';
+        for(const ch of String(part||'')){
+          if(!/\d/.test(ch))continue;
+          if(disallowFourthOctetStartsWithZero&&partIndex===3&&out.length===0&&ch==='0')continue;
+          if(out.length>=3)break;
+          const candidate=`${out}${ch}`;
+          if(Number(candidate)<=255)out=candidate;
+        }
+        return out;
+      });
+      let out=cleanParts.join('.');
+      const partCount=cleanParts.length;
+      const last=cleanParts[partCount-1]||'';
+      const shouldAutoDot=!suppressAutoDot&&partCount<4&&last.length===3&&raw&&!raw.endsWith('.');
+      if(shouldAutoDot)out+='.';
+      return out.slice(0,15);
+    }
+    function isValidIpv4Value(value){const text=String(value??'').trim();if(!/^\d{1,3}(\.\d{1,3}){3}$/.test(text))return false;return text.split('.').every((octet)=>{const n=Number(octet);return Number.isInteger(n)&&n>=0&&n<=255;});}
+    function splitIpv4(value){return String(value??'').trim().split('.').map((part)=>String(part).trim());}
+    function hasNonZeroFourthOctet(value){if(!isValidIpv4Value(value))return false;const parts=splitIpv4(value);return Number(parts[3])>0;}
+    function isValidWanGatewayIpValue(value){return isValidIpv4Value(value)&&hasNonZeroFourthOctet(value);}
+    function haveSameFirstThreeOctets(left,right){if(!isValidIpv4Value(left)||!isValidIpv4Value(right))return false;const a=splitIpv4(left);const b=splitIpv4(right);return a[0]===b[0]&&a[1]===b[1]&&a[2]===b[2];}
+    function normalizeIpv4Value(value){const text=sanitizeIpv4Typing(value).replace(/\.$/,'');if(!isValidIpv4Value(text))return text;return text.split('.').map((octet)=>String(Number(octet))).join('.');}
+    function sanitizeCidrTyping(value){return digitsOnly(value,2);}
+    function formatCidrValue(value){const digits=digitsOnly(value,2);if(!digits)return '';const parsed=Math.max(0,Math.min(32,Number(digits)));if(!Number.isFinite(parsed))return '';return `/${parsed}`;}
+    function isValidCidrValue(value){return /^\/(?:[0-9]|[12][0-9]|3[0-2])$/.test(String(value??'').trim());}
+    function sanitizeBandwidthTyping(value){return digitsOnly(value,3);}
+    function formatBandwidthValue(value){const digits=digitsOnly(value,3);if(!digits)return '';const parsed=Math.max(0,Math.min(999,Number(digits)));if(!Number.isFinite(parsed))return '';return `${parsed}Mbps`;}
+    function isValidBandwidthValue(value){return /^(?:[0-9]{1,3})Mbps$/i.test(String(value??'').trim());}
+    function sanitizeBranchCodeTyping(value){return digitsOnly(value,3);}
+    function formatBranchCodeValue(value){const upper=String(value??'').trim().toUpperCase();const digits=digitsOnly(upper.replace(/^B/,''),3);if(!digits)return '';return `B${digits}`;}
+    function isValidBranchCodeValue(value){return /^B\d{3}$/.test(String(value??'').trim().toUpperCase());}
+    function capitalizeFirstLetter(value){const text=String(value??'');for(let i=0;i<text.length;i+=1){const ch=text[i];if(/[A-Za-z]/.test(ch)){return `${text.slice(0,i)}${ch.toUpperCase()}${text.slice(i+1)}`;}}return text;}
+    function suggestGatewayFromWan(value){const wan=String(value??'').trim();if(!isValidWanGatewayIpValue(wan))return '';try{const parts=splitIpv4(wan);const last=Number(parts[3]);if(!Number.isFinite(last)||last<=1)return '';const asInt=ipToInt(wan);if(!Number.isFinite(asInt)||asInt<=0)return '';const candidate=intToIp(asInt-1);if(!isValidWanGatewayIpValue(candidate))return '';return candidate;}catch(_e){return '';}}
+    function normalizeGatewayPrefixToWan(gateway,wan){const gw=String(gateway??'').trim();const wanText=String(wan??'').trim();if(!isValidIpv4Value(gw)||!isValidIpv4Value(wanText))return gw;const a=splitIpv4(wanText);const b=splitIpv4(gw);return `${a[0]}.${a[1]}.${a[2]}.${b[3]}`;}
+    function enforceGatewayMatchesWan(row,wanKey,gatewayKey){if(!row||typeof row!=='object')return;const wan=String(row[wanKey]??'').trim();const gw=String(row[gatewayKey]??'').trim();if(!isValidIpv4Value(wan)||!isValidIpv4Value(gw))return;if(!haveSameFirstThreeOctets(wan,gw)){row[gatewayKey]=normalizeGatewayPrefixToWan(gw,wan);}}
+    function maybeSuggestGateway(row,prevRow,wanKey,gatewayKey,manualKey){if(!row||typeof row!=='object')return;const wan=String(row[wanKey]??'').trim();const suggested=suggestGatewayFromWan(wan);if(!suggested)return;const currentGateway=String(row[gatewayKey]??'').trim();const prevWan=String(prevRow?.[wanKey]??'').trim();const prevGateway=String(prevRow?.[gatewayKey]??'').trim();const prevSuggested=suggestGatewayFromWan(prevWan);const manual=Boolean(row[manualKey]);const wanChanged=wan!==prevWan;const shouldApply=!manual||!currentGateway||(wanChanged&&(prevGateway===''||prevGateway===prevSuggested))||currentGateway===prevSuggested;if(shouldApply&&currentGateway!==suggested){row[gatewayKey]=suggested;row[manualKey]=false;}}
+    function applyWanGatewaySuggestions(row,prevRow){maybeSuggestGateway(row,prevRow,'primary_wan','primary_gateway','_primary_gateway_manual');maybeSuggestGateway(row,prevRow,'secondary_wan','secondary_gateway','_secondary_gateway_manual');}
+    function sanitizeConstrainedCellInput(key,value,ipv4Keys,cidrKeys,bandwidthKeys,opts={}){if(ipv4Keys.has(key))return sanitizeIpv4Typing(value,opts);if(cidrKeys.has(key))return sanitizeCidrTyping(value);if(bandwidthKeys.has(key))return sanitizeBandwidthTyping(value);return String(value??'');}
+    function normalizeConstrainedCellValue(key,value,ipv4Keys,cidrKeys,bandwidthKeys){if(ipv4Keys.has(key))return normalizeIpv4Value(value);if(cidrKeys.has(key))return formatCidrValue(value);if(bandwidthKeys.has(key))return formatBandwidthValue(value);return String(value??'').trim();}
+    function isConstrainedCellValid(key,value,ipv4Keys,cidrKeys,bandwidthKeys){const text=String(value??'').trim();if(!text)return false;if(ipv4Keys.has(key))return isValidIpv4Value(text);if(cidrKeys.has(key))return isValidCidrValue(text);if(bandwidthKeys.has(key))return isValidBandwidthValue(text);return true;}
+    function syncActiveInputValue(nextValue){const active=document.activeElement;if(!active||active.tagName!=='INPUT')return;const normalized=String(nextValue??'');if(active.value!==normalized)active.value=normalized;}
+    function createEmptyIspBranchRow(){return {branch_code:'',city:'',primary:'',primary_wan:'',primary_gateway:'',primary_cidr:'',primary_bandwidth:'20Mbps',secondary:'',secondary_wan:'',secondary_gateway:'',secondary_cidr:'',secondary_bandwidth:'10Mbps',_primary_gateway_manual:false,_secondary_gateway_manual:false,locked:false};}
+    function ispBranchRequiredKeys(){return ['branch_code','city','primary','primary_wan','primary_gateway','primary_cidr','primary_bandwidth','secondary','secondary_wan','secondary_gateway','secondary_cidr','secondary_bandwidth'];}
+    function isIspBranchRowComplete(row){const r=(row&&typeof row==='object')?row:{};const baseOk=ispBranchRequiredKeys().every((k)=>{if(k==='branch_code')return isValidBranchCodeValue(r[k]);if(ISP_WAN_GATEWAY_KEYS.has(k))return isValidWanGatewayIpValue(r[k]);return isConstrainedCellValid(k,r[k],ISP_SHARED_IPV4_KEYS,ISP_BRANCH_CIDR_KEYS,ISP_BRANCH_BANDWIDTH_KEYS);});if(!baseOk)return false;return haveSameFirstThreeOctets(r.primary_wan,r.primary_gateway)&&haveSameFirstThreeOctets(r.secondary_wan,r.secondary_gateway);}
+    function normalizeIspBranchRow(item){const raw=(item&&typeof item==='object')?item:{};const row={branch_code:String(raw.branch_code??raw.branchCode??''),city:String(raw.city??''),primary:String(raw.primary??''),primary_wan:String(raw.primary_wan??raw.primaryWan??raw.wan??''),primary_gateway:String(raw.primary_gateway??raw.primaryGateway??raw.gateway??''),primary_cidr:String(raw.primary_cidr??raw.primaryCidr??raw.cidr??raw.subnet??''),primary_bandwidth:String(raw.primary_bandwidth??raw.primaryBandwidth??raw.primary_bandwith??raw.bandwith??''),secondary:String(raw.secondary??''),secondary_wan:String(raw.secondary_wan??raw.secondaryWan??''),secondary_gateway:String(raw.secondary_gateway??raw.secondaryGateway??''),secondary_cidr:String(raw.secondary_cidr??raw.secondaryCidr??''),secondary_bandwidth:String(raw.secondary_bandwidth??raw.secondaryBandwidth??raw.secondary_bandwith??'')};const normalized={};ispBranchRequiredKeys().forEach((key)=>{normalized[key]=key==='branch_code'?formatBranchCodeValue(row[key]):normalizeConstrainedCellValue(key,row[key],ISP_SHARED_IPV4_KEYS,ISP_BRANCH_CIDR_KEYS,ISP_BRANCH_BANDWIDTH_KEYS);});normalized.city=capitalizeFirstLetter(normalized.city);normalized.primary=capitalizeFirstLetter(normalized.primary);normalized.secondary=capitalizeFirstLetter(normalized.secondary);enforceGatewayMatchesWan(normalized,'primary_wan','primary_gateway');enforceGatewayMatchesWan(normalized,'secondary_wan','secondary_gateway');if(!String(normalized.primary_bandwidth??'').trim())normalized.primary_bandwidth='20Mbps';if(!String(normalized.secondary_bandwidth??'').trim())normalized.secondary_bandwidth='10Mbps';const primaryManual=Boolean(raw._primary_gateway_manual);const secondaryManual=Boolean(raw._secondary_gateway_manual);const lockedRaw=raw.locked;const locked=(typeof lockedRaw==='boolean')?lockedRaw:isIspBranchRowComplete(normalized);return {...normalized,_primary_gateway_manual:primaryManual,_secondary_gateway_manual:secondaryManual,locked:Boolean(locked)};}
+    function normalizeIspBranchRows(rows){if(!Array.isArray(rows))return [];return rows.map((item)=>normalizeIspBranchRow(item));}
+    function renderIspBranchRows(){
+      const body=document.getElementById('naIspBranchesBody');
+      if(!body)return;
+      const canWrite=canWriteIspBranches();
+      const rows=(Array.isArray(ispBranchRows)&&ispBranchRows.length)?ispBranchRows:[createEmptyIspBranchRow()];
+      if(!Array.isArray(ispBranchRows)||!ispBranchRows.length)ispBranchRows=rows;
+      if(ispBranchSelectedIndex>=rows.length)ispBranchSelectedIndex=-1;
+      if(ispBranchEditingIndex>=rows.length||!canWrite)ispBranchEditingIndex=-1;
+      if(ispBranchManualEditIndex>=rows.length||!canWrite)ispBranchManualEditIndex=-1;
+      body.innerHTML=rows.map((row,idx)=>{
+        const selected=ispBranchSelectedIndex===idx;
+        const editing=canWrite&&ispBranchEditingIndex===idx;
+        const readonly=!canWrite||Boolean(row.locked&&!editing);
+        const ro=readonly?'readonly':'';
+        const cl=readonly?' na-cell-readonly':'';
+        return `<tr class="${selected?'na-row-selected':''}">
+          <td><input type="radio" name="ispBranchRowPick" ${selected?'checked':''} ${canWrite?'':'disabled'} onclick="toggleIspBranchRowPick(${idx}); return false;"></td>
+          <td class="na-row-no">${idx+1}</td>
+          <td><input class="input na-cell-input${cl}" ${ro} value="${escapeHtml(row.branch_code)}" oninput="onIspBranchCellInput(${idx},'branch_code',this.value)" onblur="finalizeIspBranchRow(${idx})" onkeydown="onIspBranchCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input${cl}" ${ro} value="${escapeHtml(row.city)}" oninput="onIspBranchCellInput(${idx},'city',this.value)" onblur="finalizeIspBranchRow(${idx})" onkeydown="onIspBranchCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input${cl}" ${ro} value="${escapeHtml(row.primary)}" oninput="onIspBranchCellInput(${idx},'primary',this.value)" onblur="finalizeIspBranchRow(${idx})" onkeydown="onIspBranchCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input${cl}" ${ro} value="${escapeHtml(row.primary_wan)}" oninput="onIspBranchCellInput(${idx},'primary_wan',this.value)" onblur="finalizeIspBranchRow(${idx})" onkeydown="onIspBranchCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input${cl}" ${ro} value="${escapeHtml(row.primary_gateway)}" oninput="onIspBranchCellInput(${idx},'primary_gateway',this.value)" onblur="finalizeIspBranchRow(${idx})" onkeydown="onIspBranchCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input na-cell-sm${cl}" ${ro} value="${escapeHtml(row.primary_cidr)}" oninput="onIspBranchCellInput(${idx},'primary_cidr',this.value)" onblur="finalizeIspBranchRow(${idx})" onkeydown="onIspBranchCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input na-cell-sm${cl}" ${ro} value="${escapeHtml(row.primary_bandwidth)}" oninput="onIspBranchCellInput(${idx},'primary_bandwidth',this.value)" onblur="finalizeIspBranchRow(${idx})" onkeydown="onIspBranchCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input${cl}" ${ro} value="${escapeHtml(row.secondary)}" oninput="onIspBranchCellInput(${idx},'secondary',this.value)" onblur="finalizeIspBranchRow(${idx})" onkeydown="onIspBranchCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input${cl}" ${ro} value="${escapeHtml(row.secondary_wan)}" oninput="onIspBranchCellInput(${idx},'secondary_wan',this.value)" onblur="finalizeIspBranchRow(${idx})" onkeydown="onIspBranchCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input${cl}" ${ro} value="${escapeHtml(row.secondary_gateway)}" oninput="onIspBranchCellInput(${idx},'secondary_gateway',this.value)" onblur="finalizeIspBranchRow(${idx})" onkeydown="onIspBranchCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input na-cell-sm${cl}" ${ro} value="${escapeHtml(row.secondary_cidr)}" oninput="onIspBranchCellInput(${idx},'secondary_cidr',this.value)" onblur="finalizeIspBranchRow(${idx})" onkeydown="onIspBranchCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input na-cell-sm${cl}" ${ro} value="${escapeHtml(row.secondary_bandwidth)}" oninput="onIspBranchCellInput(${idx},'secondary_bandwidth',this.value)" onblur="finalizeIspBranchRow(${idx})" onkeydown="onIspBranchCellKeydown(event,${idx})"></td>
+        </tr>`;
+      }).join('');
+    }
+    function stopIspBranchEditing(nextIndex){
+      if(!canWriteIspBranches()){ispBranchEditingIndex=-1;ispBranchManualEditIndex=-1;return;}
+      if(!Array.isArray(ispBranchRows)||!ispBranchRows.length){ispBranchEditingIndex=-1;ispBranchManualEditIndex=-1;return;}
+      const current=Number(ispBranchEditingIndex);
+      if(Number.isNaN(current)||current<0||current>=ispBranchRows.length){ispBranchEditingIndex=-1;ispBranchManualEditIndex=-1;return;}
+      if(typeof nextIndex==='number'&&nextIndex===current)return;
+      const prevRow={...(ispBranchRows[current]||{})};
+      syncIspBranchRowFromDom(current);
+      applyWanGatewaySuggestions(ispBranchRows[current],prevRow);
+      ispBranchRows[current]=normalizeIspBranchRow(ispBranchRows[current]);
+      writeIspBranchRowToDom(current);
+      const row=ispBranchRows[current];
+      if(row&&isIspBranchRowComplete(row))row.locked=true;
+      if(ispBranchManualEditIndex===current)ispBranchManualEditIndex=-1;
+      ispBranchEditingIndex=-1;
+    }
+    async function loadIspBranchRows(){
+      try{
+        const response=await fetch(ISP_BRANCH_STATE_URL,{method:'GET'});
+        const payload=await response.json();
+        if(response.ok&&payload&&payload.ok&&Array.isArray(payload.rows)){
+          ispBranchRows=normalizeIspBranchRows(payload.rows);
+          if(!ispBranchRows.length)ispBranchRows=[createEmptyIspBranchRow()];
+          ispBranchSelectedIndex=-1;
+          ispBranchEditingIndex=-1;
+          ispBranchManualEditIndex=-1;
+          renderIspBranchRows();
+          return;
+        }
+      }catch(_e){}
+      ispBranchRows=[createEmptyIspBranchRow()];
+      ispBranchSelectedIndex=-1;
+      ispBranchEditingIndex=-1;
+      ispBranchManualEditIndex=-1;
+      renderIspBranchRows();
+      if(canWriteIspBranches())await saveIspBranchRows();
+    }
+    function queueSaveIspBranchRows(){if(!canWriteIspBranches())return;if(ispBranchesSaveTimer){clearTimeout(ispBranchesSaveTimer);}ispBranchesSaveTimer=setTimeout(()=>{ispBranchesSaveTimer=null;saveIspBranchRows();},400);}
+    async function saveIspBranchRows(){if(!canWriteIspBranches())return {ok:false,error:'Write access is disabled.'};const rows=normalizeIspBranchRows(ispBranchRows);try{const res=await fetch(ISP_BRANCH_STATE_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows})});const payload=await res.json().catch(()=>({}));return {ok:Boolean(res&&res.ok),error:String(payload?.error||'')};}catch(e){return {ok:false,error:String(e?.message||e||'Network/API error')};}}
+    function syncIspBranchRowsFromDom(){const body=document.getElementById('naIspBranchesBody');if(!body)return;const next=[];Array.from(body.querySelectorAll('tr')).forEach((tr,idx)=>{const current=(Array.isArray(ispBranchRows)&&ispBranchRows[idx])?ispBranchRows[idx]:createEmptyIspBranchRow();const pick=(col)=>String(tr.querySelector(`td:nth-child(${col}) input`)?.value??'');next.push(normalizeIspBranchRow({...current,branch_code:pick(3),city:pick(4),primary:pick(5),primary_wan:pick(6),primary_gateway:pick(7),primary_cidr:pick(8),primary_bandwidth:pick(9),secondary:pick(10),secondary_wan:pick(11),secondary_gateway:pick(12),secondary_cidr:pick(13),secondary_bandwidth:pick(14)}));});if(next.length)ispBranchRows=next;}
+    function syncIspBranchRowFromDom(index){const body=document.getElementById('naIspBranchesBody');const tr=body?.children?.[index];if(!tr||!Array.isArray(ispBranchRows)||!ispBranchRows[index])return;const pick=(col)=>String(tr.querySelector(`td:nth-child(${col}) input`)?.value??'');ispBranchRows[index]=normalizeIspBranchRow({...ispBranchRows[index],branch_code:pick(3),city:pick(4),primary:pick(5),primary_wan:pick(6),primary_gateway:pick(7),primary_cidr:pick(8),primary_bandwidth:pick(9),secondary:pick(10),secondary_wan:pick(11),secondary_gateway:pick(12),secondary_cidr:pick(13),secondary_bandwidth:pick(14)});}
+    function writeIspBranchRowToDom(index){const body=document.getElementById('naIspBranchesBody');const tr=body?.children?.[index];if(!tr||!Array.isArray(ispBranchRows)||!ispBranchRows[index])return;const row=ispBranchRows[index];const map={3:'branch_code',4:'city',5:'primary',6:'primary_wan',7:'primary_gateway',8:'primary_cidr',9:'primary_bandwidth',10:'secondary',11:'secondary_wan',12:'secondary_gateway',13:'secondary_cidr',14:'secondary_bandwidth'};Object.entries(map).forEach(([col,key])=>{const input=tr.querySelector(`td:nth-child(${col}) input`);if(input&&input.value!==String(row[key]??''))input.value=String(row[key]??'');});}
+    async function saveIspBranchRowsNow(){if(!canWriteIspBranches()){alert('Read-only access.');return;}if(ispBranchesSaveTimer){clearTimeout(ispBranchesSaveTimer);ispBranchesSaveTimer=null;}syncIspBranchRowsFromDom();stopIspBranchEditing(-1);renderIspBranchRows();const result=await saveIspBranchRows();if(result.ok){alert('Saved to DB.');}else{alert(`Save failed: ${result.error||'Unknown error'}`);}}
+    function onIspBranchCellInput(index,key,value){
+      if(!canWriteIspBranches())return;
+      if(!Array.isArray(ispBranchRows)||!ispBranchRows[index])return;
+      if(ispBranchRows[index].locked&&ispBranchEditingIndex!==index)return;
+      const evt=(typeof window!=='undefined')?window.event:null;
+      const inputType=String(evt&&evt.inputType?evt.inputType:'');
+      const isDelete=inputType.startsWith('delete');
+      const next=key==='branch_code'
+        ?sanitizeBranchCodeTyping(value)
+        :sanitizeConstrainedCellInput(key,value,ISP_SHARED_IPV4_KEYS,ISP_BRANCH_CIDR_KEYS,ISP_BRANCH_BANDWIDTH_KEYS,{suppressAutoDot:isDelete,disallowFourthOctetStartsWithZero:ISP_WAN_GATEWAY_KEYS.has(key)});
+      const finalText=(key==='city'||key==='primary'||key==='secondary')?capitalizeFirstLetter(next):next;
+      syncActiveInputValue(finalText);
+      ispBranchRows[index][key]=finalText;
+      if(key==='primary_gateway')ispBranchRows[index]._primary_gateway_manual=true;
+      if(key==='secondary_gateway')ispBranchRows[index]._secondary_gateway_manual=true;
+      queueSaveIspBranchRows();
+    }
+    function onIspBranchCellKeydown(event,index){
+      const key=String(event?.key||'');
+      if(key==='Enter'||key==='Tab'){setTimeout(()=>finalizeIspBranchRow(index),0);}
+    }
+    function finalizeIspBranchRow(index){
+      if(!canWriteIspBranches())return;
+      if(!Array.isArray(ispBranchRows)||!ispBranchRows[index])return;
+      const prevRow={...(ispBranchRows[index]||{})};
+      syncIspBranchRowFromDom(index);
+      applyWanGatewaySuggestions(ispBranchRows[index],prevRow);
+      ispBranchRows[index]=normalizeIspBranchRow(ispBranchRows[index]);
+      writeIspBranchRowToDom(index);
+      const row=ispBranchRows[index];
+      if(ispBranchEditingIndex===index&&ispBranchManualEditIndex===index){queueSaveIspBranchRows();return;}
+      if(row.locked)return;
+      if(isIspBranchRowComplete(row)){row.locked=true;if(ispBranchEditingIndex===index)ispBranchEditingIndex=-1;if(ispBranchManualEditIndex===index)ispBranchManualEditIndex=-1;renderIspBranchRows();if(ispBranchesSaveTimer){clearTimeout(ispBranchesSaveTimer);ispBranchesSaveTimer=null;}saveIspBranchRows();return;}
+      queueSaveIspBranchRows();
+    }
+    function selectIspBranchRow(index){
+      if(!Array.isArray(ispBranchRows)||!ispBranchRows.length){ispBranchSelectedIndex=-1;ispBranchEditingIndex=-1;ispBranchManualEditIndex=-1;return;}
+      const idx=Number(index);
+      if(Number.isNaN(idx)||idx<0||idx>=ispBranchRows.length){
+        stopIspBranchEditing(-1);
+        ispBranchSelectedIndex=-1;
+      }else{
+        stopIspBranchEditing(idx);
+        ispBranchSelectedIndex=idx;
+      }
+      renderIspBranchRows();
+      if(canWriteIspBranches())queueSaveIspBranchRows();
+    }
+    function toggleIspBranchRowPick(index){
+      if(!canWriteIspBranches())return;
+      if(!Array.isArray(ispBranchRows)||!ispBranchRows.length){ispBranchSelectedIndex=-1;ispBranchEditingIndex=-1;ispBranchManualEditIndex=-1;renderIspBranchRows();return;}
+      const idx=Number(index);
+      if(Number.isNaN(idx)||idx<0||idx>=ispBranchRows.length)return;
+      const next=(ispBranchSelectedIndex===idx)?-1:idx;
+      if(next!==ispBranchSelectedIndex)stopIspBranchEditing(next);
+      ispBranchSelectedIndex=next;
+      renderIspBranchRows();
+      queueSaveIspBranchRows();
+    }
+    function addIspBranchRow(){
+      if(!canWriteIspBranches()){alert('Read-only access.');return;}
+      if(!Array.isArray(ispBranchRows))ispBranchRows=[];
+      stopIspBranchEditing(-1);
+      ispBranchRows.push(createEmptyIspBranchRow());
+      ispBranchSelectedIndex=ispBranchRows.length-1;
+      ispBranchEditingIndex=ispBranchSelectedIndex;
+      ispBranchManualEditIndex=-1;
+      renderIspBranchRows();
+      queueSaveIspBranchRows();
+      const body=document.getElementById('naIspBranchesBody');
+      const row=body?body.lastElementChild:null;
+      const input=row?row.querySelector('td:nth-child(3) input'):null;
+      if(input)input.focus();
+    }
+    function editIspBranchRow(){
+      if(!canWriteIspBranches()){alert('Read-only access.');return;}
+      if(!Array.isArray(ispBranchRows)||!ispBranchRows.length){alert('No rows available.');return;}
+      if(ispBranchSelectedIndex<0||ispBranchSelectedIndex>=ispBranchRows.length){alert('Select the row you want to edit first.');return;}
+      stopIspBranchEditing(ispBranchSelectedIndex);
+      ispBranchRows[ispBranchSelectedIndex].locked=false;
+      ispBranchEditingIndex=ispBranchSelectedIndex;
+      ispBranchManualEditIndex=ispBranchSelectedIndex;
+      renderIspBranchRows();
+      queueSaveIspBranchRows();
+      const body=document.getElementById('naIspBranchesBody');
+      const row=body?body.children[ispBranchSelectedIndex]:null;
+      const input=row?row.querySelector('td:nth-child(3) input'):null;
+      if(input)input.focus();
+    }
+    function deleteIspBranchRow(){
+      if(!canWriteIspBranches()){alert('Read-only access.');return;}
+      if(!Array.isArray(ispBranchRows)||!ispBranchRows.length){alert('No rows available to delete.');return;}
+      if(ispBranchSelectedIndex<0||ispBranchSelectedIndex>=ispBranchRows.length){alert('Select the row you want to delete first.');return;}
+      const rowNo=ispBranchSelectedIndex+1;
+      if(!confirm(`Delete selected row #${rowNo}?`))return;
+      const deletedIndex=ispBranchSelectedIndex;
+      ispBranchRows.splice(deletedIndex,1);
+      if(ispBranchEditingIndex===deletedIndex)ispBranchEditingIndex=-1;
+      else if(ispBranchEditingIndex>deletedIndex)ispBranchEditingIndex-=1;
+      if(ispBranchManualEditIndex===deletedIndex)ispBranchManualEditIndex=-1;
+      else if(ispBranchManualEditIndex>deletedIndex)ispBranchManualEditIndex-=1;
+      if(!ispBranchRows.length){
+        ispBranchRows=[createEmptyIspBranchRow()];
+        ispBranchSelectedIndex=0;
+        ispBranchEditingIndex=0;
+        ispBranchManualEditIndex=-1;
+      }else if(ispBranchSelectedIndex>=ispBranchRows.length){
+        ispBranchSelectedIndex=ispBranchRows.length-1;
+      }
+      renderIspBranchRows();
+      queueSaveIspBranchRows();
+    }
+    function createEmptyIspAtmRow(){return {atm:'',location:'',primary:'',primary_wan:'',primary_gateway:'',primary_cidr:'',primary_bandwidth:'6Mbps',secondary:'',secondary_wan:'',secondary_gateway:'',secondary_cidr:'',secondary_bandwidth:'4Mbps',_primary_gateway_manual:false,_secondary_gateway_manual:false,locked:false};}
+    function ispAtmRequiredKeys(){return ['atm','location','primary','primary_wan','primary_gateway','primary_cidr','primary_bandwidth','secondary','secondary_wan','secondary_gateway','secondary_cidr','secondary_bandwidth'];}
+    function isIspAtmRowComplete(row){const r=(row&&typeof row==='object')?row:{};const baseOk=ispAtmRequiredKeys().every((k)=>{if(ISP_WAN_GATEWAY_KEYS.has(k))return isValidWanGatewayIpValue(r[k]);return isConstrainedCellValid(k,r[k],ISP_SHARED_IPV4_KEYS,ISP_ATM_CIDR_KEYS,ISP_ATM_BANDWIDTH_KEYS);});if(!baseOk)return false;return haveSameFirstThreeOctets(r.primary_wan,r.primary_gateway)&&haveSameFirstThreeOctets(r.secondary_wan,r.secondary_gateway);}
+    function normalizeIspAtmRow(item){const raw=(item&&typeof item==='object')?item:{};const row={atm:String(raw.atm??raw.branch_code??raw.branchCode??''),location:String(raw.location??raw.city??''),primary:String(raw.primary??''),primary_wan:String(raw.primary_wan??raw.primaryWan??raw.wan??''),primary_gateway:String(raw.primary_gateway??raw.primaryGateway??raw.gateway??''),primary_cidr:String(raw.primary_cidr??raw.primaryCidr??raw.cidr??raw.subnet??''),primary_bandwidth:String(raw.primary_bandwidth??raw.primaryBandwidth??raw.primary_bandwith??raw.bandwith??''),secondary:String(raw.secondary??''),secondary_wan:String(raw.secondary_wan??raw.secondaryWan??''),secondary_gateway:String(raw.secondary_gateway??raw.secondaryGateway??''),secondary_cidr:String(raw.secondary_cidr??raw.secondaryCidr??''),secondary_bandwidth:String(raw.secondary_bandwidth??raw.secondaryBandwidth??raw.secondary_bandwith??'')};const normalized={};ispAtmRequiredKeys().forEach((key)=>{normalized[key]=normalizeConstrainedCellValue(key,row[key],ISP_SHARED_IPV4_KEYS,ISP_ATM_CIDR_KEYS,ISP_ATM_BANDWIDTH_KEYS);});normalized.location=capitalizeFirstLetter(normalized.location);normalized.primary=capitalizeFirstLetter(normalized.primary);normalized.secondary=capitalizeFirstLetter(normalized.secondary);enforceGatewayMatchesWan(normalized,'primary_wan','primary_gateway');enforceGatewayMatchesWan(normalized,'secondary_wan','secondary_gateway');if(!String(normalized.primary_bandwidth??'').trim())normalized.primary_bandwidth='6Mbps';if(!String(normalized.secondary_bandwidth??'').trim())normalized.secondary_bandwidth='4Mbps';const primaryManual=Boolean(raw._primary_gateway_manual);const secondaryManual=Boolean(raw._secondary_gateway_manual);const lockedRaw=raw.locked;const locked=(typeof lockedRaw==='boolean')?lockedRaw:isIspAtmRowComplete(normalized);return {...normalized,_primary_gateway_manual:primaryManual,_secondary_gateway_manual:secondaryManual,locked:Boolean(locked)};}
+    function normalizeIspAtmRows(rows){if(!Array.isArray(rows))return [];return rows.map((item)=>normalizeIspAtmRow(item));}
+    function renderIspAtmRows(){
+      const body=document.getElementById('naIspAtmsBody');
+      if(!body)return;
+      const canWrite=canWriteIspAtm();
+      const rows=(Array.isArray(ispAtmRows)&&ispAtmRows.length)?ispAtmRows:[createEmptyIspAtmRow()];
+      if(!Array.isArray(ispAtmRows)||!ispAtmRows.length)ispAtmRows=rows;
+      if(ispAtmSelectedIndex>=rows.length)ispAtmSelectedIndex=-1;
+      if(ispAtmEditingIndex>=rows.length||!canWrite)ispAtmEditingIndex=-1;
+      if(ispAtmManualEditIndex>=rows.length||!canWrite)ispAtmManualEditIndex=-1;
+      body.innerHTML=rows.map((row,idx)=>{
+        const selected=ispAtmSelectedIndex===idx;
+        const editing=canWrite&&ispAtmEditingIndex===idx;
+        const readonly=!canWrite||Boolean(row.locked&&!editing);
+        const ro=readonly?'readonly':'';
+        const cl=readonly?' na-cell-readonly':'';
+        return `<tr class="${selected?'na-row-selected':''}">
+          <td><input type="radio" name="ispAtmRowPick" ${selected?'checked':''} ${canWrite?'':'disabled'} onclick="toggleIspAtmRowPick(${idx}); return false;"></td>
+          <td class="na-row-no">${idx+1}</td>
+          <td><input class="input na-cell-input${cl}" ${ro} value="${escapeHtml(row.atm)}" oninput="onIspAtmCellInput(${idx},'atm',this.value)" onblur="finalizeIspAtmRow(${idx})" onkeydown="onIspAtmCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input${cl}" ${ro} value="${escapeHtml(row.location)}" oninput="onIspAtmCellInput(${idx},'location',this.value)" onblur="finalizeIspAtmRow(${idx})" onkeydown="onIspAtmCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input${cl}" ${ro} value="${escapeHtml(row.primary)}" oninput="onIspAtmCellInput(${idx},'primary',this.value)" onblur="finalizeIspAtmRow(${idx})" onkeydown="onIspAtmCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input${cl}" ${ro} value="${escapeHtml(row.primary_wan)}" oninput="onIspAtmCellInput(${idx},'primary_wan',this.value)" onblur="finalizeIspAtmRow(${idx})" onkeydown="onIspAtmCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input${cl}" ${ro} value="${escapeHtml(row.primary_gateway)}" oninput="onIspAtmCellInput(${idx},'primary_gateway',this.value)" onblur="finalizeIspAtmRow(${idx})" onkeydown="onIspAtmCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input na-cell-sm${cl}" ${ro} value="${escapeHtml(row.primary_cidr)}" oninput="onIspAtmCellInput(${idx},'primary_cidr',this.value)" onblur="finalizeIspAtmRow(${idx})" onkeydown="onIspAtmCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input na-cell-sm${cl}" ${ro} value="${escapeHtml(row.primary_bandwidth)}" oninput="onIspAtmCellInput(${idx},'primary_bandwidth',this.value)" onblur="finalizeIspAtmRow(${idx})" onkeydown="onIspAtmCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input${cl}" ${ro} value="${escapeHtml(row.secondary)}" oninput="onIspAtmCellInput(${idx},'secondary',this.value)" onblur="finalizeIspAtmRow(${idx})" onkeydown="onIspAtmCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input${cl}" ${ro} value="${escapeHtml(row.secondary_wan)}" oninput="onIspAtmCellInput(${idx},'secondary_wan',this.value)" onblur="finalizeIspAtmRow(${idx})" onkeydown="onIspAtmCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input${cl}" ${ro} value="${escapeHtml(row.secondary_gateway)}" oninput="onIspAtmCellInput(${idx},'secondary_gateway',this.value)" onblur="finalizeIspAtmRow(${idx})" onkeydown="onIspAtmCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input na-cell-sm${cl}" ${ro} value="${escapeHtml(row.secondary_cidr)}" oninput="onIspAtmCellInput(${idx},'secondary_cidr',this.value)" onblur="finalizeIspAtmRow(${idx})" onkeydown="onIspAtmCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input na-cell-sm${cl}" ${ro} value="${escapeHtml(row.secondary_bandwidth)}" oninput="onIspAtmCellInput(${idx},'secondary_bandwidth',this.value)" onblur="finalizeIspAtmRow(${idx})" onkeydown="onIspAtmCellKeydown(event,${idx})"></td>
+        </tr>`;
+      }).join('');
+    }
+    function stopIspAtmEditing(nextIndex){
+      if(!canWriteIspAtm()){ispAtmEditingIndex=-1;ispAtmManualEditIndex=-1;return;}
+      if(!Array.isArray(ispAtmRows)||!ispAtmRows.length){ispAtmEditingIndex=-1;ispAtmManualEditIndex=-1;return;}
+      const current=Number(ispAtmEditingIndex);
+      if(Number.isNaN(current)||current<0||current>=ispAtmRows.length){ispAtmEditingIndex=-1;ispAtmManualEditIndex=-1;return;}
+      if(typeof nextIndex==='number'&&nextIndex===current)return;
+      const prevRow={...(ispAtmRows[current]||{})};
+      syncIspAtmRowFromDom(current);
+      applyWanGatewaySuggestions(ispAtmRows[current],prevRow);
+      ispAtmRows[current]=normalizeIspAtmRow(ispAtmRows[current]);
+      writeIspAtmRowToDom(current);
+      const row=ispAtmRows[current];
+      if(row&&isIspAtmRowComplete(row))row.locked=true;
+      if(ispAtmManualEditIndex===current)ispAtmManualEditIndex=-1;
+      ispAtmEditingIndex=-1;
+    }
+    async function loadIspAtmRows(){
+      try{
+        const response=await fetch(ISP_ATM_STATE_URL,{method:'GET'});
+        const payload=await response.json();
+        if(response.ok&&payload&&payload.ok&&Array.isArray(payload.rows)){
+          ispAtmRows=normalizeIspAtmRows(payload.rows);
+          if(!ispAtmRows.length)ispAtmRows=[createEmptyIspAtmRow()];
+          ispAtmSelectedIndex=-1;
+          ispAtmEditingIndex=-1;
+          ispAtmManualEditIndex=-1;
+          renderIspAtmRows();
+          return;
+        }
+      }catch(_e){}
+      ispAtmRows=[createEmptyIspAtmRow()];
+      ispAtmSelectedIndex=-1;
+      ispAtmEditingIndex=-1;
+      ispAtmManualEditIndex=-1;
+      renderIspAtmRows();
+      if(canWriteIspAtm())await saveIspAtmRows();
+    }
+    function queueSaveIspAtmRows(){if(!canWriteIspAtm())return;if(ispAtmsSaveTimer){clearTimeout(ispAtmsSaveTimer);}ispAtmsSaveTimer=setTimeout(()=>{ispAtmsSaveTimer=null;saveIspAtmRows();},400);}
+    async function saveIspAtmRows(){if(!canWriteIspAtm())return {ok:false,error:'Write access is disabled.'};const rows=normalizeIspAtmRows(ispAtmRows);try{const res=await fetch(ISP_ATM_STATE_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows})});const payload=await res.json().catch(()=>({}));return {ok:Boolean(res&&res.ok),error:String(payload?.error||'')};}catch(e){return {ok:false,error:String(e?.message||e||'Network/API error')};}}
+    function syncIspAtmRowsFromDom(){const body=document.getElementById('naIspAtmsBody');if(!body)return;const next=[];Array.from(body.querySelectorAll('tr')).forEach((tr,idx)=>{const current=(Array.isArray(ispAtmRows)&&ispAtmRows[idx])?ispAtmRows[idx]:createEmptyIspAtmRow();const pick=(col)=>String(tr.querySelector(`td:nth-child(${col}) input`)?.value??'');next.push(normalizeIspAtmRow({...current,atm:pick(3),location:pick(4),primary:pick(5),primary_wan:pick(6),primary_gateway:pick(7),primary_cidr:pick(8),primary_bandwidth:pick(9),secondary:pick(10),secondary_wan:pick(11),secondary_gateway:pick(12),secondary_cidr:pick(13),secondary_bandwidth:pick(14)}));});if(next.length)ispAtmRows=next;}
+    function syncIspAtmRowFromDom(index){const body=document.getElementById('naIspAtmsBody');const tr=body?.children?.[index];if(!tr||!Array.isArray(ispAtmRows)||!ispAtmRows[index])return;const pick=(col)=>String(tr.querySelector(`td:nth-child(${col}) input`)?.value??'');ispAtmRows[index]=normalizeIspAtmRow({...ispAtmRows[index],atm:pick(3),location:pick(4),primary:pick(5),primary_wan:pick(6),primary_gateway:pick(7),primary_cidr:pick(8),primary_bandwidth:pick(9),secondary:pick(10),secondary_wan:pick(11),secondary_gateway:pick(12),secondary_cidr:pick(13),secondary_bandwidth:pick(14)});}
+    function writeIspAtmRowToDom(index){const body=document.getElementById('naIspAtmsBody');const tr=body?.children?.[index];if(!tr||!Array.isArray(ispAtmRows)||!ispAtmRows[index])return;const row=ispAtmRows[index];const map={3:'atm',4:'location',5:'primary',6:'primary_wan',7:'primary_gateway',8:'primary_cidr',9:'primary_bandwidth',10:'secondary',11:'secondary_wan',12:'secondary_gateway',13:'secondary_cidr',14:'secondary_bandwidth'};Object.entries(map).forEach(([col,key])=>{const input=tr.querySelector(`td:nth-child(${col}) input`);if(input&&input.value!==String(row[key]??''))input.value=String(row[key]??'');});}
+    async function saveIspAtmRowsNow(){if(!canWriteIspAtm()){alert('Read-only access.');return;}if(ispAtmsSaveTimer){clearTimeout(ispAtmsSaveTimer);ispAtmsSaveTimer=null;}syncIspAtmRowsFromDom();stopIspAtmEditing(-1);renderIspAtmRows();const result=await saveIspAtmRows();if(result.ok){alert('Saved to DB.');}else{alert(`Save failed: ${result.error||'Unknown error'}`);}}
+    function onIspAtmCellInput(index,key,value){
+      if(!canWriteIspAtm())return;
+      if(!Array.isArray(ispAtmRows)||!ispAtmRows[index])return;
+      if(ispAtmRows[index].locked&&ispAtmEditingIndex!==index)return;
+      const evt=(typeof window!=='undefined')?window.event:null;
+      const inputType=String(evt&&evt.inputType?evt.inputType:'');
+      const isDelete=inputType.startsWith('delete');
+      const next=sanitizeConstrainedCellInput(key,value,ISP_SHARED_IPV4_KEYS,ISP_ATM_CIDR_KEYS,ISP_ATM_BANDWIDTH_KEYS,{suppressAutoDot:isDelete,disallowFourthOctetStartsWithZero:ISP_WAN_GATEWAY_KEYS.has(key)});
+      const finalText=(key==='location'||key==='primary'||key==='secondary')?capitalizeFirstLetter(next):next;
+      syncActiveInputValue(finalText);
+      ispAtmRows[index][key]=finalText;
+      if(key==='primary_gateway')ispAtmRows[index]._primary_gateway_manual=true;
+      if(key==='secondary_gateway')ispAtmRows[index]._secondary_gateway_manual=true;
+      queueSaveIspAtmRows();
+    }
+    function onIspAtmCellKeydown(event,index){
+      const key=String(event?.key||'');
+      if(key==='Enter'||key==='Tab'){setTimeout(()=>finalizeIspAtmRow(index),0);}
+    }
+    function finalizeIspAtmRow(index){
+      if(!canWriteIspAtm())return;
+      if(!Array.isArray(ispAtmRows)||!ispAtmRows[index])return;
+      const prevRow={...(ispAtmRows[index]||{})};
+      syncIspAtmRowFromDom(index);
+      applyWanGatewaySuggestions(ispAtmRows[index],prevRow);
+      ispAtmRows[index]=normalizeIspAtmRow(ispAtmRows[index]);
+      writeIspAtmRowToDom(index);
+      const row=ispAtmRows[index];
+      if(ispAtmEditingIndex===index&&ispAtmManualEditIndex===index){queueSaveIspAtmRows();return;}
+      if(row.locked)return;
+      if(isIspAtmRowComplete(row)){row.locked=true;if(ispAtmEditingIndex===index)ispAtmEditingIndex=-1;if(ispAtmManualEditIndex===index)ispAtmManualEditIndex=-1;renderIspAtmRows();if(ispAtmsSaveTimer){clearTimeout(ispAtmsSaveTimer);ispAtmsSaveTimer=null;}saveIspAtmRows();return;}
+      queueSaveIspAtmRows();
+    }
+    function selectIspAtmRow(index){
+      if(!Array.isArray(ispAtmRows)||!ispAtmRows.length){ispAtmSelectedIndex=-1;ispAtmEditingIndex=-1;ispAtmManualEditIndex=-1;return;}
+      const idx=Number(index);
+      if(Number.isNaN(idx)||idx<0||idx>=ispAtmRows.length){
+        stopIspAtmEditing(-1);
+        ispAtmSelectedIndex=-1;
+      }else{
+        stopIspAtmEditing(idx);
+        ispAtmSelectedIndex=idx;
+      }
+      renderIspAtmRows();
+      if(canWriteIspAtm())queueSaveIspAtmRows();
+    }
+    function toggleIspAtmRowPick(index){
+      if(!canWriteIspAtm())return;
+      if(!Array.isArray(ispAtmRows)||!ispAtmRows.length){ispAtmSelectedIndex=-1;ispAtmEditingIndex=-1;ispAtmManualEditIndex=-1;renderIspAtmRows();return;}
+      const idx=Number(index);
+      if(Number.isNaN(idx)||idx<0||idx>=ispAtmRows.length)return;
+      const next=(ispAtmSelectedIndex===idx)?-1:idx;
+      if(next!==ispAtmSelectedIndex)stopIspAtmEditing(next);
+      ispAtmSelectedIndex=next;
+      renderIspAtmRows();
+      queueSaveIspAtmRows();
+    }
+    function addIspAtmRow(){
+      if(!canWriteIspAtm()){alert('Read-only access.');return;}
+      if(!Array.isArray(ispAtmRows))ispAtmRows=[];
+      stopIspAtmEditing(-1);
+      ispAtmRows.push(createEmptyIspAtmRow());
+      ispAtmSelectedIndex=ispAtmRows.length-1;
+      ispAtmEditingIndex=ispAtmSelectedIndex;
+      ispAtmManualEditIndex=-1;
+      renderIspAtmRows();
+      queueSaveIspAtmRows();
+      const body=document.getElementById('naIspAtmsBody');
+      const row=body?body.lastElementChild:null;
+      const input=row?row.querySelector('td:nth-child(3) input'):null;
+      if(input)input.focus();
+    }
+    function editIspAtmRow(){
+      if(!canWriteIspAtm()){alert('Read-only access.');return;}
+      if(!Array.isArray(ispAtmRows)||!ispAtmRows.length){alert('No rows available.');return;}
+      if(ispAtmSelectedIndex<0||ispAtmSelectedIndex>=ispAtmRows.length){alert('Select the row you want to edit first.');return;}
+      stopIspAtmEditing(ispAtmSelectedIndex);
+      ispAtmRows[ispAtmSelectedIndex].locked=false;
+      ispAtmEditingIndex=ispAtmSelectedIndex;
+      ispAtmManualEditIndex=ispAtmSelectedIndex;
+      renderIspAtmRows();
+      queueSaveIspAtmRows();
+      const body=document.getElementById('naIspAtmsBody');
+      const row=body?body.children[ispAtmSelectedIndex]:null;
+      const input=row?row.querySelector('td:nth-child(3) input'):null;
+      if(input)input.focus();
+    }
+    function deleteIspAtmRow(){
+      if(!canWriteIspAtm()){alert('Read-only access.');return;}
+      if(!Array.isArray(ispAtmRows)||!ispAtmRows.length){alert('No rows available to delete.');return;}
+      if(ispAtmSelectedIndex<0||ispAtmSelectedIndex>=ispAtmRows.length){alert('Select the row you want to delete first.');return;}
+      const rowNo=ispAtmSelectedIndex+1;
+      if(!confirm(`Delete selected row #${rowNo}?`))return;
+      const deletedIndex=ispAtmSelectedIndex;
+      ispAtmRows.splice(deletedIndex,1);
+      if(ispAtmEditingIndex===deletedIndex)ispAtmEditingIndex=-1;
+      else if(ispAtmEditingIndex>deletedIndex)ispAtmEditingIndex-=1;
+      if(ispAtmManualEditIndex===deletedIndex)ispAtmManualEditIndex=-1;
+      else if(ispAtmManualEditIndex>deletedIndex)ispAtmManualEditIndex-=1;
+      if(!ispAtmRows.length){
+        ispAtmRows=[createEmptyIspAtmRow()];
+        ispAtmSelectedIndex=0;
+        ispAtmEditingIndex=0;
+        ispAtmManualEditIndex=-1;
+      }else if(ispAtmSelectedIndex>=ispAtmRows.length){
+        ispAtmSelectedIndex=ispAtmRows.length-1;
+      }
+      renderIspAtmRows();
+      queueSaveIspAtmRows();
+    }
+    function createEmptyIspInternetRow(){return {site:'',isp:'',public_ip:'',gateway:'',subnet:'',bandwidth:'',_gateway_manual:false,locked:false};}
+    function ispInternetRequiredKeys(){return ['site','isp','public_ip','gateway','subnet','bandwidth'];}
+    function isIspInternetRowComplete(row){const r=(row&&typeof row==='object')?row:{};return ispInternetRequiredKeys().every((k)=>isConstrainedCellValid(k,r[k],ISP_SHARED_IPV4_KEYS,ISP_INTERNET_CIDR_KEYS,ISP_INTERNET_BANDWIDTH_KEYS));}
+    function normalizeIspInternetRow(item){const raw=(item&&typeof item==='object')?item:{};const row={site:String(raw.site??''),isp:String(raw.isp??''),public_ip:String(raw.public_ip??raw.publicIp??''),gateway:String(raw.gateway??raw.public_gateway??raw.publicGateway??''),subnet:String(raw.subnet??raw.cidr??''),bandwidth:String(raw.bandwidth??raw.bandwith??'')};const normalized={};ispInternetRequiredKeys().forEach((key)=>{normalized[key]=normalizeConstrainedCellValue(key,row[key],ISP_SHARED_IPV4_KEYS,ISP_INTERNET_CIDR_KEYS,ISP_INTERNET_BANDWIDTH_KEYS);});normalized.site=String(normalized.site??'').toUpperCase();const suggested=suggestGatewayFromWan(normalized.public_ip);if(!String(normalized.gateway??'').trim()&&suggested)normalized.gateway=suggested;const inferredManual=Boolean(normalized.gateway&&suggested&&normalized.gateway!==suggested);const gatewayManual=Boolean(raw._gateway_manual)||inferredManual;const completed=isIspInternetRowComplete(normalized);const lockedRaw=raw.locked;const locked=(typeof lockedRaw==='boolean')?(lockedRaw&&completed):completed;return {...normalized,_gateway_manual:gatewayManual,locked:Boolean(locked)};}
+    function normalizeIspInternetRows(rows){if(!Array.isArray(rows))return [];return rows.map((item)=>normalizeIspInternetRow(item));}
+    function renderIspInternetRows(){
+      const body=document.getElementById('naIspInternetBody');
+      if(!body)return;
+      const canWrite=canWriteIspInternet();
+      const rows=(Array.isArray(ispInternetRows)&&ispInternetRows.length)?ispInternetRows:[createEmptyIspInternetRow()];
+      if(!Array.isArray(ispInternetRows)||!ispInternetRows.length)ispInternetRows=rows;
+      if(ispInternetSelectedIndex>=rows.length)ispInternetSelectedIndex=-1;
+      if(ispInternetEditingIndex>=rows.length||!canWrite)ispInternetEditingIndex=-1;
+      if(ispInternetManualEditIndex>=rows.length||!canWrite)ispInternetManualEditIndex=-1;
+      body.innerHTML=rows.map((row,idx)=>{
+        const selected=ispInternetSelectedIndex===idx;
+        const editing=canWrite&&ispInternetEditingIndex===idx;
+        const readonly=!canWrite||Boolean(row.locked&&!editing);
+        const ro=readonly?'readonly':'';
+        const cl=readonly?' na-cell-readonly':'';
+        return `<tr class="${selected?'na-row-selected':''}">
+          <td><input type="radio" name="ispInternetRowPick" ${selected?'checked':''} ${canWrite?'':'disabled'} onclick="toggleIspInternetRowPick(${idx}); return false;"></td>
+          <td class="na-row-no">${idx+1}</td>
+          <td><input class="input na-cell-input${cl}" ${ro} value="${escapeHtml(row.site)}" oninput="onIspInternetCellInput(${idx},'site',this.value)" onblur="finalizeIspInternetRow(${idx})" onkeydown="onIspInternetCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input${cl}" ${ro} value="${escapeHtml(row.isp)}" oninput="onIspInternetCellInput(${idx},'isp',this.value)" onblur="finalizeIspInternetRow(${idx})" onkeydown="onIspInternetCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input${cl}" ${ro} value="${escapeHtml(row.public_ip)}" oninput="onIspInternetCellInput(${idx},'public_ip',this.value)" onblur="finalizeIspInternetRow(${idx})" onkeydown="onIspInternetCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input${cl}" ${ro} value="${escapeHtml(row.gateway)}" oninput="onIspInternetCellInput(${idx},'gateway',this.value)" onblur="finalizeIspInternetRow(${idx})" onkeydown="onIspInternetCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input${cl}" ${ro} value="${escapeHtml(row.subnet)}" oninput="onIspInternetCellInput(${idx},'subnet',this.value)" onblur="finalizeIspInternetRow(${idx})" onkeydown="onIspInternetCellKeydown(event,${idx})"></td>
+          <td><input class="input na-cell-input na-cell-sm${cl}" ${ro} value="${escapeHtml(row.bandwidth)}" oninput="onIspInternetCellInput(${idx},'bandwidth',this.value)" onblur="finalizeIspInternetRow(${idx})" onkeydown="onIspInternetCellKeydown(event,${idx})"></td>
+        </tr>`;
+      }).join('');
+    }
+    function stopIspInternetEditing(nextIndex){
+      if(!canWriteIspInternet()){ispInternetEditingIndex=-1;ispInternetManualEditIndex=-1;return;}
+      if(!Array.isArray(ispInternetRows)||!ispInternetRows.length){ispInternetEditingIndex=-1;ispInternetManualEditIndex=-1;return;}
+      const current=Number(ispInternetEditingIndex);
+      if(Number.isNaN(current)||current<0||current>=ispInternetRows.length){ispInternetEditingIndex=-1;ispInternetManualEditIndex=-1;return;}
+      if(typeof nextIndex==='number'&&nextIndex===current)return;
+      const prevRow={...(ispInternetRows[current]||{})};
+      syncIspInternetRowFromDom(current);
+      maybeSuggestGateway(ispInternetRows[current],prevRow,'public_ip','gateway','_gateway_manual');
+      ispInternetRows[current]=normalizeIspInternetRow(ispInternetRows[current]);
+      writeIspInternetRowToDom(current);
+      const row=ispInternetRows[current];
+      if(row&&isIspInternetRowComplete(row))row.locked=true;
+      if(ispInternetManualEditIndex===current)ispInternetManualEditIndex=-1;
+      ispInternetEditingIndex=-1;
+    }
+    async function loadIspInternetRows(){
+      try{
+        const response=await fetch(ISP_INTERNET_STATE_URL,{method:'GET'});
+        const payload=await response.json();
+        if(response.ok&&payload&&payload.ok&&Array.isArray(payload.rows)){
+          ispInternetRows=normalizeIspInternetRows(payload.rows);
+          if(!ispInternetRows.length)ispInternetRows=[createEmptyIspInternetRow()];
+          ispInternetSelectedIndex=-1;
+          ispInternetEditingIndex=-1;
+          ispInternetManualEditIndex=-1;
+          renderIspInternetRows();
+          return;
+        }
+      }catch(_e){}
+      ispInternetRows=[createEmptyIspInternetRow()];
+      ispInternetSelectedIndex=-1;
+      ispInternetEditingIndex=-1;
+      ispInternetManualEditIndex=-1;
+      renderIspInternetRows();
+      if(canWriteIspInternet())await saveIspInternetRows();
+    }
+    function queueSaveIspInternetRows(){if(!canWriteIspInternet())return;if(ispInternetSaveTimer){clearTimeout(ispInternetSaveTimer);}ispInternetSaveTimer=setTimeout(()=>{ispInternetSaveTimer=null;saveIspInternetRows();},400);}
+    async function saveIspInternetRows(){
+      if(!canWriteIspInternet())return {ok:false,error:'Write access is disabled.'};
+      const rows=normalizeIspInternetRows(ispInternetRows);
+      try{
+        const res=await fetch(ISP_INTERNET_STATE_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows})});
+        let payload={};
+        try{payload=await res.json();}catch(_e){payload={};}
+        if(res&&res.status===401){window.location='{{ url_for("login", expired=1) }}';return {ok:false,error:'Session expired. Please login again.'};}
+        if(!(res&&res.ok)){return {ok:false,error:String(payload?.error||`HTTP ${res?.status||0}`)};}
+        return {ok:true,error:''};
+      }catch(e){
+        return {ok:false,error:String(e?.message||e||'Network/API error')};
+      }
+    }
+    function syncIspInternetRowsFromDom(){const body=document.getElementById('naIspInternetBody');if(!body)return;const next=[];Array.from(body.querySelectorAll('tr')).forEach((tr,idx)=>{const current=(Array.isArray(ispInternetRows)&&ispInternetRows[idx])?ispInternetRows[idx]:createEmptyIspInternetRow();const pick=(col)=>String(tr.querySelector(`td:nth-child(${col}) input`)?.value??'');next.push(normalizeIspInternetRow({...current,site:pick(3),isp:pick(4),public_ip:pick(5),gateway:pick(6),subnet:pick(7),bandwidth:pick(8)}));});if(next.length)ispInternetRows=next;}
+    function syncIspInternetRowFromDom(index){const body=document.getElementById('naIspInternetBody');const tr=body?.children?.[index];if(!tr||!Array.isArray(ispInternetRows)||!ispInternetRows[index])return;const pick=(col)=>String(tr.querySelector(`td:nth-child(${col}) input`)?.value??'');ispInternetRows[index]=normalizeIspInternetRow({...ispInternetRows[index],site:pick(3),isp:pick(4),public_ip:pick(5),gateway:pick(6),subnet:pick(7),bandwidth:pick(8)});}
+    function writeIspInternetRowToDom(index){const body=document.getElementById('naIspInternetBody');const tr=body?.children?.[index];if(!tr||!Array.isArray(ispInternetRows)||!ispInternetRows[index])return;const row=ispInternetRows[index];const map={3:'site',4:'isp',5:'public_ip',6:'gateway',7:'subnet',8:'bandwidth'};Object.entries(map).forEach(([col,key])=>{const input=tr.querySelector(`td:nth-child(${col}) input`);if(input&&input.value!==String(row[key]??''))input.value=String(row[key]??'');});}
+    async function saveIspInternetRowsNow(){if(!canWriteIspInternet()){alert('Read-only access.');return;}if(ispInternetSaveTimer){clearTimeout(ispInternetSaveTimer);ispInternetSaveTimer=null;}syncIspInternetRowsFromDom();stopIspInternetEditing(-1);renderIspInternetRows();const result=await saveIspInternetRows();if(result.ok){alert('Saved to DB.');}else{alert(`Save failed: ${result.error||'Unknown error'}`);}}
+    function onIspInternetCellInput(index,key,value){
+      if(!canWriteIspInternet())return;
+      if(!Array.isArray(ispInternetRows)||!ispInternetRows[index])return;
+      if(ispInternetRows[index].locked&&ispInternetEditingIndex!==index)return;
+      const evt=(typeof window!=='undefined')?window.event:null;
+      const inputType=String(evt&&evt.inputType?evt.inputType:'');
+      const isDelete=inputType.startsWith('delete');
+      const next=sanitizeConstrainedCellInput(
+        key,
+        value,
+        ISP_SHARED_IPV4_KEYS,
+        ISP_INTERNET_CIDR_KEYS,
+        ISP_INTERNET_BANDWIDTH_KEYS,
+        {suppressAutoDot:isDelete,disallowFourthOctetStartsWithZero:(key==='public_ip'||key==='gateway')}
+      );
+      const finalText=(key==='site')?String(next??'').toUpperCase():next;
+      syncActiveInputValue(finalText);
+      ispInternetRows[index][key]=finalText;
+      if(key==='gateway')ispInternetRows[index]._gateway_manual=true;
+      queueSaveIspInternetRows();
+    }
+    function onIspInternetCellKeydown(event,index){
+      const key=String(event?.key||'');
+      if(key==='Enter'||key==='Tab'){setTimeout(()=>finalizeIspInternetRow(index),0);}
+    }
+    async function finalizeIspInternetRow(index){
+      if(!canWriteIspInternet())return;
+      if(!Array.isArray(ispInternetRows)||!ispInternetRows[index])return;
+      const prevRow={...(ispInternetRows[index]||{})};
+      syncIspInternetRowFromDom(index);
+      maybeSuggestGateway(ispInternetRows[index],prevRow,'public_ip','gateway','_gateway_manual');
+      ispInternetRows[index]=normalizeIspInternetRow(ispInternetRows[index]);
+      writeIspInternetRowToDom(index);
+      const row=ispInternetRows[index];
+      if(ispInternetEditingIndex===index&&ispInternetManualEditIndex===index){queueSaveIspInternetRows();return;}
+      if(row.locked)return;
+      if(isIspInternetRowComplete(row)){
+        row.locked=true;
+        if(ispInternetEditingIndex===index)ispInternetEditingIndex=-1;
+        if(ispInternetManualEditIndex===index)ispInternetManualEditIndex=-1;
+        renderIspInternetRows();
+        if(ispInternetSaveTimer){clearTimeout(ispInternetSaveTimer);ispInternetSaveTimer=null;}
+        const result=await saveIspInternetRows();
+        if(!result.ok){
+          row.locked=false;
+          renderIspInternetRows();
+          alert(`Auto-save failed: ${result.error||'Unknown error'}`);
+        }
+        return;
+      }
+      queueSaveIspInternetRows();
+    }
+    function toggleIspInternetRowPick(index){
+      if(!canWriteIspInternet())return;
+      if(!Array.isArray(ispInternetRows)||!ispInternetRows.length){ispInternetSelectedIndex=-1;ispInternetEditingIndex=-1;ispInternetManualEditIndex=-1;renderIspInternetRows();return;}
+      const idx=Number(index);
+      if(Number.isNaN(idx)||idx<0||idx>=ispInternetRows.length)return;
+      const next=(ispInternetSelectedIndex===idx)?-1:idx;
+      if(next!==ispInternetSelectedIndex)stopIspInternetEditing(next);
+      ispInternetSelectedIndex=next;
+      renderIspInternetRows();
+      queueSaveIspInternetRows();
+    }
+    function addIspInternetRow(){
+      if(!canWriteIspInternet()){alert('Read-only access.');return;}
+      if(!Array.isArray(ispInternetRows))ispInternetRows=[];
+      stopIspInternetEditing(-1);
+      ispInternetRows.push(createEmptyIspInternetRow());
+      ispInternetSelectedIndex=ispInternetRows.length-1;
+      ispInternetEditingIndex=ispInternetSelectedIndex;
+      ispInternetManualEditIndex=-1;
+      renderIspInternetRows();
+      queueSaveIspInternetRows();
+      const body=document.getElementById('naIspInternetBody');
+      const row=body?body.lastElementChild:null;
+      const input=row?row.querySelector('td:nth-child(3) input'):null;
+      if(input)input.focus();
+    }
+    function editIspInternetRow(){
+      if(!canWriteIspInternet()){alert('Read-only access.');return;}
+      if(!Array.isArray(ispInternetRows)||!ispInternetRows.length){alert('No rows available.');return;}
+      if(ispInternetSelectedIndex<0||ispInternetSelectedIndex>=ispInternetRows.length){alert('Select the row you want to edit first.');return;}
+      stopIspInternetEditing(ispInternetSelectedIndex);
+      ispInternetRows[ispInternetSelectedIndex].locked=false;
+      ispInternetEditingIndex=ispInternetSelectedIndex;
+      ispInternetManualEditIndex=ispInternetSelectedIndex;
+      renderIspInternetRows();
+      queueSaveIspInternetRows();
+      const body=document.getElementById('naIspInternetBody');
+      const row=body?body.children[ispInternetSelectedIndex]:null;
+      const input=row?row.querySelector('td:nth-child(3) input'):null;
+      if(input)input.focus();
+    }
+    function deleteIspInternetRow(){
+      if(!canWriteIspInternet()){alert('Read-only access.');return;}
+      if(!Array.isArray(ispInternetRows)||!ispInternetRows.length){alert('No rows available to delete.');return;}
+      if(ispInternetSelectedIndex<0||ispInternetSelectedIndex>=ispInternetRows.length){alert('Select the row you want to delete first.');return;}
+      const rowNo=ispInternetSelectedIndex+1;
+      if(!confirm(`Delete selected row #${rowNo}?`))return;
+      const deletedIndex=ispInternetSelectedIndex;
+      ispInternetRows.splice(deletedIndex,1);
+      if(ispInternetEditingIndex===deletedIndex)ispInternetEditingIndex=-1;
+      else if(ispInternetEditingIndex>deletedIndex)ispInternetEditingIndex-=1;
+      if(ispInternetManualEditIndex===deletedIndex)ispInternetManualEditIndex=-1;
+      else if(ispInternetManualEditIndex>deletedIndex)ispInternetManualEditIndex-=1;
+      if(!ispInternetRows.length){
+        ispInternetRows=[createEmptyIspInternetRow()];
+        ispInternetSelectedIndex=0;
+        ispInternetEditingIndex=0;
+        ispInternetManualEditIndex=-1;
+      }else if(ispInternetSelectedIndex>=ispInternetRows.length){
+        ispInternetSelectedIndex=ispInternetRows.length-1;
+      }
+      renderIspInternetRows();
+      queueSaveIspInternetRows();
+    }
+    function setActiveSidebar(section){document.querySelectorAll('.item[data-section]').forEach((el)=>el.classList.remove('active'));const target=document.querySelector(`.item[data-section="${section}"]`);if(target)target.classList.add('active');}
+    function toggleIpAddressingTree(){ipAddressingTreeOpen=!ipAddressingTreeOpen;const tree=document.getElementById('ipAddressingNav');if(tree)tree.classList.toggle('show',ipAddressingTreeOpen);}
+    function updateIpAddressingTreeSelection(){document.querySelectorAll('#ipAddressingNav .ip-tree-item').forEach((el)=>{el.classList.toggle('active',String(el.dataset.section||'')===currentIpAddressingSection);});}
+    function showBranches(){if(!hasMenuAccess('ip_branches'))return;currentIpAddressingSection='branches';setActiveSidebar('ip-addressing');updateIpAddressingTreeSelection();document.getElementById('ipHqView').classList.add('hidden');document.getElementById('netDevicesView').classList.add('hidden');document.getElementById('netMonitoringView').classList.add('hidden');document.getElementById('networkAddressesView').classList.add('hidden');if(selectedBranchId){document.getElementById('listView').classList.add('hidden');document.getElementById('detailsView').classList.remove('hidden');}else{document.getElementById('detailsView').classList.add('hidden');document.getElementById('listView').classList.remove('hidden');}}
+    function showIpHq(){if(!hasMenuAccess('ip_hq'))return;currentIpAddressingSection='hq';setActiveSidebar('ip-addressing');updateIpAddressingTreeSelection();document.getElementById('listView').classList.add('hidden');document.getElementById('detailsView').classList.add('hidden');document.getElementById('netDevicesView').classList.add('hidden');document.getElementById('netMonitoringView').classList.add('hidden');document.getElementById('networkAddressesView').classList.add('hidden');document.getElementById('ipHqView').classList.remove('hidden');}
+    function canAccessNetDevicesAll(){return CAN_ACCESS_DEVICES_PANEL&&hasMenuAccess('nd_all_devices');}
+    function canAccessNetDevicesCategories(){return CAN_ACCESS_DEVICES_PANEL&&hasMenuAccess('nd_categories');}
+    function defaultNetDevicesCategory(){if(canAccessNetDevicesAll())return'all';const categories=(Array.isArray(DEVICE_CATEGORIES)?DEVICE_CATEGORIES:[]).filter((c)=>String(c||'').trim());if(canAccessNetDevicesCategories())return categories.length?String(categories[0]):'__none__';return'all';}
+    function handleNetDevicesMenuClick(){if(!CAN_ACCESS_DEVICES_PANEL)return;toggleDeviceTree();const nextCategory=(currentDeviceCategory==='all'&&!canAccessNetDevicesAll())?defaultNetDevicesCategory():currentDeviceCategory;if(document.getElementById('netDevicesView')?.classList.contains('hidden')){showNetDevices(nextCategory);return;}setActiveSidebar('net-devices');}
+    function toggleNetworkAddressTree(){networkAddressTreeOpen=!networkAddressTreeOpen;const tree=document.getElementById('networkAddressNav');if(tree)tree.classList.toggle('show',networkAddressTreeOpen);}
+    function handleNetworkAddressesRootClick(){toggleNetworkAddressTree();if(hasSystemTreeAccess()){showNetworkAddresses('servers',firstAccessibleSystemSub());return;}if(hasNetworkTreeAccess()){showNetworkAddresses('network',firstAccessibleNetworkSub());}}
+    function toggleNetworkSubTree(forceOpen){if(typeof forceOpen==='boolean'){networkSubTreeOpen=forceOpen;}else{networkSubTreeOpen=!networkSubTreeOpen;}const tree=document.getElementById('networkSubNav');if(tree)tree.classList.toggle('show',networkSubTreeOpen);return networkSubTreeOpen;}
+    function toggleIspTree(forceOpen){if(typeof forceOpen==='boolean'){networkIspTreeOpen=forceOpen;}else{networkIspTreeOpen=!networkIspTreeOpen;}const tree=document.getElementById('networkIspSubNav');if(tree)tree.classList.toggle('show',networkIspTreeOpen);return networkIspTreeOpen;}
+    function toggleDmvpnTree(forceOpen){if(typeof forceOpen==='boolean'){networkDmvpnTreeOpen=forceOpen;}else{networkDmvpnTreeOpen=!networkDmvpnTreeOpen;}const tree=document.getElementById('networkDmvpnSubNav');if(tree)tree.classList.toggle('show',networkDmvpnTreeOpen);return networkDmvpnTreeOpen;}
+    function handleNetworkMenuClick(){if(!hasNetworkTreeAccess())return;const opened=toggleNetworkSubTree();if(currentNetworkAddressSection!=='network'){showNetworkAddresses('network',firstAccessibleNetworkSub());return;}setActiveSidebar('network-addresses');updateNetworkAddressTreeSelection();if(opened&&currentNetworkAddressSection==='network'){showNetworkAddresses('network',currentNetworkAddressSub||firstAccessibleNetworkSub());}}
+    function handleIspMenuClick(){if(!hasIspTreeAccess())return;const opened=toggleIspTree();if(!ispBranchRows.length){loadIspBranchRows();}if(!ispAtmRows.length){loadIspAtmRows();}if(!ispInternetRows.length){loadIspInternetRows();}if(currentNetworkAddressSection!=='network'||!String(currentNetworkAddressSub||'').startsWith('isp-')){showNetworkAddresses('network',firstAccessibleIspSub());return;}setActiveSidebar('network-addresses');updateNetworkAddressTreeSelection();if(opened&&currentNetworkAddressSection==='network'){showNetworkAddresses('network',currentNetworkAddressSub||firstAccessibleIspSub());}}
+    function handleDmvpnMenuClick(){if(!hasDmvpnTreeAccess())return;const opened=toggleDmvpnTree();if(currentNetworkAddressSection!=='network'||!String(currentNetworkAddressSub||'').startsWith('dmvpn-')){showNetworkAddresses('network',firstAccessibleDmvpnSub());return;}setActiveSidebar('network-addresses');updateNetworkAddressTreeSelection();if(opened&&currentNetworkAddressSection==='network'){showNetworkAddresses('network',currentNetworkAddressSub||firstAccessibleDmvpnSub());}}
+    function toggleSystemTree(forceOpen){if(typeof forceOpen==='boolean'){networkSystemTreeOpen=forceOpen;}else{networkSystemTreeOpen=!networkSystemTreeOpen;}const tree=document.getElementById('systemSubNav');if(tree)tree.classList.toggle('show',networkSystemTreeOpen);return networkSystemTreeOpen;}
+    function toggleSystemHoTree(forceOpen){if(typeof forceOpen==='boolean'){networkSystemHoOpen=forceOpen;}else{networkSystemHoOpen=!networkSystemHoOpen;}const tree=document.getElementById('systemHoSubNav');if(tree)tree.classList.toggle('show',networkSystemHoOpen);return networkSystemHoOpen;}
+    function toggleSystemDrsTree(forceOpen){if(typeof forceOpen==='boolean'){networkSystemDrsOpen=forceOpen;}else{networkSystemDrsOpen=!networkSystemDrsOpen;}const tree=document.getElementById('systemDrsSubNav');if(tree)tree.classList.toggle('show',networkSystemDrsOpen);return networkSystemDrsOpen;}
+    function handleSystemMenuClick(){if(!hasSystemTreeAccess())return;const opened=toggleSystemTree();if(currentNetworkAddressSection!=='servers'){showNetworkAddresses('servers',firstAccessibleSystemSub(),false);toggleSystemHoTree(false);toggleSystemDrsTree(false);return;}setActiveSidebar('network-addresses');updateNetworkAddressTreeSelection();if(opened&&currentNetworkAddressSection==='servers'){toggleSystemHoTree(false);toggleSystemDrsTree(false);}}
+    function handleSystemHoClick(){if(!hasHoTreeAccess())return;const opened=toggleSystemHoTree();if(currentNetworkAddressSection!=='servers'||!String(currentNetworkAddressSub||'').startsWith('ho-')){showNetworkAddresses('servers',firstAccessibleHoSub());return;}if(opened&&currentNetworkAddressSection==='servers'){showNetworkAddresses('servers',currentNetworkAddressSub||firstAccessibleHoSub());}}
+    function handleSystemDrsClick(){if(!hasDrsTreeAccess())return;const opened=toggleSystemDrsTree();if(currentNetworkAddressSection!=='servers'||!String(currentNetworkAddressSub||'').startsWith('drs-')){showNetworkAddresses('servers',firstAccessibleDrsSub());return;}if(opened&&currentNetworkAddressSection==='servers'){showNetworkAddresses('servers',currentNetworkAddressSub||firstAccessibleDrsSub());}}
+    function updateNetworkAddressTreeSelection(){document.querySelectorAll('#networkAddressNav .na-tree-item').forEach((el)=>{el.classList.toggle('active',String(el.dataset.section||'')===currentNetworkAddressSection);});document.querySelectorAll('#networkAddressNav .na-sub-item').forEach((el)=>{const sec=String(el.dataset.section||'');const sub=String(el.dataset.sub||'');el.classList.toggle('active',sec===currentNetworkAddressSection&&sub===currentNetworkAddressSub);});document.querySelectorAll('#networkAddressNav .na-system-group').forEach((el)=>{const group=String(el.dataset.group||'');const active=(currentNetworkAddressSection==='servers'&&String(currentNetworkAddressSub||'').startsWith(`${group}-`));el.classList.toggle('active',active);});document.querySelectorAll('#networkAddressNav .na-network-group').forEach((el)=>{const group=String(el.dataset.group||'');const active=(currentNetworkAddressSection==='network'&&String(currentNetworkAddressSub||'').startsWith(`${group}-`));el.classList.toggle('active',active);});}
+    function showNetworkAddresses(section,sub,expandServerGroups=true){
+      const sec=String(section||'servers');
+      let sb=String(sub||(sec==='servers'?'ho-vm':'network-devices'));
+      if(sb==='branches-isp')sb='isp-branches';
+      if(sb==='dmvpn')sb='dmvpn-branches';
+      if(sec==='servers'){
+        const allowed=new Set(['ho-vm','ho-physical','ho-storage','drs-vm','drs-physical','drs-storage']);
+        if(!allowed.has(sb))sb='ho-vm';
+        if(!canAccessSystemSub(sb)){sb=firstAccessibleSystemSub();}
+        if(!canAccessSystemSub(sb))return;
+      }
+      if(sec==='network'){
+        if(!canAccessNetworkSub(sb)){sb=firstAccessibleNetworkSub();}
+        if(!canAccessNetworkSub(sb))return;
+      }
+      if(sec==='servers'){
+        toggleSystemTree(true);
+        if(expandServerGroups&&sb.startsWith('ho-'))toggleSystemHoTree(true);
+        if(expandServerGroups&&sb.startsWith('drs-'))toggleSystemDrsTree(true);
+      }
+      currentNetworkAddressSection=sec;
+      currentNetworkAddressSub=sb;
+      if(currentNetworkAddressSection==='network'){
+        toggleNetworkSubTree(true);
+        if(sb.startsWith('isp-'))toggleIspTree(true);
+        if(sb.startsWith('dmvpn-'))toggleDmvpnTree(true);
+      }
+      setActiveSidebar('network-addresses');
+      document.getElementById('listView').classList.add('hidden');
+      document.getElementById('detailsView').classList.add('hidden');
+      document.getElementById('ipHqView').classList.add('hidden');
+      document.getElementById('netDevicesView').classList.add('hidden');
+      document.getElementById('netMonitoringView').classList.add('hidden');
+      document.getElementById('networkAddressesView').classList.remove('hidden');
+      const crumb=document.getElementById('networkAddressesBreadcrumb');
+      if(crumb){
+        let suffix='System > HO > VM Servers';
+        if(currentNetworkAddressSection==='network'){
+          const map={'network-devices':'Network Devices','isp-branches':'ISP > Branches','isp-atms':'ISP > ATM-s','isp-internet':'ISP > Internet','dmvpn-branches':'DMVPN > Branches','dmvpn-atms':'DMVPN > ATM-s','sim-cards':'SIM Cards','site-to-site':'Site to Site','nat':'NAT'};
+          suffix=`Network > ${map[currentNetworkAddressSub]||'Network Devices'}`;
+        }else{
+          const map={'ho-vm':'System > HO > VM Servers','ho-physical':'System > HO > Physical Servers','ho-storage':'System > HO > Storage','drs-vm':'System > DRS > VM Servers','drs-physical':'System > DRS > Physical Servers','drs-storage':'System > DRS > Storage'};
+          suffix=map[currentNetworkAddressSub]||'System > HO > VM Servers';
+        }
+        crumb.textContent=`IP Addressing > Network Addresses > ${suffix}`;
+      }
+      const srv=document.getElementById('naServersPanel');
+      const net=document.getElementById('naNetworkPanel');
+      const nd=document.getElementById('naNetworkDevicesPanel');
+      const ispBranches=document.getElementById('naIspBranchesPanel');
+      const ispAtms=document.getElementById('naIspAtmsPanel');
+      const ispInternet=document.getElementById('naIspInternetPanel');
+      const dmvpnBranches=document.getElementById('naDmvpnBranchesPanel');
+      const dmvpnAtms=document.getElementById('naDmvpnAtmsPanel');
+      const sim=document.getElementById('naSimCardsPanel');
+      const s2s=document.getElementById('naSiteToSitePanel');
+      const nat=document.getElementById('naNatPanel');
+      if(srv)srv.classList.toggle('hidden',currentNetworkAddressSection!=='servers');
+      if(net)net.classList.toggle('hidden',currentNetworkAddressSection!=='network');
+      if(nd)nd.classList.toggle('hidden',currentNetworkAddressSection!=='network'||currentNetworkAddressSub!=='network-devices');
+      if(ispBranches)ispBranches.classList.toggle('hidden',currentNetworkAddressSection!=='network'||currentNetworkAddressSub!=='isp-branches');
+      if(ispAtms)ispAtms.classList.toggle('hidden',currentNetworkAddressSection!=='network'||currentNetworkAddressSub!=='isp-atms');
+      if(ispInternet)ispInternet.classList.toggle('hidden',currentNetworkAddressSection!=='network'||currentNetworkAddressSub!=='isp-internet');
+      if(dmvpnBranches)dmvpnBranches.classList.toggle('hidden',currentNetworkAddressSection!=='network'||currentNetworkAddressSub!=='dmvpn-branches');
+      if(dmvpnAtms)dmvpnAtms.classList.toggle('hidden',currentNetworkAddressSection!=='network'||currentNetworkAddressSub!=='dmvpn-atms');
+      if(sim)sim.classList.toggle('hidden',currentNetworkAddressSection!=='network'||currentNetworkAddressSub!=='sim-cards');
+      if(s2s)s2s.classList.toggle('hidden',currentNetworkAddressSection!=='network'||currentNetworkAddressSub!=='site-to-site');
+      if(nat)nat.classList.toggle('hidden',currentNetworkAddressSection!=='network'||currentNetworkAddressSub!=='nat');
+      const systemPath=document.getElementById('naSystemPath');
+      if(systemPath&&currentNetworkAddressSection==='servers'){
+        const labelMap={'ho-vm':'HO > VM Servers','ho-physical':'HO > Physical Servers','ho-storage':'HO > Storage','drs-vm':'DRS > VM Servers','drs-physical':'DRS > Physical Servers','drs-storage':'DRS > Storage'};
+        systemPath.textContent=`System - ${labelMap[currentNetworkAddressSub]||'HO > VM Servers'}`;
+      }
+      updateNetworkAddressTreeSelection();
+    }
+    function toggleDeviceTree(){if(!canAccessNetDevicesCategories())return false;deviceTreeOpen=!deviceTreeOpen;const tree=document.getElementById('deviceCategoryNav');if(tree)tree.classList.toggle('show', deviceTreeOpen);return deviceTreeOpen;}
+    function renderDeviceTree(){const tree=document.getElementById('deviceCategoryNav');if(!tree)return;const root=document.getElementById('navNetDevicesCategoriesRoot');if(root)root.classList.toggle('hidden',!canAccessNetDevicesCategories());if(!canAccessNetDevicesCategories()){tree.innerHTML='';tree.classList.remove('show');return;}const categories=(Array.isArray(DEVICE_CATEGORIES)?DEVICE_CATEGORIES:[]).filter((c)=>String(c||'').trim());const hasDevices=Array.isArray(DEVICE_DATA)&&DEVICE_DATA.length>0;const items=[];if(hasDevices&&categories.length){items.push(...categories.map((category)=>`<li><button class="tree-item" type="button" onclick="showNetDevices('${String(category).replace(/'/g, "\\'")}')">${category}</button></li>`));}else{items.push('<li><button class="tree-item" type="button" disabled>No categories assigned</button></li>');}tree.innerHTML=items.join('');tree.classList.toggle('show', deviceTreeOpen);}
+    function deviceMatchesCategory(device, category){if(category==='all')return true;const groups=Array.isArray(device.groups)?device.groups:[];return groups.some((g)=>String(g).toLowerCase()===String(category).toLowerCase());}
+    function updateDeviceTreeSelection(){const label=currentDeviceCategory==='all'?'All Devices':(currentDeviceCategory==='monitoring'?'Monitoring':currentDeviceCategory);const allBtn=document.querySelector('#navNetDevicesAll .tree-item');if(allBtn)allBtn.classList.toggle('active',label==='All Devices');document.querySelectorAll('#deviceCategoryNav .tree-item').forEach((item)=>item.classList.toggle('active', item.textContent===label));}
+    function renderCommandPicker(){const select=document.getElementById('deviceCommandSelect');if(!select)return;const mode=String(document.getElementById('deviceCommandMode')?.value||'show').toLowerCase();const options=['<option value="">Select pre-configured command</option>'];(Array.isArray(COMMAND_BUTTONS)?COMMAND_BUTTONS:[]).forEach((button)=>{const buttonMode=String(button.mode||'show').trim().toLowerCase()||'show';if(mode==='show'||mode==='config'){if(buttonMode!==mode)return;}const label=String(button.label||button.command||'').trim();const command=String(button.command||'').trim();if(!command)return;options.push(`<option value="${command.replace(/"/g,'&quot;')}">${label}</option>`);});select.innerHTML=options.join('');}
+    function showNetDevices(category){if(!CAN_ACCESS_DEVICES_PANEL)return;let nextCategory=String(category||'all');if(nextCategory==='all'&&!canAccessNetDevicesAll()){nextCategory=defaultNetDevicesCategory();}if(nextCategory!=='all'&&!canAccessNetDevicesCategories()){nextCategory=canAccessNetDevicesAll()?'all':'__none__';}currentDeviceCategory=nextCategory;setActiveSidebar('net-devices');document.getElementById('listView').classList.add('hidden');document.getElementById('detailsView').classList.add('hidden');document.getElementById('ipHqView').classList.add('hidden');document.getElementById('networkAddressesView').classList.add('hidden');document.getElementById('netMonitoringView').classList.add('hidden');document.getElementById('netDevicesView').classList.remove('hidden');const categoryLabel=currentDeviceCategory==='all'?'All Devices':(currentDeviceCategory==='__none__'?'Categories':currentDeviceCategory);document.getElementById('netBreadcrumb').textContent=`IP Addressing > Net Devices > ${categoryLabel}`;renderNetDevicesList();updateDeviceTreeSelection();}
+    function monitoringBaseDevices(){const all=Array.isArray(MONITORING_DEVICE_DATA)?MONITORING_DEVICE_DATA:[];const selected=Array.isArray(MONITORED_DEVICE_NAMES)?MONITORED_DEVICE_NAMES:[];if(!selected.length)return all;const set=new Set(selected.map((name)=>String(name||'').trim().toLowerCase()));return all.filter((d)=>set.has(String(d.name||'').trim().toLowerCase()));}
+    function monitoringCategories(){const map=new Map();map.set('all','All Devices');MONITORING_CATEGORY_ORDER.forEach((label)=>{const key=String(label||'').trim().toLowerCase();if(key&&key!=='all devices')map.set(key,label);});monitoringBaseDevices().forEach((device)=>{(Array.isArray(device.groups)?device.groups:[]).forEach((group)=>{const raw=String(group||'').trim();if(!raw)return;const key=raw.toLowerCase();if(!map.has(key))map.set(key,raw);});});return Array.from(map.entries()).map(([key,label])=>({key,label}));}
+    function monitoringDeviceStatus(device){const raw=String(device?.status||device?.monitor_status||device?.ping_status||'').trim().toLowerCase();if(raw==='up'||raw==='connected'||raw==='ok'||raw==='online')return'up';if(raw==='down'||raw==='offline'||raw==='critical')return'down';if(raw==='warning'||raw==='warn'||raw==='degraded')return'warning';return'unknown';}
+    function deviceInMonitoringCategory(device, categoryKey){if(categoryKey==='all')return true;const groups=Array.isArray(device.groups)?device.groups:[];return groups.some((g)=>String(g||'').trim().toLowerCase()===String(categoryKey||'').toLowerCase());}
+    function monitoringFilteredDevices(){const search=String(document.getElementById('monitoringSearch')?.value||'').toLowerCase();return monitoringBaseDevices().filter((device)=>{if(!deviceInMonitoringCategory(device,currentMonitoringCategory))return false;const status=monitoringDeviceStatus(device);if(currentMonitoringStatus!=='all'&&status!==currentMonitoringStatus)return false;const text=`${device.name||''} ${device.host||''} ${(device.groups||[]).join(' ')}`.toLowerCase();return text.includes(search);});}
+    function monitoringCategoryCounts(){const counts={all:monitoringBaseDevices().length};monitoringBaseDevices().forEach((device)=>{(Array.isArray(device.groups)?device.groups:[]).forEach((group)=>{const key=String(group||'').trim().toLowerCase();if(!key)return;counts[key]=(counts[key]||0)+1;});});return counts;}
+    function monitoringStatusCounts(categoryKey){const base=monitoringBaseDevices().filter((d)=>deviceInMonitoringCategory(d,categoryKey));const out={up:0,down:0,warning:0,unknown:0};base.forEach((d)=>{out[monitoringDeviceStatus(d)]++;});return out;}
+    function monitoringStatusDevices(categoryKey,status){return monitoringBaseDevices().filter((d)=>deviceInMonitoringCategory(d,categoryKey)&&monitoringDeviceStatus(d)===status);}
+    function dotClass(status){if(status==='up')return'monitor-dot-up';if(status==='down')return'monitor-dot-down';if(status==='warning')return'monitor-dot-warning';return'monitor-dot-unknown';}
+    function statusLabel(status){if(status==='up')return'Up';if(status==='down')return'Down';if(status==='warning')return'Warning';return'Unknown';}
+    function toggleMonitoringCategory(category){const key=String(category||'all').toLowerCase();monitoringExpandedCategories[key]=!Boolean(monitoringExpandedCategories[key]);currentMonitoringCategory=key;currentMonitoringStatus='all';renderMonitoringPanel();}
+    function selectMonitoringCategory(category){currentMonitoringCategory=String(category||'all').toLowerCase();currentMonitoringStatus='all';renderMonitoringPanel();}
+    function toggleMonitoringStatusExpand(category,status){const key=`${String(category||'all').toLowerCase()}::${String(status||'all').toLowerCase()}`;monitoringExpandedStatuses[key]=!Boolean(monitoringExpandedStatuses[key]);currentMonitoringCategory=String(category||'all').toLowerCase();currentMonitoringStatus=String(status||'all').toLowerCase();renderMonitoringPanel();}
+    function renderMonitoringCategories(){const holder=document.getElementById('monitoringCategoryList');if(!holder)return;const counts=monitoringCategoryCounts();const cats=monitoringCategories();holder.innerHTML=cats.map((cat)=>{const expanded=Boolean(monitoringExpandedCategories[cat.key]);const sc=monitoringStatusCounts(cat.key);const arrow=expanded?'&#9662;':'&#9656;';const rows=[];rows.push({status:'up',count:sc.up,always:true});rows.push({status:'down',count:sc.down,always:false});rows.push({status:'warning',count:sc.warning,always:false});const children=expanded?`<div class="monitor-tree-child">${rows.filter((row)=>row.always||row.count>0).map((row)=>{const st=row.status;const statusKey=`${cat.key}::${st}`;const stExpanded=Boolean(monitoringExpandedStatuses[statusKey]);const stArrow=stExpanded?'&#9662;':'&#9656;';const statusDevices=monitoringStatusDevices(cat.key,st);const devicesHtml=stExpanded?`<div class="monitor-tree-child">${statusDevices.map((d)=>`<div class="monitor-mini-row"><span class="monitor-dot ${dotClass(st)}"></span>${escapeHtml(d.name||'-')}</div>`).join('') || '<div class="monitor-mini-row">No devices.</div>'}</div>`:'';return `<div><button class="monitor-status-btn ${cat.key===currentMonitoringCategory&&currentMonitoringStatus===st?'active':''}" type="button" onclick='toggleMonitoringStatusExpand(${JSON.stringify(cat.key)},${JSON.stringify(st)})'><span><span class="monitor-tree-toggle">${stArrow}</span><span class="monitor-dot ${dotClass(st)}"></span>${statusLabel(st)}</span><span class="monitor-count">${row.count}</span></button>${devicesHtml}</div>`;}).join('')}</div>`:'';return `<div><button class="monitor-cat-btn ${cat.key===currentMonitoringCategory&&currentMonitoringStatus==='all'?'active':''}" type="button" onclick='toggleMonitoringCategory(${JSON.stringify(cat.key)})'><span><span class="monitor-tree-toggle">${arrow}</span>${escapeHtml(cat.label)}</span><span class="monitor-count">${Number(counts[cat.key]||0)}</span></button>${children}</div>`;}).join('');}
+    function renderMonitoringResults(){const holder=document.getElementById('monitoringResultList');if(!holder)return;const rows=monitoringFilteredDevices();if(!rows.length){holder.innerHTML='<div class="monitor-result-row"><div>No matching monitored devices.</div><div></div></div>';return;}holder.innerHTML=rows.map((device)=>{const s=monitoringDeviceStatus(device);const name=escapeHtml(device.name||'-');const host=escapeHtml(device.host||'-');const nameJs=JSON.stringify(String(device.name||''));return `<div class="monitor-result-row"><div><button class="btn" type="button" onclick='openMonitoringNodeDashboard(${nameJs})' style="padding:2px 8px;"><b>${name} - ${host}</b></button></div><span><span class="monitor-dot ${dotClass(s)}"></span> ${escapeHtml(statusLabel(s))}</span></div>`;}).join('');}
+    function applyMonitoringPanelLayout(){const grid=document.getElementById('monitoringGrid');if(!grid)return;grid.classList.toggle('monitor-left-collapsed',monitoringLeftCollapsed);grid.classList.toggle('monitor-right-collapsed',monitoringRightCollapsed);}
+    function initMonitoringAutoExpand(){const left=document.querySelector('.monitor-left-panel');const right=document.querySelector('.monitor-right-panel');const grid=document.getElementById('monitoringGrid');const rightTrigger=document.getElementById('monitorRightHoverTrigger');if(left){left.addEventListener('mouseenter',()=>{if(!monitoringLeftCollapsed)return;clearTimeout(monitoringLeftHoverTimer);monitoringLeftHoverTimer=setTimeout(()=>{if(monitoringLeftCollapsed){monitoringLeftCollapsed=false;applyMonitoringPanelLayout();}},500);});left.addEventListener('mouseleave',()=>{clearTimeout(monitoringLeftHoverTimer);if(!monitoringLeftCollapsed){monitoringLeftCollapsed=true;applyMonitoringPanelLayout();}});}if(right){right.addEventListener('mouseenter',()=>{if(!monitoringRightCollapsed)return;clearTimeout(monitoringRightHoverTimer);monitoringRightHoverTimer=setTimeout(()=>{if(monitoringRightCollapsed){monitoringRightCollapsed=false;applyMonitoringPanelLayout();}},500);});right.addEventListener('mouseleave',()=>{clearTimeout(monitoringRightHoverTimer);if(!monitoringRightCollapsed){monitoringRightCollapsed=true;applyMonitoringPanelLayout();}});}if(rightTrigger){rightTrigger.addEventListener('mouseenter',()=>{if(!monitoringRightCollapsed)return;clearTimeout(monitoringRightHoverTimer);monitoringRightHoverTimer=setTimeout(()=>{if(monitoringRightCollapsed){monitoringRightCollapsed=false;applyMonitoringPanelLayout();}},500);});rightTrigger.addEventListener('mouseleave',()=>{clearTimeout(monitoringRightHoverTimer);});}if(grid){grid.addEventListener('mouseleave',()=>{clearTimeout(monitoringRightHoverTimer);if(!monitoringRightCollapsed){monitoringRightCollapsed=true;applyMonitoringPanelLayout();}});}}
+    function renderMonitoringPanel(){renderMonitoringCategories();renderMonitoringResults();const title=document.getElementById('monitoringCategoryTitle');if(title){const found=monitoringCategories().find((x)=>x.key===currentMonitoringCategory);const sl=statusLabel(currentMonitoringStatus);title.textContent=found?`${found.label}${currentMonitoringStatus==='all'?'':` / ${sl}`}`:'All Devices';}}
+    let liveSyncInFlight=false;
+    function setNotificationCount(count){const btn=document.getElementById('notificationsBtn');if(!btn)return;const n=Math.max(0,Number(count||0));btn.textContent=`Notifications (${n})`;}
+    function refreshMonitoringCategorySelectOptions(options){const sel=document.getElementById('mnCategory');if(!sel||!Array.isArray(options)||!options.length)return;const current=String(sel.value||'').trim();sel.innerHTML=options.map((x)=>`<option>${escapeHtml(String(x||''))}</option>`).join('');if(current&&options.includes(current))sel.value=current;}
+    function applyLiveData(payload){if(!payload||typeof payload!=='object')return;if(Array.isArray(payload.devices))DEVICE_DATA=payload.devices;if(Array.isArray(payload.categories))DEVICE_CATEGORIES=payload.categories;if(Array.isArray(payload.monitoring_devices))MONITORING_DEVICE_DATA=payload.monitoring_devices;if(payload.monitoring_profiles&&typeof payload.monitoring_profiles==='object')MONITORING_NODE_PROFILES=payload.monitoring_profiles;if(Array.isArray(payload.monitored_device_names))MONITORED_DEVICE_NAMES=payload.monitored_device_names;if(Array.isArray(payload.monitoring_editable_device_names))MONITORING_EDITABLE_DEVICE_NAMES=payload.monitoring_editable_device_names;setNotificationCount(payload.unread_notifications_count);refreshMonitoringCategorySelectOptions(payload.monitoring_category_options);renderDeviceTree();if(!document.getElementById('netDevicesView')?.classList.contains('hidden'))renderNetDevicesList();if(!document.getElementById('netMonitoringView')?.classList.contains('hidden'))renderMonitoringPanel();const editSel=document.getElementById('mnEditDeviceSelect');if(editSel&&!document.getElementById('mnSectionForm')?.classList.contains('hidden')){refreshMonitoringNodeSelect('mnEditDeviceSelect',String(editSel.value||''));}const delSel=document.getElementById('mnDeleteDeviceSelect');if(delSel){refreshMonitoringNodeSelect('mnDeleteDeviceSelect',String(delSel.value||''));}}
+    async function fetchLiveData(){if(liveSyncInFlight)return;liveSyncInFlight=true;try{const res=await fetch(LIVE_DATA_URL,{method:'GET',cache:'no-store'});if(res.status===401){window.location='{{ url_for("login", expired=1) }}';return;}const data=await res.json();if(!res.ok||!data?.ok)return;applyLiveData(data);}catch(_e){}finally{liveSyncInFlight=false;}}
+    function startLiveUpdates(){setInterval(fetchLiveData,10000);}
+    function verifyActiveSessionOnHistoryNavigation(){fetch(LIVE_DATA_URL,{method:'GET',cache:'no-store'}).then((res)=>{if(res.status===401){window.location='{{ url_for("login", expired=1) }}';return;}if(!res.ok){window.location.reload();}}).catch(()=>{window.location.reload();});}
+    window.addEventListener('pageshow',(event)=>{if(event&&event.persisted){verifyActiveSessionOnHistoryNavigation();}});
+    function showNetMonitoring(){if(!CAN_ACCESS_MONITORING_PANEL)return;currentDeviceCategory='monitoring';if(!currentMonitoringCategory)currentMonitoringCategory='all';setActiveSidebar('monitoring');document.getElementById('listView').classList.add('hidden');document.getElementById('detailsView').classList.add('hidden');document.getElementById('ipHqView').classList.add('hidden');document.getElementById('networkAddressesView').classList.add('hidden');document.getElementById('netDevicesView').classList.add('hidden');document.getElementById('netMonitoringView').classList.remove('hidden');updateDeviceTreeSelection();applyMonitoringPanelLayout();renderMonitoringPanel();}
+    function handleDeviceCheckClick(event, checkbox){if(!checkbox)return;const useMulti=Boolean(event.ctrlKey||event.metaKey);if(useMulti)return;document.querySelectorAll('.device-check').forEach((el)=>{if(el!==checkbox)el.checked=false;});checkbox.checked=true;}
+    function renderNetDevicesList(){const body=document.getElementById('netDevicesBody');if(!body)return;const search=String(document.getElementById('deviceSearch')?.value||'').toLowerCase();const filtered=(Array.isArray(DEVICE_DATA)?DEVICE_DATA:[]).filter((device)=>{if(!deviceMatchesCategory(device,currentDeviceCategory))return false;const text=`${device.name||''} ${device.host||''} ${(device.groups||[]).join(' ')}`.toLowerCase();return text.includes(search);});if(!filtered.length){body.innerHTML='<div class="device-row"><div></div><div>No devices in this category.</div><div></div></div>';return;}body.innerHTML=filtered.map((device)=>{const groups=Array.isArray(device.groups)?device.groups:[];const firstGroup=groups.length?groups[0]:'Uncategorized';return `<label class="device-row"><input type="checkbox" class="device-check" onclick="handleDeviceCheckClick(event,this)" value="${String(device.name||'').replace(/"/g,'&quot;')}"><div><div><b>${device.name||'-'}</b></div><div class="device-meta">${device.host||'-'}</div></div><span class="category-chip">${firstGroup}</span></label>`;}).join('');}
+    function selectAllNetDevices(){document.querySelectorAll('.device-check').forEach((el)=>{el.checked=true;});} function clearNetDevices(){document.querySelectorAll('.device-check').forEach((el)=>{el.checked=false;});}
+    function showRunStatus(msg,isError){const box=document.getElementById('netRunStatus');if(!box)return;box.className=isError?'err':'info';box.textContent=msg;box.classList.remove('hidden');}
+    function showHelpdeskStatus(msg,isError){const box=document.getElementById('helpdeskStatus')||document.getElementById('helpdeskStatusAlt');if(!box)return;box.className=isError?'err':'info';box.textContent=msg;box.classList.remove('hidden');}
+    function isHelpdeskActionMode(){const mode=String(document.getElementById('deviceCommandMode')?.value||'show').toLowerCase();return mode==='helpdesk_action';}
+    function toggleCommandModeViews(){if(HELP_DESK_MODE)return;const standard=document.getElementById('standardCommandActions');const hdActions=document.getElementById('helpdeskModeActions');const hdTable=document.getElementById('helpdeskInterfaceTables');const active=isHelpdeskActionMode();if(standard)standard.classList.toggle('hidden',active);if(hdActions)hdActions.classList.toggle('hidden',!active);if(hdTable)hdTable.classList.toggle('hidden',!active);}
+    function selectedDeviceNames(){return Array.from(document.querySelectorAll('.device-check:checked')).map((el)=>el.value);}
+    function escapeHtml(value){return String(value||'').replace(/[&<>"']/g,(ch)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]||ch));}
+    function helpdeskStatusBadge(status){const raw=String(status||'').trim();const key=raw.toLowerCase();let cls='status-notconnected';if(key==='connected')cls='status-connected';else if(key==='err-disable'||key==='errdisable')cls='status-errdisable';else if(key==='disable'||key==='disabled')cls='status-disable';return `<span class="status-pill ${cls}">${escapeHtml(raw||'-')}</span>`;}
+    function handleHelpdeskInterfaceCheck(checkbox){if(!checkbox)return;if(!checkbox.checked)return;document.querySelectorAll('.hd-if-check').forEach((el)=>{if(el!==checkbox)el.checked=false;});}
+    function collectSelectedInterfaces(){return Array.from(document.querySelectorAll('.hd-if-check:checked')).map((el)=>({device:String(el.dataset.device||''),interface:String(el.dataset.iface||'')})).filter((x)=>x.device&&x.interface);}
+    function collectDescriptionChanges(){return Array.from(document.querySelectorAll('.hd-if-desc')).map((el)=>({device:String(el.dataset.device||''),interface:String(el.dataset.iface||''),description:String(el.value||''),original:String(el.dataset.original||'')})).filter((x)=>x.device&&x.interface&&x.description!==x.original).map((x)=>({device:x.device,interface:x.interface,description:x.description}));}
+    function collectVlanChanges(){return Array.from(document.querySelectorAll('.hd-if-vlan')).map((el)=>({device:String(el.dataset.device||''),interface:String(el.dataset.iface||''),vlan:String(el.value||''),original:String(el.dataset.original||'')})).filter((x)=>x.device&&x.interface&&x.vlan!==x.original&&/^\d+$/.test(x.vlan)&&Number(x.vlan)>=1&&Number(x.vlan)<=4094).map((x)=>({device:x.device,interface:x.interface,vlan:x.vlan}));}
+    async function seniorTogglePort(deviceName,interfaceName,checkbox){if(!checkbox)return;const desiredOn=Boolean(checkbox.checked);const action=desiredOn?'no_shut':'shut';showHelpdeskStatus(`Applying ${action==='no_shut'?'no shut':'shutdown'} on ${interfaceName}...`,false);try{const response=await fetch("{{ url_for('helpdesk_interfaces_api') }}",{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,selected_devices:[deviceName],selected_interfaces:[{device:deviceName,interface:interfaceName}]})});const payload=await response.json();if(!response.ok||!payload.ok){checkbox.checked=!desiredOn;showHelpdeskStatus(payload.error||'Port toggle failed.',true);return;}if(Array.isArray(payload.devices))renderHelpdeskTables(payload.devices);showHelpdeskStatus(payload.message||'Port state updated.',false);}catch(error){checkbox.checked=!desiredOn;showHelpdeskStatus(`Port toggle failed: ${error}`,true);}}
+    function renderHelpdeskTables(devices){const holder=document.getElementById('helpdeskInterfaceTables');if(!holder)return;if(!Array.isArray(devices)||!devices.length){holder.innerHTML='<div class="small">No interface data loaded.</div>';return;}const showToggle=Boolean(SENIOR_MODE)&&isHelpdeskActionMode();const showVlanEdit=Boolean(SENIOR_MODE)&&isHelpdeskActionMode();const chunks=[];devices.forEach((device)=>{const rows=Array.isArray(device.interfaces)?device.interfaces:[];const toggleHead=showToggle?'<th>Power</th>':'';const toggleCells=(row)=>{if(!showToggle)return'';const statusKey=String(row.status||'').toLowerCase();const checked=statusKey!=='disable'&&statusKey!=='disabled';return `<td><label class="port-toggle"><input type="checkbox" ${checked?'checked':''} onchange="seniorTogglePort('${escapeHtml(device.device||'')}','${escapeHtml(row.interface||'')}',this)"><span class="port-slider"></span></label></td>`;};const vlanCell=(row)=>showVlanEdit?`<input class="input hd-if-vlan" data-device="${escapeHtml(device.device||'')}" data-iface="${escapeHtml(row.interface||'')}" data-original="${escapeHtml(row.vlan||'')}" value="${escapeHtml(row.vlan||'')}" style="max-width:90px">`:`${escapeHtml(row.vlan||'-')}`;const colCount=showToggle?8:7;chunks.push(`<div class="subpanel"><div class="subhead"><span>${escapeHtml(device.device||'-')}</span><span class="small">${escapeHtml(device.host||'')}</span></div><div class="table-wrap"><table><thead><tr><th>Select</th><th>Interface</th><th>Description</th><th>Mode</th><th>VLAN</th><th>MAC Addresses</th><th>Status</th>${toggleHead}</tr></thead><tbody>${rows.map((row)=>`<tr><td><input class="hd-if-check" type="checkbox" onclick="handleHelpdeskInterfaceCheck(this)" data-device="${escapeHtml(device.device||'')}" data-iface="${escapeHtml(row.interface||'')}"></td><td>${escapeHtml(row.interface||'')}</td><td><input class="input hd-if-desc" data-device="${escapeHtml(device.device||'')}" data-iface="${escapeHtml(row.interface||'')}" data-original="${escapeHtml(row.description||'')}" value="${escapeHtml(row.description||'')}"></td><td>${escapeHtml(row.mode||'-')}</td><td>${vlanCell(row)}</td><td>${escapeHtml(row.mac_addresses||'-')}</td><td>${helpdeskStatusBadge(row.status||'-')}</td>${toggleCells(row)}</tr>`).join('') || `<tr><td colspan="${colCount}">No interfaces found.</td></tr>`}</tbody></table></div></div>`);});holder.innerHTML=chunks.join('');}
+    async function loadHelpdeskInterfaces(){if(!HELP_DESK_MODE&&!isHelpdeskActionMode()){showRunStatus('Select HelpDesk Action mode first.',true);return;}const selected=selectedDeviceNames();if(!selected.length){showHelpdeskStatus('Select at least one device first.',true);return;}showHelpdeskStatus('Loading interface status...',false);try{const response=await fetch("{{ url_for('helpdesk_interfaces_api') }}",{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'show',selected_devices:selected})});const payload=await response.json();if(!response.ok||!payload.ok){showHelpdeskStatus(payload.error||'Failed to load interface status.',true);return;}renderHelpdeskTables(payload.devices||[]);helpdeskLastShowDevices=selected.slice().sort();showHelpdeskStatus(payload.message||'Interface status loaded.',false);}catch(error){showHelpdeskStatus(`Failed to load interface status: ${error}`,true);}}
+    async function runHelpdeskInterfaceAction(action){if(!HELP_DESK_MODE&&!isHelpdeskActionMode()){showRunStatus('Select HelpDesk Action mode first.',true);return;}const selectedDevices=selectedDeviceNames();if(!selectedDevices.length){showHelpdeskStatus('Select at least one device first.',true);return;}const selectedInterfaces=collectSelectedInterfaces();const descriptions=action==='set_description'?collectDescriptionChanges():[];const vlans=action==='set_vlan'?collectVlanChanges():[];if(action==='remove_errdisable'){const nowSet=selectedDevices.slice().sort().join('||');const showSet=helpdeskLastShowDevices.slice().sort().join('||');if(!showSet||nowSet!==showSet){showHelpdeskStatus('Run Show Err-disable on the same selected device(s) first, then run Remove Err-disable.',true);return;}}if(action!=='show'&&!selectedInterfaces.length&&action!=='set_description'&&action!=='set_vlan'){showHelpdeskStatus('Select at least one interface row.',true);return;}if(action==='set_description'&&!descriptions.length){showHelpdeskStatus('No description changes to apply.',true);return;}if(action==='set_vlan'&&!vlans.length){showHelpdeskStatus('No valid VLAN changes (1-4094) to apply.',true);return;}showHelpdeskStatus('Applying interface action...',false);try{const response=await fetch("{{ url_for('helpdesk_interfaces_api') }}",{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,selected_devices:selectedDevices,selected_interfaces:selectedInterfaces,descriptions,vlans})});const payload=await response.json();if(!response.ok||!payload.ok){showHelpdeskStatus(payload.error||'Interface action failed.',true);return;}if(Array.isArray(payload.devices))renderHelpdeskTables(payload.devices);showHelpdeskStatus(payload.message||'Action completed.',false);}catch(error){showHelpdeskStatus(`Interface action failed: ${error}`,true);}}
+    async function runNetCommands(){const mode=String(document.getElementById('deviceCommandMode')?.value||'show').toLowerCase();if(HELP_DESK_MODE){showRunStatus('Helpdesk command mode is restricted to interface actions.',true);return;}if(mode==='helpdesk_action'){showRunStatus('Use HelpDesk Action buttons for this mode.',true);return;}const selected=Array.from(document.querySelectorAll('.device-check:checked')).map((el)=>el.value);if(!selected.length){showRunStatus('Select at least one device.',true);return;}const commandText=String(document.getElementById('manualDeviceCommand')?.value||'').trim();const selectedCommand=String(document.getElementById('deviceCommandSelect')?.value||'').trim();if(RESTRICTED_COMMAND_MODE&&!selectedCommand){showRunStatus('Junior users can run only pre-configured commands.',true);return;}if(!RESTRICTED_COMMAND_MODE&&!commandText&&!selectedCommand){showRunStatus('Provide manual command or choose a pre-configured command.',true);return;}const effectiveCommand=String(selectedCommand||commandText||'').trim().toLowerCase();const isInterfaceStatusCommand=effectiveCommand==='show interfaces status'||effectiveCommand==='show interface status'||effectiveCommand==='show int status'||effectiveCommand.includes('show interfaces status')||effectiveCommand.includes('err-disable')||effectiveCommand.includes('errdisabled');if(RESTRICTED_COMMAND_MODE&&isInterfaceStatusCommand){await loadHelpdeskInterfaces();return;}const output=document.getElementById('netOutputText');if(output)output.textContent='Running...';const formData=new FormData();selected.forEach((name)=>formData.append('selected_devices',name));formData.append('manual_command',RESTRICTED_COMMAND_MODE?'':commandText);formData.append('selected_command',selectedCommand);formData.append('command_mode',mode);try{const response=await fetch("{{ url_for('run_commands_api') }}",{method:'POST',body:formData});const payload=await response.json();if(!response.ok||!payload.ok){showRunStatus(payload.error||'Command execution failed.',true);if(output)output.textContent=payload.error||'Command execution failed.';return;}showRunStatus(`Command executed on ${Array.isArray(payload.results)?payload.results.length:0} device(s).`,false);const lines=[];lines.push(`[${payload.timestamp}] ${payload.command}`);lines.push('');(payload.results||[]).forEach((row)=>{lines.push(`=== ${row.device} (${row.status}) ===`);lines.push(String(row.output||'(no output)'));lines.push('');});if(output)output.textContent=lines.join('\n').trim();}catch(error){showRunStatus(`Run failed: ${error}`,true);if(output)output.textContent=`Run failed: ${error}`;}}
+    async function pingNetDevices(){const selected=Array.from(document.querySelectorAll('.device-check:checked')).map((el)=>el.value);if(!selected.length){showRunStatus('Select at least one device to ping.',true);return;}const output=document.getElementById('netOutputText');if(output)output.textContent='Pinging selected devices...';try{const response=await fetch("{{ url_for('ping_selected_devices') }}",{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({selected_devices:selected})});const payload=await response.json();if(!response.ok){showRunStatus(payload.message||'Ping request failed.',true);if(output)output.textContent=payload.message||'Ping request failed.';return;}showRunStatus(payload.ok?'Ping completed.':'Ping completed with failures.',!payload.ok);if(output)output.textContent=String(payload.output||payload.message||'No ping output.');}catch(error){showRunStatus(`Ping failed: ${error}`,true);if(output)output.textContent=`Ping failed: ${error}`;}}
+    function applySelectedCommand(){const select=document.getElementById('deviceCommandSelect');const textbox=document.getElementById('manualDeviceCommand');if(!select||!textbox)return;if(RESTRICTED_COMMAND_MODE){textbox.value='';return;}if(select.value&&!textbox.value.trim())textbox.value=select.value;}
+    function switchBranchSubMenu(view){const tabs=['add','edit','delete'];tabs.forEach((name)=>{const sec=document.getElementById(`branchSection-${name}`);if(sec)sec.classList.toggle('show',name===view);const btn=document.getElementById(`branchTab-${name}`);if(btn)btn.classList.toggle('active',name===view);});}
+    function openBranchManager(){clearInlineError();refreshDeleteBranchOptions();refreshEditBranchOptions();setGatewayPreview();setEditGatewayPreview();switchBranchSubMenu('edit');const modal=document.getElementById('branchManagerModal');if(modal)modal.classList.add('show');}
+    function closeBranchManager(){const modal=document.getElementById('branchManagerModal');if(modal)modal.classList.remove('show');cancelInline();}
+    function refreshDeleteBranchOptions(){const sel=document.getElementById('deleteBranchSelect');if(!sel)return;const current=sel.value;const opts=['<option value="">-- Select Branch --</option>'].concat(branches.map((b)=>`<option value="${b.id}">${b.name} (${b.networkBase}/${b.cidr})</option>`));sel.innerHTML=opts.join('');if(current&&branches.some((b)=>b.id===current))sel.value=current;}
+    function refreshEditBranchOptions(){const sel=document.getElementById('editBranchSelect');if(!sel)return;const current=sel.value;const opts=['<option value="">-- Select Branch --</option>'].concat(branches.map((b)=>`<option value="${b.id}">${b.name} (${b.networkBase}/${b.cidr})</option>`));sel.innerHTML=opts.join('');if(current&&branches.some((b)=>b.id===current))sel.value=current;fillEditBranchForm();}
+    function deleteSelectedBranch(){clearInlineError();const sel=document.getElementById('deleteBranchSelect');if(!sel||!sel.value)return showInlineError('Select a branch to delete from the dropdown list.');const target=branches.find((b)=>b.id===sel.value);if(!target)return showInlineError('Selected branch was not found.');const body=new URLSearchParams();body.set('branch_name',target.name);fetch("{{ url_for('request_ip_branch_delete') }}",{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:body.toString()}).then(async (resp)=>{const payload=await resp.json().catch(()=>({ok:false,error:'Unexpected server response.'}));if(!resp.ok||!payload.ok){showInlineError(payload.error||'Could not process branch delete request.');return;}if(payload.deleted){branches=branches.filter((b)=>b.id!==target.id);await saveBranches();refreshDeleteBranchOptions();renderList();}showInlineError(payload.message||'Delete request sent for approval.');}).catch((err)=>{showInlineError(`Delete request failed: ${err}`);});}
+    function setGatewayPreview(){const base=document.getElementById('addBase').value.trim();const cidr=Number(String(document.getElementById('addCidr').value).replace('/',''));const gw=document.getElementById('addGateway');if(!base||!cidr){gw.value='';return;}try{gw.value=intToIp(ipToInt(base)+1);}catch(_e){gw.value='';}}
+    function setEditGatewayPreview(){const base=document.getElementById('editBase')?.value.trim()||'';const cidr=Number(String(document.getElementById('editCidr')?.value||'').replace('/',''));const gw=document.getElementById('editGateway');if(!gw)return;if(!base||!cidr){gw.value='';return;}try{gw.value=intToIp(ipToInt(base)+1);}catch(_e){gw.value='';}}
+    function fillEditBranchForm(){const sel=document.getElementById('editBranchSelect');if(!sel)return;const target=branches.find((b)=>b.id===sel.value);const name=document.getElementById('editName');const site=document.getElementById('editSite');const base=document.getElementById('editBase');const cidr=document.getElementById('editCidr');if(!name||!site||!base||!cidr)return;if(!target){name.value='';site.value='';base.value='';cidr.value='/27';setEditGatewayPreview();return;}name.value=target.name||'';site.value=target.site||'';base.value=target.networkBase||'';cidr.value=`/${target.cidr||27}`;setEditGatewayPreview();}
+    async function applyEditBranchInline(){clearInlineError();const sel=document.getElementById('editBranchSelect');if(!sel||!sel.value)return showInlineError('Select a branch to edit.');const idx=branches.findIndex((b)=>b.id===sel.value);if(idx<0)return showInlineError('Selected branch was not found.');const target=branches[idx];const name=document.getElementById('editName').value.trim();const site=document.getElementById('editSite').value.trim();const base=document.getElementById('editBase').value.trim();const cidr=Number(String(document.getElementById('editCidr').value).replace('/',''));if(!name||!site||!base||!cidr)return showInlineError('Branch Name, City/Site, Network Base and Subnet/CIDR are required.');if(!isNetworkAligned(base,cidr))return showInlineError(`Network base must align to /${cidr} boundaries.`);const overlapPool=branches.filter((b)=>b.id!==target.id);if(doesSubnetOverlap(overlapPool,base,cidr))return showInlineError('Subnet overlaps an existing branch subnet.');if(branches.some((b)=>b.id!==target.id&&String(b.name||'').trim().toLowerCase()===name.toLowerCase()))return showInlineError('Another branch with this name already exists.');let ipRows=Array.isArray(target.ipRows)?target.ipRows:[];let gateway=target.gateway||'';let broadcast=target.broadcast||'';const networkChanged=String(target.networkBase||'')!==base||Number(target.cidr||0)!==cidr;if(networkChanged){const gen=makeIpRows(base,cidr);ipRows=gen.ipRows;gateway=gen.gateway;broadcast=gen.broadcast;}branches[idx]={...target,name,site,networkBase:base,cidr,subnetMask:cidrToMask(cidr),gateway,broadcast,updatedAt:nowStamp(),ipRows};await saveBranches();refreshEditBranchOptions();refreshDeleteBranchOptions();renderList();if(selectedBranchId===target.id)renderDetails();showInlineError(`Branch '${name}' updated.`);}
+    function clearInlineError(){const e=document.getElementById('inlineErr');e.classList.add('hidden');e.textContent='';} function showInlineError(msg){const e=document.getElementById('inlineErr');e.textContent=msg;e.classList.remove('hidden');}
+    async function createBranchInlineRecord(name,site,base,cidr){if(!name||!site||!base||!cidr)return{ok:false,error:'Branch Name, City/Site, Network Base and Subnet/CIDR are required.'};if(!isNetworkAligned(base,cidr))return{ok:false,error:`Network base must align to /${cidr} boundaries.`};if(doesSubnetOverlap(branches,base,cidr))return{ok:false,error:'Subnet overlaps an existing branch subnet.'};if(branches.some((b)=>String(b.name||'').trim().toLowerCase()===name.toLowerCase()))return{ok:false,error:`Branch '${name}' already exists.`};const body=new URLSearchParams();body.set('branch_name',name);const resp=await fetch("{{ url_for('request_ip_branch_add') }}",{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:body.toString()}).catch((err)=>({ok:false,_err:err}));if(!resp||!resp.ok){let msg='Could not add branch.';if(resp&&!resp._err){const payload=await resp.json().catch(()=>({}));msg=payload.error||msg;}else if(resp&&resp._err){msg=`Add request failed: ${resp._err}`;}return{ok:false,error:msg};}const gen=makeIpRows(base,cidr);branches.push({id:`b-${Date.now()}-${Math.floor(Math.random()*1000)}`,name,site,networkBase:base,cidr,subnetMask:cidrToMask(cidr),gateway:gen.gateway,broadcast:gen.broadcast,createdAt:nowStamp(),updatedAt:nowStamp(),ipRows:gen.ipRows});return{ok:true};}
+    async function addBranchInline(e){e.preventDefault();clearInlineError();const name=document.getElementById('addName').value.trim();const site=document.getElementById('addSite').value.trim();const base=document.getElementById('addBase').value.trim();const cidr=Number(String(document.getElementById('addCidr').value).replace('/',''));const created=await createBranchInlineRecord(name,site,base,cidr);if(!created.ok)return showInlineError(created.error||'Could not add branch.');await saveBranches();document.getElementById('addBranchForm').reset();setGatewayPreview();refreshDeleteBranchOptions();refreshEditBranchOptions();renderList();}
+    async function importBranchesCsv(){clearInlineError();const fileInput=document.getElementById('branchCsvFile');if(!fileInput||!fileInput.files||!fileInput.files.length)return showInlineError('Select a CSV file first.');const file=fileInput.files[0];let text='';try{text=await file.text();}catch(_e){return showInlineError('Could not read CSV file.');}const lines=text.split(/\r?\n/).map((line)=>line.trim()).filter((line)=>line);if(lines.length<2)return showInlineError('CSV must include header and at least one row.');const headers=lines[0].split(',').map((h)=>h.trim().toLowerCase());const map={};headers.forEach((h,idx)=>{map[h]=idx;});const nameIdx=map['branch name']??map['branch']??map['name'];const cityIdx=map['city']??map['site']??map['city/site'];const baseIdx=map['network base']??map['network']??map['base'];const cidrIdx=map['subnet/cidr']??map['subnet/cdis']??map['cidr']??map['subnet'];if([nameIdx,cityIdx,baseIdx,cidrIdx].some((x)=>x===undefined))return showInlineError('CSV headers must include: Branch Name, City, Network base, Subnet/CIDR.');let added=0;for(let i=1;i<lines.length;i++){const cols=lines[i].split(',').map((c)=>c.trim());if(!cols.length)continue;const name=String(cols[nameIdx]||'').trim();const site=String(cols[cityIdx]||'').trim();const base=String(cols[baseIdx]||'').trim();const cidrRaw=String(cols[cidrIdx]||'').trim();const cidr=Number(cidrRaw.replace('/',''));if(!name&&!site&&!base&&!cidrRaw)continue;const created=await createBranchInlineRecord(name,site,base,cidr);if(!created.ok)return showInlineError(`Row ${i+1}: ${created.error||'Import failed.'}`);added++;}if(!added)return showInlineError('No valid rows found in CSV.');await saveBranches();refreshDeleteBranchOptions();refreshEditBranchOptions();renderList();fileInput.value='';showInlineError(`CSV import completed. Added ${added} branch(es).`);}
+    function cancelInline(){document.getElementById('addBranchForm').reset();const ef=document.getElementById('editBranchForm');if(ef)ef.reset();clearInlineError();setGatewayPreview();setEditGatewayPreview();}
+    function renderList(){sortBranchesInPlace();const q=String(document.getElementById('listSearch').value||'').toLowerCase();const body=document.getElementById('branchesBody');const rows=branches.filter((b)=>`${b.name} ${b.site} ${b.networkBase}/${b.cidr}`.toLowerCase().includes(q));body.innerHTML=rows.map((b)=>{const u=calcUtil(b);return `<tr><td><span class="click" onclick="openDetails('${b.id}')">${b.name}</span></td><td>${b.site}</td><td>${b.networkBase}/${b.cidr}</td><td>${b.gateway}</td><td>${b.subnetMask}</td><td><span class="track"><span class="fill ${utilClass(u)}" style="width:${u}%"></span></span><b>${u}%</b></td><td>${b.updatedAt}</td></tr>`;}).join('');}
+    function openDetails(id){selectedBranchId=id;detailsEditEnabled=false;currentIpAddressingSection='branches';updateIpAddressingTreeSelection();document.getElementById('listView').classList.add('hidden');document.getElementById('ipHqView').classList.add('hidden');document.getElementById('netDevicesView').classList.add('hidden');document.getElementById('netMonitoringView').classList.add('hidden');document.getElementById('networkAddressesView').classList.add('hidden');document.getElementById('detailsView').classList.remove('hidden');setActiveSidebar('ip-addressing');renderDetails();}
+    function backToList(){selectedBranchId=null;detailsEditEnabled=false;document.getElementById('detailsView').classList.add('hidden');document.getElementById('listView').classList.remove('hidden');renderList();}
+    function toggleDetailsEdit(){detailsEditEnabled=!detailsEditEnabled;const btn=document.getElementById('detailsEditBtn');if(btn)btn.textContent=detailsEditEnabled?'Lock Editing':'Settings';renderDetails();}
+    function updateRowStatus(row){row.status=(row.hostname.trim()||row.enduser.trim())?'ASSIGNED':'FREE';}
+    function onEditRow(idx,key,val){if(!detailsEditEnabled)return;const b=branches.find((x)=>x.id===selectedBranchId);if(!b)return;b.ipRows[idx][key]=val;updateRowStatus(b.ipRows[idx]);const statusEl=document.getElementById(`status-${idx}`);if(statusEl){statusEl.textContent=b.ipRows[idx].status;statusEl.className=`status ${b.ipRows[idx].status==='ASSIGNED'?'assigned':'free'}`;}}
+    function finishRowEdit(idx){if(!detailsEditEnabled)return;const b=branches.find((x)=>x.id===selectedBranchId);if(!b)return;b.updatedAt=nowStamp();saveBranches();renderList();}
+    function finishOnEnter(event,idx){if(event.key!=='Enter')return;event.preventDefault();finishRowEdit(idx);event.target.blur();}
+    function clearRow(idx){if(!detailsEditEnabled)return;const b=branches.find((x)=>x.id===selectedBranchId);if(!b)return;b.ipRows[idx].hostname='';b.ipRows[idx].enduser='';b.ipRows[idx].status='FREE';b.updatedAt=nowStamp();saveBranches();renderDetails();renderList();}
+    function renderDetails(){const b=branches.find((x)=>x.id===selectedBranchId);if(!b)return;document.getElementById('detailsBreadcrumb').textContent=`IP Addressing > Branches > ${b.name}`;document.getElementById('dName').textContent=b.name;document.getElementById('dSite').textContent=b.site;document.getElementById('dNet').textContent=`${b.networkBase}/${b.cidr}`;document.getElementById('dMask').textContent=b.subnetMask;document.getElementById('dGateway').textContent=b.gateway;document.getElementById('dBroadcast').textContent=b.broadcast;document.getElementById('dUtil').textContent=`${calcUtil(b)}%`;const editBtn=document.getElementById('detailsEditBtn');if(editBtn)editBtn.textContent=detailsEditEnabled?'Lock Editing':'Settings';const q=String(document.getElementById('detailsSearch').value||'').toLowerCase();const rows=b.ipRows.map((r,i)=>({...r,_i:i})).filter((r)=>`${r.ip} ${r.hostname} ${r.enduser}`.toLowerCase().includes(q));document.getElementById('detailsBody').innerHTML=rows.map((r)=>`<tr><td>${b.networkBase}</td><td>/${b.cidr}</td><td>${b.subnetMask}</td><td>${r.ip}</td>${detailsEditEnabled?`<td><input class="input" value="${r.hostname}" oninput="onEditRow(${r._i},'hostname', this.value)" onkeydown="finishOnEnter(event, ${r._i})" onblur="finishRowEdit(${r._i})"></td><td><input class="input" value="${r.enduser}" oninput="onEditRow(${r._i},'enduser', this.value)" onkeydown="finishOnEnter(event, ${r._i})" onblur="finishRowEdit(${r._i})"></td>`:`<td>${r.hostname||'-'}</td><td>${r.enduser||'-'}</td>`}<td><span id="status-${r._i}" class="status ${r.status==='ASSIGNED'?'assigned':'free'}">${r.status}</span></td><td><button class="btn" type="button" ${detailsEditEnabled?'':'disabled'} onclick="clearRow(${r._i})">Clear</button></td></tr>`).join('');}
+    function syncEditDeviceFields(){
+      const selector=document.getElementById('editDeviceSelect');
+      const hostnameInput=document.getElementById('editHostnameInput');
+      const ipInput=document.getElementById('editIpInput');
+      const categorySelect=document.getElementById('editCategorySelect');
+      if(!selector||!hostnameInput||!ipInput||!categorySelect) return;
+      const selectedName=String(selector.value||'').trim();
+      const target=(Array.isArray(DEVICE_DATA)?DEVICE_DATA:[]).find((d)=>String(d.name||'').trim()===selectedName);
+      if(!target){
+        hostnameInput.value='';
+        ipInput.value='';
+        Array.from(categorySelect.options).forEach((opt)=>{ opt.selected=false; });
+        return;
+      }
+      hostnameInput.value=String(target.name||'').trim();
+      ipInput.value=String(target.host||'').trim();
+      const groupSet=new Set((Array.isArray(target.groups)?target.groups:[]).map((g)=>String(g).trim()));
+      Array.from(categorySelect.options).forEach((opt)=>{ opt.selected=groupSet.has(String(opt.value||'').trim()); });
+    }
+    function updateMonitoringNodeFields(){const categoryEl=document.getElementById('mnCategory');const categoryValue=String(categoryEl?.value||'').trim().toLowerCase();const categoryNorm=categoryValue.replace(/[\s_-]+/g,'');const isWindows=categoryNorm==='windowsservers'||categoryNorm==='windowsserver'||categoryNorm==='windowssrv';const methodEl=document.getElementById('mnPollingMethod');if(methodEl&&isWindows){methodEl.value='winrm_icmp';}else if(methodEl){if(methodEl.value==='winrm_icmp')methodEl.value='status_only';}const method=String(methodEl?.value||'status_only').toLowerCase();const snmpVersion=String(document.getElementById('mnSnmpVersion')?.value||'2c').toLowerCase();const snmpBlock=document.getElementById('mnSnmpBlock');const snmpV2=document.getElementById('mnSnmpV2Fields');const snmpV2Rw=document.getElementById('mnSnmpV2FieldsRw');const snmpV3=document.getElementById('mnSnmpV3Fields');const sshBlock=document.getElementById('mnSshBlock');const apiBlock=document.getElementById('mnApiBlock');const winrmBlock=document.getElementById('mnWinrmBlock');const showSnmp=!isWindows&&(method==='snmp_v2'||method==='snmp_v3');if(snmpBlock)snmpBlock.classList.toggle('hidden',!showSnmp);const showV2=showSnmp&&snmpVersion==='2c'&&method!=='snmp_v3';if(snmpV2)snmpV2.classList.toggle('hidden',!showV2);if(snmpV2Rw)snmpV2Rw.classList.toggle('hidden',!showV2);if(snmpV3)snmpV3.classList.toggle('hidden',!(showSnmp&&(!showV2)));if(sshBlock)sshBlock.classList.toggle('hidden',isWindows||method!=='ssh');if(apiBlock)apiBlock.classList.toggle('hidden',isWindows||method!=='api');if(winrmBlock)winrmBlock.classList.toggle('hidden',!isWindows);if(categoryEl&&MONITORING_SERVERS_ONLY){if(!Array.from(categoryEl.options).some((o)=>String(o.value||'').trim().toLowerCase()==='servers')){const opt=document.createElement('option');opt.value='Servers';opt.textContent='Servers';categoryEl.appendChild(opt);}const mode=String(document.getElementById('mnTabAdd')?.classList.contains('active')?'add':'edit');if(mode==='add'){categoryEl.value='Servers';categoryEl.disabled=true;}else{categoryEl.disabled=false;}}}
+    function refreshMonitoringNodeSelect(id,selected){const sel=document.getElementById(id);if(!sel)return;let rows=(Array.isArray(MONITORING_DEVICE_DATA)?MONITORING_DEVICE_DATA:[]).map((d)=>String(d.name||'').trim()).filter(Boolean);if(String(id)==='mnEditDeviceSelect'&&String(CURRENT_USER_ROLE||'').toLowerCase()==='sysadmin'){const allowed=new Set((Array.isArray(MONITORING_EDITABLE_DEVICE_NAMES)?MONITORING_EDITABLE_DEVICE_NAMES:[]).map((n)=>String(n||'').trim().toLowerCase()).filter(Boolean));rows=rows.filter((n)=>allowed.has(String(n||'').trim().toLowerCase()));}rows=rows.sort((a,b)=>a.localeCompare(b));sel.innerHTML=rows.map((n)=>`<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');if(selected){sel.value=selected;}if(!sel.value&&rows.length){sel.value=rows[0];}}
+    function fillMonitoringNodeForm(name){const deviceName=String(name||'').trim();if(!deviceName)return;const form=document.getElementById('monitoringNodeForm');if(!form)return;const device=(Array.isArray(MONITORING_DEVICE_DATA)?MONITORING_DEVICE_DATA:[]).find((d)=>String(d.name||'').trim()===deviceName) || (Array.isArray(DEVICE_DATA)?DEVICE_DATA:[]).find((d)=>String(d.name||'').trim()===deviceName);const profile=(MONITORING_NODE_PROFILES&&MONITORING_NODE_PROFILES[deviceName])?MONITORING_NODE_PROFILES[deviceName]:{};const defaultCategory=String(document.getElementById('mnCategory')?.value||'').trim();const category=(device&&Array.isArray(device.groups)&&device.groups.length)?String(device.groups[0]||'').trim():defaultCategory;const set=(id,val)=>{const el=document.getElementById(id);if(el)el.value=String(val??'');};set('mnOriginalDeviceName',deviceName);set('mnDeviceName',deviceName);set('mnIpAddress',device?String(device.host||'').trim():String(profile.host||''));set('mnCategory',category);set('mnPollingMethod',profile.polling_method||'status_only');set('mnSnmpVersion',profile.snmp_version||'2c');set('mnSnmpPort',profile.snmp_port||161);set('mnCommunity',profile.community||'');set('mnRwCommunity',profile.rw_community||'');set('mnSnmpV3Username',profile.snmpv3_username||'');set('mnSnmpV3Auth',profile.snmpv3_auth_password||'');set('mnSnmpV3Priv',profile.snmpv3_priv_password||'');set('mnSnmpV3AuthProto',profile.snmpv3_auth_protocol||'sha');set('mnSnmpV3PrivProto',profile.snmpv3_priv_protocol||'aes128');set('mnSshUsername',profile.ssh_username||'');set('mnSshPassword',profile.ssh_password||'');set('mnApiToken',profile.api_token||'');set('mnWinrmPort',profile.winrm_port||5985);set('mnWinrmUsername',profile.winrm_username||'');set('mnWinrmPassword',profile.winrm_password||'');set('mnWinrmAuth',profile.winrm_auth||'ntlm');set('mnInterval',profile.interval_seconds||30);set('mnNotes',profile.notes||'');updateMonitoringNodeFields();}
+    function switchMonitoringNodeSection(mode){const section=String(mode||'add').toLowerCase();const showForm=section==='add'||section==='edit';const showEdit=section==='edit';const showDelete=section==='delete';const showCategories=section==='categories';const tab=(id,on)=>{const el=document.getElementById(id);if(el)el.classList.toggle('active',on);};tab('mnTabAdd',section==='add');tab('mnTabEdit',section==='edit');tab('mnTabDelete',section==='delete');tab('mnTabCategories',section==='categories');const formWrap=document.getElementById('mnSectionForm');if(formWrap)formWrap.classList.toggle('show',showForm);const editPick=document.getElementById('mnEditPicker');if(editPick)editPick.classList.toggle('hidden',!showEdit);const delWrap=document.getElementById('mnSectionDelete');if(delWrap)delWrap.classList.toggle('show',showDelete);const catWrap=document.getElementById('mnSectionCategories');if(catWrap)catWrap.classList.toggle('show',showCategories);const title=document.getElementById('monitoringNodeTitle');if(title)title.textContent='Monitoring Devices';const submit=document.getElementById('mnSubmitBtn');if(submit)submit.textContent=section==='edit'?'Save Changes':'Add Node';if(section==='add'){const form=document.getElementById('monitoringNodeForm');if(form)form.reset();const original=document.getElementById('mnOriginalDeviceName');if(original)original.value='';updateMonitoringNodeFields();}if(section==='edit'){refreshMonitoringNodeSelect('mnEditDeviceSelect');const selected=String(document.getElementById('mnEditDeviceSelect')?.value||'').trim();if(selected)fillMonitoringNodeForm(selected);}if(section==='delete'){refreshMonitoringNodeSelect('mnDeleteDeviceSelect');}}
+    function openMonitoringNodeManager(mode,deviceName){if(!MONITORING_CAN_MANAGE)return;openSettingsPopup('monitoringNodeModal');switchMonitoringNodeSection(mode||'add');const selected=String(deviceName||'').trim();if(!selected)return;if(String(mode||'').toLowerCase()==='delete'){refreshMonitoringNodeSelect('mnDeleteDeviceSelect',selected);}else{refreshMonitoringNodeSelect('mnEditDeviceSelect',selected);fillMonitoringNodeForm(selected);}}
+    function openMonitoringNodeAdd(){openMonitoringNodeManager('add');}
+    function openMonitoringNodeEdit(deviceName){openMonitoringNodeManager('edit',deviceName);}
+    function openMonitoringResourcesFromEdit(){const name=String(document.getElementById('mnEditDeviceSelect')?.value||'').trim();if(!name)return;closeSettingsPopup('monitoringNodeModal');openMonitoringResources(name);}
+    function openMonitoringHealth(deviceName){const name=String(deviceName||'').trim();if(!name)return;const device=(Array.isArray(MONITORING_DEVICE_DATA)?MONITORING_DEVICE_DATA:[]).find((d)=>String(d.name||'').trim()===name);if(!device)return;const profile=(MONITORING_NODE_PROFILES&&MONITORING_NODE_PROFILES[name])?MONITORING_NODE_PROFILES[name]:{};const set=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=String(val??'-');};set('mhName',device.name||'-');set('mhIp',device.host||'-');set('mhStatus',monitoringDeviceStatus(device));set('mhCpu',device.monitor_cpu_percent??'-');set('mhMemory',device.monitor_memory_percent??'-');set('mhInterfaces',`${device.monitor_interfaces_up??'-'} up / ${device.monitor_interfaces_down??'-'} down`);set('mhSla',device.monitor_sla_ms??'-');set('mhLast',device.monitor_last_collected_at||'-');set('mhMetrics',profile.metrics_override||'default');set('mhWatchIf',profile.interfaces_watch||'all');openSettingsPopup('monitoringHealthModal');}
+    function setGaugeRing(id,value,max){const v=Math.max(0,Math.min(Number(max||100),Number(value||0)));const pct=max>0?(v/Number(max))*100:0;const deg=Math.round((Math.max(0,Math.min(100,pct))/100)*360);const ring=document.getElementById(id);if(!ring)return;ring.style.background=`conic-gradient(#2f6fec ${deg}deg,#d9e2f0 ${deg}deg)`;const inner=ring.querySelector('.node-gauge-inner');if(inner)inner.textContent=`${Math.round(v)}`;}
+    function drawLineChart(canvasId, points, color, opts){
+      const options=(opts&&typeof opts==='object')?opts:{};
+      const canvas=document.getElementById(canvasId);if(!canvas)return;
+      const ctx=canvas.getContext('2d');if(!ctx)return;
+      const ratio=window.devicePixelRatio||1;
+      const w=canvas.clientWidth||460;
+      const h=canvas.clientHeight||200;
+      canvas.width=Math.floor(w*ratio);
+      canvas.height=Math.floor(h*ratio);
+      ctx.setTransform(ratio,0,0,ratio,0,0);
+      ctx.clearRect(0,0,w,h);
+      ctx.fillStyle='#fbfdff';
+      ctx.fillRect(0,0,w,h);
+
+      const leftPad=options.leftPad||44;
+      const rightPad=10;
+      const topPad=6;
+      const bottomPad=26;
+      const plotW=Math.max(10,w-leftPad-rightPad);
+      const plotH=Math.max(10,h-topPad-bottomPad);
+
+      const rawRows=Array.isArray(points)?points:[];
+      const entries=rawRows.map((item)=>{if(item&&typeof item==='object'&&!Array.isArray(item)){const value=Number(item.value);if(!Number.isFinite(value))return null;const tsRaw=String(item.ts||'').trim();const tsDate=new Date(tsRaw);const tsMs=Number.isNaN(tsDate.getTime())?null:tsDate.getTime();return {value,tsRaw,tsMs};}const value=Number(item);if(!Number.isFinite(value))return null;return {value,tsRaw:'',tsMs:null};}).filter((item)=>item!==null);
+      const vals=entries.map((item)=>Number(item.value)).filter((v)=>Number.isFinite(v));
+
+      const hasFixedRange=Number.isFinite(Number(options.min))&&Number.isFinite(Number(options.max));
+      const min=hasFixedRange?Number(options.min):(vals.length?Math.min(...vals):0);
+      const max=hasFixedRange?Number(options.max):(vals.length?Math.max(...vals):1);
+      const span=Math.max(1,max-min);
+
+      ctx.strokeStyle='#d8e2f0';
+      ctx.lineWidth=1;
+      const ticks=Array.isArray(options.yTicks)&&options.yTicks.length?options.yTicks:[min+(span*0.2),min+(span*0.4),min+(span*0.6),min+(span*0.8),max];
+      ctx.fillStyle='#6b7c94';
+      ctx.font='11px Segoe UI';
+      ticks.forEach((t)=>{
+        const y=topPad+((max-Number(t))/span)*plotH;
+        ctx.beginPath();
+        ctx.moveTo(leftPad,y);
+        ctx.lineTo(leftPad+plotW,y);
+        ctx.stroke();
+        const label=(typeof options.yTickFormatter==='function')?String(options.yTickFormatter(Number(t))):String(Math.round(Number(t)));
+        ctx.fillText(label,4,y+4);
+      });
+
+      ctx.beginPath();
+      ctx.moveTo(leftPad,topPad);
+      ctx.lineTo(leftPad,topPad+plotH);
+      ctx.lineTo(leftPad+plotW,topPad+plotH);
+      ctx.strokeStyle='#cdd8e8';
+      ctx.stroke();
+
+      const xLabelFor=(entry,startMs,endMs)=>{
+        if(!entry||!Number.isFinite(entry.tsMs||NaN))return'';
+        const d=new Date(Number(entry.tsMs));
+        const hh=String(d.getHours()).padStart(2,'0');
+        const mm=String(d.getMinutes()).padStart(2,'0');
+        const dd=String(d.getDate()).padStart(2,'0');
+        const mo=String(d.getMonth()+1).padStart(2,'0');
+        const spanMs=Math.max(0,Number(endMs)-Number(startMs));
+        if(spanMs<=24*60*60*1000)return `${hh}:${mm}`;
+        if(spanMs<=14*24*60*60*1000)return `${dd}-${mo} ${hh}:${mm}`;
+        return `${dd}-${mo}`;
+      };
+
+      if(!vals.length){
+        ctx.fillStyle='#6b7c94';
+        ctx.font='12px Segoe UI';
+        ctx.fillText(String(options.noDataText||'No data'),leftPad+8,topPad+14);
+        canvas.onmousemove=null;
+        canvas.onmouseleave=null;
+        canvas.title='';
+        return;
+      }
+
+      const firstMs=Number(entries[0]?.tsMs||0);
+      const lastMs=Number(entries[entries.length-1]?.tsMs||0);
+      const hasTimeAxis=entries.some((e)=>Number.isFinite(e.tsMs||NaN));
+      if(hasTimeAxis){
+        const labelCount=Math.min(6,entries.length);
+        const safeCount=Math.max(2,labelCount);
+        ctx.fillStyle='#6b7c94';
+        ctx.font='10px Segoe UI';
+        ctx.textAlign='center';
+        for(let i=0;i<safeCount;i++){
+          const idx=(safeCount<=1)?0:Math.round(i*(entries.length-1)/(safeCount-1));
+          const x=(entries.length<=1)?leftPad:(leftPad+(idx*plotW/(entries.length-1)));
+          const entry=entries[idx];
+          const label=xLabelFor(entry,firstMs,lastMs);
+          if(!label)continue;
+          ctx.fillText(label,x,topPad+plotH+14);
+        }
+        ctx.textAlign='left';
+      }
+
+      ctx.strokeStyle=color||'#2f6fec';
+      ctx.lineWidth=2;
+      ctx.beginPath();
+      entries.forEach((entry,i)=>{
+        const x=(entries.length<=1)?leftPad:(leftPad+(i*plotW/(entries.length-1)));
+        const y=topPad+((max-entry.value)/span)*plotH;
+        if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+      });
+      ctx.stroke();
+
+      const valueFormatter=(typeof options.valueFormatter==='function')?options.valueFormatter:(v=>String(Math.round(Number(v))));
+      const seriesLabel=String(options.seriesLabel||'Value');
+      const pointAtClientX=(clientX)=>{
+        const rect=canvas.getBoundingClientRect();
+        const x=clientX-rect.left;
+        if(entries.length<=1)return 0;
+        const ratioX=(x-leftPad)/plotW;
+        const idx=Math.round(Math.max(0,Math.min(1,ratioX))*(entries.length-1));
+        return Math.max(0,Math.min(entries.length-1,idx));
+      };
+      canvas.onmousemove=(ev)=>{
+        const idx=pointAtClientX(ev.clientX);
+        const row=entries[idx];
+        if(!row)return;
+        const tsText=row.tsRaw?formatDateTime(row.tsRaw):'';
+        const valueText=valueFormatter(row.value);
+        canvas.title=`${seriesLabel}: ${valueText}${tsText?` | ${tsText}`:''}`;
+      };
+      canvas.onmouseleave=()=>{canvas.title='';};
+    }
+    function percentTrendAxisOptions(points,capTo100){const vals=(Array.isArray(points)?points:[]).map((v)=>Number(v)).filter((v)=>Number.isFinite(v)&&v>=0);const peak=vals.length?Math.max(...vals):0;const dynamicMax=Math.max(10,peak*2);const yMax=capTo100?Math.min(100,dynamicMax):dynamicMax;const step=yMax/5;return {min:0,max:yMax,yTicks:[0,step,step*2,step*3,step*4,yMax],yTickFormatter:(v)=>`${(Math.round(v*10)/10).toString().replace(/\\.0$/,'')}%`};}
+    function msTrendAxisOptions(points){const vals=(Array.isArray(points)?points:[]).map((v)=>Number(v)).filter((v)=>Number.isFinite(v)&&v>=0);const peak=vals.length?Math.max(...vals):0;const yMax=Math.max(10,peak*2);const step=yMax/5;return {min:0,max:yMax,yTicks:[0,step,step*2,step*3,step*4,yMax],yTickFormatter:(v)=>`${(Math.round(v*10)/10).toString().replace(/\\.0$/,'')} ms`};}
+    function setAvailabilityRow(id,pct){const valueEl=document.getElementById(`${id}Value`);const fillEl=document.getElementById(`${id}Fill`);if(!valueEl||!fillEl)return;if(pct===null||pct===undefined||!Number.isFinite(Number(pct))){valueEl.textContent='N/A';fillEl.style.width='0%';return;}const n=Math.max(0,Math.min(100,Number(pct)));valueEl.textContent=`${n.toFixed(2)}%`;fillEl.style.width=`${n}%`;}
+    function toLocalInputValue(dateObj){const d=new Date(dateObj);if(Number.isNaN(d.getTime()))return'';const yyyy=d.getFullYear();const mm=String(d.getMonth()+1).padStart(2,'0');const dd=String(d.getDate()).padStart(2,'0');const hh=String(d.getHours()).padStart(2,'0');const mi=String(d.getMinutes()).padStart(2,'0');return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;}
+    function computeRangeBounds(rangeDef){const now=new Date();if(!rangeDef||typeof rangeDef!=='object')return {start:new Date(now.getTime()-30*60000),end:now};if(String(rangeDef.type)==='absolute'){const start=new Date(String(rangeDef.start||''));const end=new Date(String(rangeDef.end||''));if(Number.isNaN(start.getTime())||Number.isNaN(end.getTime()))return {start:new Date(now.getTime()-30*60000),end:now};return {start,end};}if(String(rangeDef.type)==='today'){const start=new Date(now);start.setHours(0,0,0,0);return {start,end:now};}const minutes=Math.max(1,Number(rangeDef.minutes||30));return {start:new Date(now.getTime()-minutes*60000),end:now};}
+    function formatDateTimeCompact(value){const raw=String(value||'').trim();if(!raw)return'-';const d=new Date(raw);if(Number.isNaN(d.getTime()))return raw;const hh=String(d.getHours()).padStart(2,'0');const mi=String(d.getMinutes()).padStart(2,'0');const dd=String(d.getDate()).padStart(2,'0');const mm=String(d.getMonth()+1).padStart(2,'0');const yyyy=String(d.getFullYear());return `${dd}-${mm}-${yyyy} ${hh}:${mi}`;}
+    function rangeLabel(rangeDef){if(!rangeDef||typeof rangeDef!=='object')return'Last 30 minutes';if(String(rangeDef.type)==='absolute'){const b=computeRangeBounds(rangeDef);return `${formatDateTimeCompact(b.start.toISOString())} -> ${formatDateTimeCompact(b.end.toISOString())}`;}if(String(rangeDef.type)==='today')return'Today';return String(rangeDef.label||'Last 30 minutes');}
+    function getDashboardQueryWindow(){const defs=[monitoringChartRanges.cpu,monitoringChartRanges.memory,monitoringChartRanges.response];const starts=[];const ends=[];defs.forEach((def)=>{const b=computeRangeBounds(def);if(!b||!b.start||!b.end)return;const sMs=b.start.getTime();const eMs=b.end.getTime();if(Number.isNaN(sMs)||Number.isNaN(eMs)||sMs>=eMs)return;starts.push(sMs);ends.push(eMs);});if(!starts.length||!ends.length)return null;return {start:new Date(Math.min(...starts)).toISOString(),end:new Date(Math.max(...ends)).toISOString()};}
+    function shouldAutoRefreshNodeDashboard(){const q=getDashboardQueryWindow();if(!q||!q.end)return true;const endMs=new Date(String(q.end)).getTime();if(Number.isNaN(endMs))return true;return endMs>=(Date.now()-70000);}
+    function filterSeriesByRange(allRows,rangeDef){const rows=Array.isArray(allRows)?allRows:[];const bounds=computeRangeBounds(rangeDef);const startMs=bounds.start.getTime();const endMs=bounds.end.getTime();return rows.filter((row)=>{const ts=new Date(String(row?.collected_at||''));if(Number.isNaN(ts.getTime()))return false;const ms=ts.getTime();return ms>=startMs&&ms<=endMs;});}
+    function renderMonitoringTrendCharts(){
+      const cpuRange=monitoringChartRanges.cpu||{type:'relative',minutes:30,label:'Last 30 minutes'};
+      const memRange=monitoringChartRanges.memory||{type:'relative',minutes:30,label:'Last 30 minutes'};
+      const respRange=monitoringChartRanges.response||{type:'relative',minutes:30,label:'Last 30 minutes'};
+      const canFallback=(r)=>String(r?.type||'')==='relative'&&Number(r?.minutes||0)===30;
+      let cpuRows=filterSeriesByRange(monitoringDashboardSeries,cpuRange);
+      let memRows=filterSeriesByRange(monitoringDashboardSeries,memRange);
+      let respRows=filterSeriesByRange(monitoringDashboardSeries,respRange);
+      if(!cpuRows.length&&canFallback(cpuRange)&&Array.isArray(monitoringDashboardSeries)&&monitoringDashboardSeries.length){cpuRows=monitoringDashboardSeries;}
+      if(!memRows.length&&canFallback(memRange)&&Array.isArray(monitoringDashboardSeries)&&monitoringDashboardSeries.length){memRows=monitoringDashboardSeries;}
+      if(!respRows.length&&canFallback(respRange)&&Array.isArray(monitoringDashboardSeries)&&monitoringDashboardSeries.length){respRows=monitoringDashboardSeries;}
+
+      const cpuSeries=cpuRows.map((x)=>x.cpu_percent);
+      const memSeries=memRows.map((x)=>x.memory_percent);
+      const slaSeries=respRows.map((x)=>x.sla_ms);
+      const cpuPoints=cpuRows.map((x)=>({value:x?.cpu_percent,ts:x?.collected_at}));
+      const memPoints=memRows.map((x)=>({value:x?.memory_percent,ts:x?.collected_at}));
+      const slaPoints=respRows.map((x)=>({value:x?.sla_ms,ts:x?.collected_at}));
+
+      drawLineChart('ndCpuChart',cpuPoints,'#2f6fec',{...percentTrendAxisOptions(cpuSeries,true),seriesLabel:'CPU',valueFormatter:(v)=>`${Math.round(Number(v)||0)}%`,noDataText:'No data for selected time range.'});
+      drawLineChart('ndMemChart',memPoints,'#16a085',{...percentTrendAxisOptions(memSeries),seriesLabel:'Memory',valueFormatter:(v)=>`${Math.round(Number(v)||0)}%`,noDataText:'No data for selected time range.'});
+      drawLineChart('ndSlaChart',slaPoints,'#d35400',{...msTrendAxisOptions(slaSeries),seriesLabel:'Response',valueFormatter:(v)=>`${Math.round(Number(v)||0)} ms`,noDataText:'No data for selected time range.'});
+
+      const cpuLbl=document.getElementById('ndCpuRangeLabel');if(cpuLbl)cpuLbl.textContent=rangeLabel(cpuRange);
+      const memLbl=document.getElementById('ndMemRangeLabel');if(memLbl)memLbl.textContent=rangeLabel(memRange);
+      const slaLbl=document.getElementById('ndSlaRangeLabel');if(slaLbl)slaLbl.textContent=rangeLabel(respRange);
+    }
+    function _positionChartRangePicker(anchorEl){const pop=document.getElementById('chartRangePopover');if(!pop)return;const margin=12;const rect=anchorEl?anchorEl.getBoundingClientRect():{left:window.innerWidth/2,right:window.innerWidth/2,top:window.innerHeight/2,bottom:window.innerHeight/2};const popW=Math.min(760,Math.floor(window.innerWidth*0.92));pop.style.width=`${popW}px`;pop.style.transform='none';let left=Math.max(margin,Math.min(rect.right-popW,window.innerWidth-popW-margin));let top=rect.bottom+8;pop.classList.add('show');const popH=pop.offsetHeight||420;if(top+popH>window.innerHeight-margin){top=Math.max(margin,rect.top-popH-8);}if(top+popH>window.innerHeight-margin){top=Math.max(margin,window.innerHeight-popH-margin);}pop.style.left=`${left}px`;pop.style.top=`${top}px`;}
+    function openChartRangePicker(panel,evt){monitoringRangePickerPanel=String(panel||'cpu');const range=monitoringChartRanges[monitoringRangePickerPanel]||{type:'relative',minutes:30,label:'Last 30 minutes'};const pop=document.getElementById('chartRangePopover');const dashboard=document.getElementById('monitoringNodeDashboardModal');if(pop&&dashboard&&pop.parentElement!==dashboard){dashboard.appendChild(pop);}const title=document.getElementById('rangePanelTitle');if(title)title.textContent=monitoringRangePickerPanel==='cpu'?'CPU Trend':(monitoringRangePickerPanel==='memory'?'Memory Trend':'Response Time Trend');const bounds=computeRangeBounds(range);const sEl=document.getElementById('rangeStartInput');const eEl=document.getElementById('rangeEndInput');if(sEl)sEl.value=toLocalInputValue(bounds.start);if(eEl)eEl.value=toLocalInputValue(bounds.end);const st=document.getElementById('rangePickerStatus');if(st)st.textContent='';const anchor=(evt&&evt.currentTarget)?evt.currentTarget:document.activeElement;_positionChartRangePicker(anchor);}
+    function closeChartRangePicker(){const pop=document.getElementById('chartRangePopover');if(pop)pop.classList.remove('show');}
+    function applyQuickRange(kind){const map={hour:{type:'relative',minutes:60,label:'Last hour'},h2:{type:'relative',minutes:120,label:'Last 2 hours'},h12:{type:'relative',minutes:720,label:'Last 12 hours'},today:{type:'today',label:'Today'},h24:{type:'relative',minutes:1440,label:'Last 24 hours'},d7:{type:'relative',minutes:10080,label:'Last 7 days'},d30:{type:'relative',minutes:43200,label:'Last 30 days'},m12:{type:'relative',minutes:525600,label:'Last 12 months'},y2:{type:'relative',minutes:1051200,label:'Last 2 years'},y5:{type:'relative',minutes:2628000,label:'Last 5 years'}};if(!map[kind])return;monitoringChartRanges[monitoringRangePickerPanel]=map[kind];if(monitoringDashboardDeviceName){openMonitoringNodeDashboard(monitoringDashboardDeviceName,false);}else{renderMonitoringTrendCharts();}closeChartRangePicker();}
+    function applyCustomRange(){const startRaw=String(document.getElementById('rangeStartInput')?.value||'').trim();const endRaw=String(document.getElementById('rangeEndInput')?.value||'').trim();const st=document.getElementById('rangePickerStatus');const start=new Date(startRaw);const end=new Date(endRaw);if(Number.isNaN(start.getTime())||Number.isNaN(end.getTime())){if(st)st.textContent='Please enter valid start and end date/time.';return;}if(start.getTime()>=end.getTime()){if(st)st.textContent='Start must be before End.';return;}const maxMs=50*366*24*60*60*1000;if((end.getTime()-start.getTime())>maxMs){if(st)st.textContent='Maximum range is 50 years.';return;}monitoringChartRanges[monitoringRangePickerPanel]={type:'absolute',start:start.toISOString(),end:end.toISOString(),label:'Custom range'};if(monitoringDashboardDeviceName){openMonitoringNodeDashboard(monitoringDashboardDeviceName,false);}else{renderMonitoringTrendCharts();}closeChartRangePicker();}
+    function renderNodeInterfaceUtilization(rows){const holder=document.getElementById('ndInterfaceUtilBody');if(!holder)return;const list=Array.isArray(rows)?rows:[];if(!list.length){holder.innerHTML='<div class="node-util-empty">No monitored interfaces found for this device.</div>';return;}holder.innerHTML=list.map((row)=>{const status=String(row?.status||'unknown').toLowerCase();const dot=`monitor-dot ${dotClass(status)}`;const label=status==='up'?'Up':(status==='down'?'Down':'Unknown');const iface=escapeHtml(String(row?.interface||'-'));const descRaw=String(row?.description||'').trim();const desc=descRaw?escapeHtml(descRaw):'-';const txNum=Number(row?.tx_percent);const rxNum=Number(row?.rx_percent);const txPct=Number.isFinite(txNum)?Math.max(0,Math.min(100,txNum)):0;const rxPct=Number.isFinite(rxNum)?Math.max(0,Math.min(100,rxNum)):0;const txText=Number.isFinite(txNum)?`${Math.round(txPct)}%`:'-';const rxText=Number.isFinite(rxNum)?`${Math.round(rxPct)}%`:'-';return `<div class="node-util-row"><div class="node-util-status"><span class="${dot}"></span><span>${label}</span></div><div class="node-util-iface"><div class="node-util-iface-main">${iface}</div><div class="node-util-iface-desc">${desc}</div></div><div class="node-util-meter"><div class="node-util-bar"><div class="node-util-fill" style="width:${txPct}%"></div></div><div class="node-util-pct">${txText}</div></div><div class="node-util-meter"><div class="node-util-bar"><div class="node-util-fill" style="width:${rxPct}%"></div></div><div class="node-util-pct">${rxText}</div></div></div>`;}).join('');}
+    function formatUptime(seconds){const total=Math.max(0,Number(seconds||0));if(!Number.isFinite(total)||total<=0)return'-';const d=Math.floor(total/86400);const h=Math.floor((total%86400)/3600);const m=Math.floor((total%3600)/60);if(d>0)return `${d}d ${h}h`;if(h>0)return `${h}h ${m}m`;return `${m}m`;}
+    function formatWinRam(totalMem,freeMem){const total=Number(totalMem);const free=Number(freeMem);const t=(Number.isFinite(total)&&total>0)?`${total.toFixed(2)}GB`:'-';const f=(Number.isFinite(free)&&free>0)?`${free.toFixed(2)}GB`:'-';return `${t} / ${f}`;}
+    function formatWindowsName(caption,version,model){const rawCaption=String(caption||'').replace(/\s+/g,' ').trim();const ver=String(version||'').trim();const mdl=String(model||'').replace(/\s+/g,' ').trim();let text=rawCaption||'Microsoft Windows';if(ver&&!text.toLowerCase().includes(ver.toLowerCase()))text=`${text} ${ver}`.trim();if(mdl)text=`${text} | ${mdl}`;return text||'-';}
+    function applyWindowsServerTextFields(data){const bootEl=document.getElementById('ndWinLastBoot');if(bootEl)bootEl.textContent=formatDateTime(data?.last_boot||'');const osEl=document.getElementById('ndWinOs');if(osEl){osEl.textContent=formatWindowsName(data?.windows_caption,data?.windows_version,data?.computer_model);}const buildEl=document.getElementById('ndWinBuild');if(buildEl)buildEl.textContent=String(data?.windows_build||'-');const archEl=document.getElementById('ndWinArch');if(archEl)archEl.textContent=String(data?.windows_arch||'-');const hostEl=document.getElementById('ndWinHost');if(hostEl)hostEl.textContent=String(data?.computer_name||'-');const domEl=document.getElementById('ndWinDomain');if(domEl)domEl.textContent=String(data?.domain||'-');const ramEl=document.getElementById('ndWinRam');if(ramEl)ramEl.textContent=formatWinRam(data?.total_memory_gb,data?.free_memory_gb);}
+    function renderWindowsServerCards(payload){const data=(payload&&typeof payload==='object')?payload:{};const isWindows=Boolean(data.is_windows_server);const diskBox=document.getElementById('ndWindowsDiskBox');const bottom=document.getElementById('ndWindowsBottomRow');const throughputBox=document.getElementById('ndGaugeThroughputBox');if(diskBox)diskBox.classList.toggle('hidden',!isWindows);if(bottom)bottom.classList.toggle('hidden',!isWindows);if(throughputBox)throughputBox.classList.toggle('hidden',!isWindows);const rxGauge=document.getElementById('ndGaugeRx');const txGauge=document.getElementById('ndGaugeTx');const rxVal=Number(data.network_rx_mbps);const txVal=Number(data.network_tx_mbps);if(rxGauge)rxGauge.textContent=Number.isFinite(rxVal)?`${rxVal.toFixed(2)} Mbps`:'-';if(txGauge)txGauge.textContent=Number.isFinite(txVal)?`${txVal.toFixed(2)} Mbps`:'-';if(!isWindows)return;const diskBody=document.getElementById('ndWindowsDiskBody');if(diskBody){const disks=Array.isArray(data.disk_usage)?data.disk_usage:[];if(!disks.length){diskBody.innerHTML='<div class="node-util-empty">No logical disks data available.</div>';}else{diskBody.innerHTML=disks.map((d)=>{const label=escapeHtml(String(d?.label||'-'));const usedRaw=Number(d?.used_percent);const used=Number.isFinite(usedRaw)?Math.max(0,Math.min(100,usedRaw)):0;const freeRaw=Number(d?.free_gb);const freeText=(Number.isFinite(freeRaw)&&freeRaw>0)?`${freeRaw.toFixed(2)} GB`:'-';const warn=used>85?' warn':'';return `<div class="node-util-row"><div class="node-util-status">${label}</div><div class="node-util-iface"><div class="node-util-iface-main">${Math.round(used)}%</div><div class="node-util-iface-desc">Used</div></div><div class="node-util-meter"><div class="node-util-bar"><div class="node-util-fill${warn}" style="width:${used}%"></div></div><div class="node-util-pct">${Math.round(used)}%</div></div><div class="node-util-meter"><div class="node-util-pct">${freeText}</div></div></div>`;}).join('');}}const upEl=document.getElementById('ndWinUptime');if(upEl)upEl.textContent=formatUptime(data.uptime_seconds);applyWindowsServerTextFields(data);}
+    function stopMonitoringLiveGaugeRefresh(){if(monitoringDashboardLiveGaugeTimer){clearInterval(monitoringDashboardLiveGaugeTimer);monitoringDashboardLiveGaugeTimer=null;}monitoringDashboardLiveGaugeInFlight=false;}
+    function startMonitoringLiveGaugeRefresh(){if(!monitoringDashboardIsWindows||!monitoringDashboardDeviceName)return;const modal=document.getElementById('monitoringNodeDashboardModal');if(!modal||!modal.open)return;if(monitoringDashboardLiveGaugeTimer)return;refreshMonitoringNodeLiveGauges();monitoringDashboardLiveGaugeTimer=setInterval(()=>{refreshMonitoringNodeLiveGauges();},1000);}
+    async function refreshMonitoringNodeLiveGauges(){if(!monitoringDashboardIsWindows||!monitoringDashboardDeviceName)return;if(monitoringDashboardLiveGaugeInFlight)return;const modal=document.getElementById('monitoringNodeDashboardModal');if(!modal||!modal.open)return;monitoringDashboardLiveGaugeInFlight=true;try{const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),9000);const res=await fetch(MONITORING_LIVE_GAUGES_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({device_name:monitoringDashboardDeviceName}),signal:controller.signal});clearTimeout(timer);if(res.status===401){window.location='{{ url_for("login", expired=1) }}';return;}let data={};try{data=await res.json();}catch(_e){data={ok:false};}if(!res.ok||!data?.ok)return;setGaugeRing('ndCpuGauge',Number(data.cpu_percent||0),100);setGaugeRing('ndMemGauge',Number(data.memory_percent||0),100);setGaugeRing('ndSlaGauge',Number(data.sla_ms||0),300);const rxVal=Number(data.network_rx_mbps);const txVal=Number(data.network_tx_mbps);const rxGauge=document.getElementById('ndGaugeRx');const txGauge=document.getElementById('ndGaugeTx');if(rxGauge)rxGauge.textContent=Number.isFinite(rxVal)?`${rxVal.toFixed(2)} Mbps`:'-';if(txGauge)txGauge.textContent=Number.isFinite(txVal)?`${txVal.toFixed(2)} Mbps`:'-';const upEl=document.getElementById('ndWinUptime');if(upEl&&data.uptime_seconds!==undefined&&data.uptime_seconds!==null)upEl.textContent=formatUptime(data.uptime_seconds);applyWindowsServerTextFields(data);const statusRaw=String(data.status||'unknown').trim().toLowerCase();const statusUpper=statusRaw.toUpperCase();const uptimeText=(statusRaw==='up'&&data.uptime_seconds!==undefined&&data.uptime_seconds!==null)?formatUptime(data.uptime_seconds):'-';const statusDisplay=(statusRaw==='up'&&uptimeText&&uptimeText!=='-')?`${statusUpper} / ${uptimeText}`:statusRaw;const ndStatus=document.getElementById('ndStatus');if(ndStatus)ndStatus.textContent=statusDisplay;const ndLast=document.getElementById('ndLast');if(ndLast)ndLast.textContent=formatDateTime(data.sampled_at||'');}catch(_e){}finally{monitoringDashboardLiveGaugeInFlight=false;}}
+    async function acknowledgeMonitoringAlert(alertId){const id=Number(alertId||0);if(!Number.isFinite(id)||id<=0)return;try{const res=await fetch(MONITORING_ACK_ALERT_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({alert_id:id})});const data=await res.json();if(!res.ok||!data?.ok){showRunStatus(String(data?.error||'Failed to acknowledge alert.'),true);return;}if(monitoringDashboardDeviceName)openMonitoringNodeDashboard(monitoringDashboardDeviceName,false);}catch(_e){showRunStatus('Failed to acknowledge alert.',true);}}
+    function renderMonitoringAlerts(alerts){const body=document.getElementById('ndAlertsBody');if(!body)return;const rows=Array.isArray(alerts)?alerts:[];if(!rows.length){body.innerHTML='<div class="node-util-empty">No active alerts.</div>';return;}body.innerHTML=rows.map((a)=>{const id=Number(a?.id||0);const sev=String(a?.severity||'warning').toLowerCase();const status=String(a?.status||'open').toUpperCase();const key=escapeHtml(String(a?.alert_key||'-'));const msg=escapeHtml(String(a?.message||'-'));const upd=escapeHtml(formatDateTime(String(a?.updated_at||'')));const val=(a?.last_value===null||a?.last_value===undefined)?'-':escapeHtml(String(a.last_value));const thr=(a?.threshold_value===null||a?.threshold_value===undefined)?'-':escapeHtml(String(a.threshold_value));const canAck=MONITORING_CAN_MANAGE&&String(a?.status||'').toLowerCase()==='open';const ackBtn=canAck?`<button class="btn" type="button" onclick="acknowledgeMonitoringAlert(${id})">Ack</button>`:'';return `<div class="node-alert-row"><div><div class="node-alert-sev ${sev}">${sev}</div><div class="node-alert-meta">${status} • ${key}</div></div><div><div>${msg}</div><div class="node-alert-meta">Value: ${val} | Threshold: ${thr} | Updated: ${upd}</div></div><div>${ackBtn}</div></div>`;}).join('');}
+    function formatDateTime(value){const raw=String(value||'').trim();if(!raw)return'-';const d=new Date(raw);if(Number.isNaN(d.getTime()))return raw;const hh=String(d.getHours()).padStart(2,'0');const mi=String(d.getMinutes()).padStart(2,'0');const dd=String(d.getDate()).padStart(2,'0');const mm=String(d.getMonth()+1).padStart(2,'0');const yyyy=String(d.getFullYear());return `${hh}:${mi} - ${dd}-${mm}-${yyyy}`;}
+    async function openMonitoringNodeDashboard(deviceName,forceRefresh){
+      const name=String(deviceName||'').trim();
+      if(!name)return;
+      if(monitoringDashboardDeviceName&&monitoringDashboardDeviceName!==name){monitoringChartRanges={cpu:{type:'relative',minutes:30,label:'Last 30 minutes'},memory:{type:'relative',minutes:30,label:'Last 30 minutes'},response:{type:'relative',minutes:30,label:'Last 30 minutes'}};}
+      monitoringDashboardDeviceName=name;
+      monitoringDashboardIsWindows=false;
+      stopMonitoringLiveGaugeRefresh();
+      const status=document.getElementById('nodeDashStatus');
+      if(status)status.textContent=forceRefresh?'Polling now...':'Loading monitoring data...';
+      openSettingsPopup('monitoringNodeDashboardModal');
+      if(!monitoringDashboardAutoRefreshTimer){
+        monitoringDashboardAutoRefreshTimer=setInterval(()=>{if(monitoringDashboardDeviceName)refreshMonitoringNodeDashboard();},30000);
+      }
+      try{
+        const queryWindow=getDashboardQueryWindow();const requestBody={device_name:name,limit:144,force_refresh:Boolean(forceRefresh)};if(queryWindow&&queryWindow.start&&queryWindow.end){requestBody.range_start=queryWindow.start;requestBody.range_end=queryWindow.end;}
+        const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),20000);
+        const res=await fetch(MONITORING_DASHBOARD_DATA_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(requestBody),signal:controller.signal});
+        clearTimeout(timer);
+        if(res.status===401){window.location='{{ url_for("login", expired=1) }}';return;}
+        let data={};try{data=await res.json();}catch(_e){data={ok:false,error:`HTTP ${res.status}`};}
+        if(!res.ok||!data?.ok){
+          if(status)status.textContent=String(data?.error||'Failed to load dashboard data.');
+          return;
+        }
+        const device=data.device||{};
+        const latest=data.latest||{};
+        const series=Array.isArray(data.series)?data.series:[];
+        const availability=(data&&typeof data.availability==='object'&&data.availability)?data.availability:{};
+        const windowsServer=(data&&typeof data.windows_server==='object'&&data.windows_server)?data.windows_server:{};
+        monitoringDashboardIsWindows=Boolean(windowsServer?.is_windows_server);
+        const alerts=Array.isArray(data.alerts)?data.alerts:[];
+        const set=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=String(val??'-');};
+        const statusRaw=String(latest.status||'unknown').trim();
+        const statusUpper=statusRaw.toUpperCase();
+        const uptimeText=(windowsServer&&statusRaw.toLowerCase()==='up')?formatUptime(windowsServer.uptime_seconds):'-';
+        const statusDisplay=(statusRaw.toLowerCase()==='up'&&uptimeText&&uptimeText!=='-')?`${statusUpper} / ${uptimeText}`:statusRaw;
+        set('ndName',device.name||name);
+        set('ndHost',device.host||'-');
+        set('ndStatus',statusDisplay);
+        set('ndCategory',device.category||'-');
+        set('ndMethod',device.polling_method||'-');
+        set('ndInterval',`${device.interval_seconds||30}s`);
+        set('ndLast',formatDateTime(latest.collected_at||''));
+        set('ndInterfaces',`${latest.interfaces_up??'-'} up / ${latest.interfaces_down??'-'} down`);
+        set('ndNotes',device.notes||'-');
+        setGaugeRing('ndCpuGauge',Number(latest.cpu_percent||0),100);
+        setGaugeRing('ndMemGauge',Number(latest.memory_percent||0),100);
+        setGaugeRing('ndSlaGauge',Number(latest.sla_ms||0),300);
+        monitoringDashboardSeries=series;
+        renderMonitoringTrendCharts();
+        setAvailabilityRow('ndAvailWeek',availability.week);
+        setAvailabilityRow('ndAvailMonth',availability.month);
+        setAvailabilityRow('ndAvailHalfYear',availability.half_year);
+        setAvailabilityRow('ndAvailYear',availability.year);
+        renderWindowsServerCards(windowsServer);
+        if(monitoringDashboardIsWindows)startMonitoringLiveGaugeRefresh();else stopMonitoringLiveGaugeRefresh();
+        renderMonitoringAlerts(alerts);
+        if(status)status.textContent=`Loaded ${series.length} samples.`;
+      }catch(error){
+        if(status)status.textContent=(error&&error.name==='AbortError')?'Dashboard load timeout (20s). Try again.':'Failed to load dashboard data.';
+      }
+    }
+    function refreshMonitoringNodeDashboard(){if(!monitoringDashboardDeviceName)return;if(!shouldAutoRefreshNodeDashboard())return;openMonitoringNodeDashboard(monitoringDashboardDeviceName,false);}
+    function refreshMonitoringNodeDashboardNow(){if(!monitoringDashboardDeviceName)return;const status=document.getElementById('nodeDashStatus');if(status)status.textContent='Polling now...';openMonitoringNodeDashboard(monitoringDashboardDeviceName,true);}
+    function openMonitoringConfigMenu(){openMonitoringNodeManager('edit');}
+    function deleteMonitoringNode(deviceName){openMonitoringNodeManager('delete',deviceName);}
+    function submitMonitoringNodeDelete(){const name=String(document.getElementById('mnDeleteDeviceSelect')?.value||'').trim();if(!name)return;const form=document.getElementById('monitoringNodeDeleteForm');const input=document.getElementById('monitoringNodeDeleteName');if(!form||!input)return;input.value=name;form.submit();}
+    function renderMonitoringResources(){const title=document.getElementById('mrDeviceTitle');const host=document.getElementById('mrDeviceHost');if(title)title.textContent=monitoringResourceState.deviceName||'-';if(host)host.textContent=monitoringResourceState.host||'-';const mWrap=document.getElementById('mrMetricChecks');const iWrap=document.getElementById('mrInterfaceChecks');if(mWrap){mWrap.innerHTML=(monitoringResourceState.metrics||[]).map((m)=>{const checked=monitoringResourceState.selectedMetrics.has(m)?'checked':'';return `<label class="monitor-mini-row"><input type="checkbox" data-kind="metric" value="${escapeHtml(m)}" ${checked}> ${escapeHtml(m.toUpperCase())}</label>`;}).join('');}if(iWrap){const rows=Array.isArray(monitoringResourceState.interfaces)?monitoringResourceState.interfaces:[];iWrap.innerHTML=rows.length?rows.map((row)=>{const iface=String(row.interface||'').trim();const checked=monitoringResourceState.selectedInterfaces.has(iface)?'checked':'';const status=String(row.status||'-').trim();const vlan=String(row.vlan||'-').trim();const desc=String(row.description||'').trim()||'-';return `<label class="monitor-mini-row"><input type="checkbox" data-kind="interface" value="${escapeHtml(iface)}" ${checked}> <b>${escapeHtml(iface)}</b> | VLAN ${escapeHtml(vlan)} | ${escapeHtml(status)} | ${escapeHtml(desc)}</label>`;}).join(''):'<div class="monitor-mini-row">No interfaces discovered.</div>';}const s=document.getElementById('mrStatus');if(s)s.textContent='';}
+    async function openMonitoringResources(deviceName){const name=String(deviceName||'').trim();if(!name)return;monitoringResourceState={deviceName:name,host:'',interfaces:[],metrics:['cpu','memory','interfaces','sla'],selectedMetrics:new Set(['cpu','memory','interfaces','sla']),selectedInterfaces:new Set()};openSettingsPopup('monitoringResourcesModal');renderMonitoringResources();await pullMonitoringResources();}
+    async function pullMonitoringResources(){const s=document.getElementById('mrStatus');if(s)s.textContent='Pulling resources...';try{const res=await fetch(MONITORING_PULL_RESOURCES_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({device_name:monitoringResourceState.deviceName})});const data=await res.json();if(!res.ok||!data?.ok){if(s)s.textContent=String(data?.error||'Failed to pull resources.');return;}monitoringResourceState.host=String(data.host||'');monitoringResourceState.metrics=Array.isArray(data.metrics)?data.metrics:['cpu','memory','interfaces','sla'];monitoringResourceState.interfaces=Array.isArray(data.interfaces)?data.interfaces:[];monitoringResourceState.selectedMetrics=new Set(Array.isArray(data.selected_metrics)?data.selected_metrics.map((x)=>String(x||'').trim().toLowerCase()).filter(Boolean):[]);monitoringResourceState.selectedInterfaces=new Set(Array.isArray(data.selected_interfaces)?data.selected_interfaces.map((x)=>String(x||'').trim()).filter(Boolean):[]);renderMonitoringResources();if(s)s.textContent=`Loaded ${monitoringResourceState.interfaces.length} interfaces.`;}catch(_e){if(s)s.textContent='Failed to pull resources.';}}
+    function selectAllMonitoringInterfaces(){const rows=Array.isArray(monitoringResourceState.interfaces)?monitoringResourceState.interfaces:[];monitoringResourceState.selectedInterfaces=new Set(rows.map((r)=>String(r.interface||'').trim()).filter(Boolean));renderMonitoringResources();}
+    function clearAllMonitoringInterfaces(){monitoringResourceState.selectedInterfaces=new Set();renderMonitoringResources();}
+    function syncMonitoringResourceSelection(){const metrics=new Set();const interfaces=new Set();document.querySelectorAll('#mrMetricChecks input[type=\"checkbox\"]').forEach((el)=>{if(el.checked)metrics.add(String(el.value||'').trim().toLowerCase());});document.querySelectorAll('#mrInterfaceChecks input[type=\"checkbox\"]').forEach((el)=>{if(el.checked)interfaces.add(String(el.value||'').trim());});monitoringResourceState.selectedMetrics=metrics;monitoringResourceState.selectedInterfaces=interfaces;}
+    async function saveMonitoringResources(){syncMonitoringResourceSelection();const s=document.getElementById('mrStatus');if(s)s.textContent='Saving selection...';try{const res=await fetch(MONITORING_SAVE_RESOURCES_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({device_name:monitoringResourceState.deviceName,metrics:Array.from(monitoringResourceState.selectedMetrics),interfaces:Array.from(monitoringResourceState.selectedInterfaces)})});const data=await res.json();if(!res.ok||!data?.ok){if(s)s.textContent=String(data?.error||'Failed to save resources.');return;}if(s)s.textContent='Saved.';setTimeout(()=>{closeSettingsPopup('monitoringResourcesModal');location.reload();},300);}catch(_e){if(s)s.textContent='Failed to save resources.';}}
+    async function testMonitoringSnmp(){const status=document.getElementById('mnSnmpTestStatus');const btn=document.querySelector('#mnSnmpBlock button[onclick=\"testMonitoringSnmp()\"]');if(status){status.className='small';status.textContent='Testing SNMP...';}if(btn)btn.disabled=true;const host=String(document.getElementById('mnIpAddress')?.value||'').trim();const snmpVersion=String(document.getElementById('mnSnmpVersion')?.value||'2c').trim();const snmpPort=String(document.getElementById('mnSnmpPort')?.value||'161').trim();const community=String(document.getElementById('mnCommunity')?.value||'').trim();const payload={host,snmp_version:snmpVersion,snmp_port:snmpPort,community,snmpv3_username:String(document.getElementById('mnSnmpV3Username')?.value||'').trim(),snmpv3_auth_password:String(document.getElementById('mnSnmpV3Auth')?.value||'').trim(),snmpv3_priv_password:String(document.getElementById('mnSnmpV3Priv')?.value||'').trim(),snmpv3_auth_protocol:String(document.getElementById('mnSnmpV3AuthProto')?.value||'sha').trim(),snmpv3_priv_protocol:String(document.getElementById('mnSnmpV3PrivProto')?.value||'aes128').trim()};const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),12000);try{const res=await fetch(MONITORING_TEST_SNMP_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:controller.signal});const data=await res.json();if(!res.ok||!data?.ok){if(status){status.className='err';status.textContent=String(data?.error||'SNMP test failed.');}return;}const details=data.details||{};const cpu=details.cpu_percent===null||details.cpu_percent===undefined?'-':`${details.cpu_percent}%`;const ifn=details.if_number===null||details.if_number===undefined?'-':String(details.if_number);if(status){status.className='info';status.textContent=`SNMP OK | sysName: ${details.sysname||'-'} | ifNumber: ${ifn} | CPU: ${cpu}`;}}catch(error){if(status){status.className='err';status.textContent=(error&&error.name==='AbortError')?'SNMP test timed out (12s). Check reachability/ACL/credentials.':'SNMP test failed.';}}finally{clearTimeout(timer);if(btn)btn.disabled=false;}}
+    function syncSelectedButtonCommand(){const select=document.getElementById('editCommandButtonSelect');const box=document.getElementById('editCommandText');if(!select||!box)return;const chosen=select.options[select.selectedIndex];if(!chosen)return;const command=String(chosen.getAttribute('data-command')||'');box.value=command;}
+    function openSettingsPopup(id){ const modal=document.getElementById(id); if(modal&&modal.showModal) modal.showModal(); if(id==='deviceSettingsModal') syncEditDeviceFields(); if(id==='monitoringNodeModal') updateMonitoringNodeFields(); if(id==='commandSettingsModal') syncSelectedButtonCommand(); }
+    function openManagementChildPopup(id){ closeSettingsPopup('managementModal'); openSettingsPopup(id); }
+    function closeSettingsPopup(id){ const modal=document.getElementById(id); if(modal&&modal.close) modal.close(); if(String(id)==='monitoringNodeDashboardModal'){closeChartRangePicker();stopMonitoringLiveGaugeRefresh(); if(monitoringDashboardAutoRefreshTimer){clearInterval(monitoringDashboardAutoRefreshTimer);monitoringDashboardAutoRefreshTimer=null;}} }
+    document.addEventListener('DOMContentLoaded',async ()=>{
+      updateClock();
+      setInterval(updateClock,1000);
+      await loadBranches();
+      if(hasIspTreeAccess()){
+        await loadIspBranchRows();
+        await loadIspAtmRows();
+        await loadIspInternetRows();
+      }
+      setGatewayPreview();
+      renderList();
+      refreshDeleteBranchOptions();
+      refreshEditBranchOptions();
+      renderDeviceTree();
+      renderCommandPicker();
+      applyMenuAccessVisibility();
+      if(hasMenuAccess('ip_branches'))showBranches();
+      else if(hasMenuAccess('ip_hq'))showIpHq();
+      else if(hasSystemTreeAccess())showNetworkAddresses('servers',firstAccessibleSystemSub());
+      else if(hasNetworkTreeAccess())showNetworkAddresses('network',firstAccessibleNetworkSub());
+      else if(CAN_ACCESS_DEVICES_PANEL)showNetDevices(defaultNetDevicesCategory());
+      else if(CAN_ACCESS_MONITORING_PANEL)showNetMonitoring();
+      document.getElementById('addBase').addEventListener('input',setGatewayPreview);
+      document.getElementById('addCidr').addEventListener('change',setGatewayPreview);
+      document.getElementById('addBranchForm').addEventListener('submit',addBranchInline);
+      const ebs=document.getElementById('editBranchSelect');if(ebs)ebs.addEventListener('change',fillEditBranchForm);
+      const eb=document.getElementById('editBase');if(eb)eb.addEventListener('input',setEditGatewayPreview);
+      const ec=document.getElementById('editCidr');if(ec)ec.addEventListener('change',setEditGatewayPreview);
+      document.getElementById('listSearch').addEventListener('input',renderList);
+      document.getElementById('detailsSearch').addEventListener('input',renderDetails);
+      const ds=document.getElementById('deviceSearch');if(ds)ds.addEventListener('input',renderNetDevicesList);
+      const ms=document.getElementById('monitoringSearch');if(ms)ms.addEventListener('input',renderMonitoringResults);
+      const cs=document.getElementById('deviceCommandSelect');if(cs)cs.addEventListener('change',applySelectedCommand);
+      const modeSel=document.getElementById('deviceCommandMode');
+      if(modeSel)modeSel.addEventListener('change',()=>{toggleCommandModeViews();renderCommandPicker();const sel=document.getElementById('deviceCommandSelect');if(sel)sel.value='';});
+      const es=document.getElementById('editDeviceSelect');if(es)es.addEventListener('change',syncEditDeviceFields);
+      const mnMethod=document.getElementById('mnPollingMethod');if(mnMethod)mnMethod.addEventListener('change',updateMonitoringNodeFields);
+      const mnCategory=document.getElementById('mnCategory');if(mnCategory)mnCategory.addEventListener('change',updateMonitoringNodeFields);
+      const mnSnmpVer=document.getElementById('mnSnmpVersion');if(mnSnmpVer)mnSnmpVer.addEventListener('change',updateMonitoringNodeFields);
+      const nodeDash=document.getElementById('monitoringNodeDashboardModal');
+      if(nodeDash){nodeDash.addEventListener('close',()=>{closeChartRangePicker();stopMonitoringLiveGaugeRefresh();if(monitoringDashboardAutoRefreshTimer){clearInterval(monitoringDashboardAutoRefreshTimer);monitoringDashboardAutoRefreshTimer=null;}});}
+      const rangePop=document.getElementById('chartRangePopover');
+      if(rangePop){rangePop.addEventListener('mousedown',(e)=>e.stopPropagation());rangePop.addEventListener('click',(e)=>e.stopPropagation());}
+      document.addEventListener('mousedown',(e)=>{const pop=document.getElementById('chartRangePopover');if(!pop||!pop.classList.contains('show'))return;const target=e.target;if(pop.contains(target))return;if(target&&target.closest&&target.closest('.node-time-btn'))return;closeChartRangePicker();});
+      window.addEventListener('resize',()=>{const pop=document.getElementById('chartRangePopover');if(!pop||!pop.classList.contains('show'))return;});
+      initMonitoringAutoExpand();
+      toggleCommandModeViews();
+      renderCommandPicker();
+      updateMonitoringNodeFields();
+      fetchLiveData();
+      startLiveUpdates();
+      const selectedModal={{ selected_modal|tojson }};
+      if(selectedModal==='notifications'){openSettingsPopup('notificationsModal');}
+    });
+</script>
+
+

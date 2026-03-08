@@ -1,12 +1,6 @@
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Network Tool - Login</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-  <div class="page-bg"></div>
+{% extends "layouts/base.html" %}
+{% block page_title %}Network Tool - Login{% endblock %}
+{% block body %}
   <div class="card narrow glass">
     <h1>Network Automation Login</h1>
     <p>Only users added in Super Admin Users can log in. Each user uses their assigned auth source.</p>
@@ -14,8 +8,7 @@
     <div class="action-row">
       <a class="btn" href="{{ url_for('verify_super_admin_route') }}">Super Admin</a>
     </div>
-    {% if info %}<div class="info">{{ info }}</div>{% endif %}
-    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    {% include "components/messages.html" %}
 
     <form method="post" id="loginForm">
       <label>Username</label>
@@ -30,24 +23,7 @@
       <button class="btn run" type="submit">Login</button>
     </form>
   </div>
-  <script>
-    const LAST_USERNAME_KEY = "nettool_last_username";
-
-    window.addEventListener("DOMContentLoaded", () => {
-      const usernameInput = document.getElementById("loginUsername");
-      const form = document.getElementById("loginForm");
-      if (!usernameInput || !form) return;
-
-      const remembered = localStorage.getItem(LAST_USERNAME_KEY) || "";
-      if (remembered && !usernameInput.value) {
-        usernameInput.value = remembered;
-      }
-
-      form.addEventListener("submit", () => {
-        const value = usernameInput.value.trim();
-        if (value) localStorage.setItem(LAST_USERNAME_KEY, value);
-      });
-    });
-  </script>
-</body>
-</html>
+{% endblock %}
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/login/page.js') }}"></script>
+{% endblock %}

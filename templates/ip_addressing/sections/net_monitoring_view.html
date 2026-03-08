@@ -1,0 +1,35 @@
+﻿        <section id="netMonitoringView" class="panel hidden">
+          <div class="breadcrumb">IP Addressing > Monitoring</div>
+          <h1 class="title">Monitoring</h1>
+          <div id="monitoringGrid" class="monitor-grid">
+            <div class="subpanel monitor-left-panel">
+              <div class="subhead monitor-left-head"><span>Categories</span><span class="small">{{ monitored_device_names|length }} monitored</span></div>
+              <div class="monitor-left-content">
+                <div id="monitoringCategoryList" class="monitor-categories"></div>
+                <div class="subhead"><span id="monitoringCategoryTitle">All Devices</span><span class="small">Expand status to view devices</span></div>
+              </div>
+            </div>
+            <div class="subpanel">
+              <div class="subhead"><span>Architecture Map</span><span class="small">Visual Workspace</span></div>
+              <div class="monitor-map">
+                <div>
+                  <div><b>Map Area</b></div>
+                  <div class="small">Use this space for topology, links, and infrastructure visuals.</div>
+                </div>
+              </div>
+            </div>
+            <div class="subpanel monitor-right-panel">
+              <div class="subhead monitor-right-headline"><span>Search</span><span class="small">Devices</span></div>
+              <div class="monitor-right-content">
+                <div class="monitor-right-head">
+                  <input id="monitoringSearch" class="input" placeholder="Search node, IP, category">
+                  {% if monitoring_can_manage %}
+                  <button class="btn pri" type="button" onclick="openMonitoringNodeAdd()">Add</button>
+                  {% endif %}
+                </div>
+                <div id="monitoringResultList" class="monitor-result-list"></div>
+              </div>
+            </div>
+            <div id="monitorRightHoverTrigger" class="monitor-right-trigger" aria-hidden="true"></div>
+          </div>
+        </section>

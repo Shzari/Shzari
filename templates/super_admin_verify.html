@@ -1,15 +1,7 @@
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Super Admin Verification</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-  <div class="page-bg"></div>
-  <div class="user-strip">
-    <a class="logout-link" href="{{ url_for('login') }}">Back to Login</a>
-  </div>
+{% extends "layouts/base.html" %}
+{% block page_title %}Super Admin Verification{% endblock %}
+{% block body %}
+  {% include "components/back_to_login_strip.html" %}
   <div class="card narrow glass">
     <h1>Super Admin Verification</h1>
     <p>Enter super admin credentials to open settings.</p>
@@ -24,5 +16,4 @@
       <button class="btn run" type="submit">Verify</button>
     </form>
   </div>
-</body>
-</html>
+{% endblock %}

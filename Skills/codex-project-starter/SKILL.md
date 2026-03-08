@@ -1,73 +1,36 @@
 ---
-description: Use this when the user is starting a new project or
-  early-phase repo. It sets up a clean plan, repo structure, minimal
-  runnable skeleton, and next tasks. Do NOT use for single-file quick
-  fixes.
+description: Create an initial project setup plan for new or early-phase repositories. Use when a user asks to start a project, define structure, scaffold a clean baseline, or set a roadmap. Do not use for isolated bug fixes or small edits in mature repos.
 name: codex-project-starter
 ---
 
 # Codex Project Starter Skill
 
-## When to use
+## Collect minimum inputs
 
-Use this skill when the user says things like: - "I'm starting my
-project" - "Set up the repo" - "Make a plan / roadmap" - "Create the
-initial structure" - "Make it ready for development" - "I want Codex to
-follow my workflow"
+Ask only for missing essentials:
+- project type
+- target stack
+- top 3 must-have features
+- deployment target (local/server, OS)
 
-Do NOT use this skill when: - The user wants a one-off bug fix in a
-single file - The user already has a mature repo and only needs small
-changes - The request is unrelated to project setup (e.g., writing text)
+## Produce this output
 
-## Inputs to ask for (only if missing)
+Return exactly:
+1. A short phased plan with concrete deliverables.
+2. A proposed folder structure.
+3. The next 5 tasks as an ordered checklist.
+4. Risks or unknowns that block delivery.
 
--   Project type: web app / API / dashboard / automation / CLI
--   Stack: (Flask/Django/Node/etc.)
--   Must-have features (top 3)
--   Target environment: Windows/Linux, local vs server If the user
-    already provided these, do not ask again.
+## Apply workflow
 
-## Output format (always)
+1. Infer constraints from the existing repo before asking questions.
+2. Define the smallest end-to-end MVP that can run.
+3. Propose conventional structure over novel structure.
+4. Include run instructions, config strategy, logging baseline, and test location.
+5. Keep changes incremental and aligned with user scope.
 
-Return: 1) A short "Plan" (phases + deliverables) 2) A proposed folder
-structure 3) The next 5 concrete tasks (checkbox list) 4) Any risks /
-unknowns blocking progress
+## Enforce guardrails
 
-## Workflow
-
-### Step 1 --- Clarify the minimum
-
-Infer from context first. Only ask questions if truly blocked.
-
-### Step 2 --- Define an MVP
-
-Pick the smallest working version that can run end-to-end.
-
-### Step 3 --- Repo scaffold
-
-Propose a structure that matches the stack. Keep it boring and standard.
-
-### Step 4 --- Dev workflow
-
-Include: - how to run locally - how config is stored (.env) - basic
-logging - a place for tests
-
-### Step 5 --- Guardrails
-
--   Don't invent files the user didn't ask for if they want minimal
-    changes.
--   Prefer incremental commits (small diffs).
--   If requirements are unclear, propose 2 options, not 10.
-
-## Examples
-
-### Example trigger
-
-User: "I'm in the starting phase of my project, can you create an agent
-skill based on how I worked with Codex?" Assistant: Use this skill.
-Provide plan + structure + next tasks.
-
-### Example non-trigger
-
-User: "Fix this NameError in app.py" Assistant: Do NOT use this skill.
-Just fix the bug.
+- Avoid large speculative scaffolding when the user asked for minimal setup.
+- Prefer two practical options when requirements are ambiguous.
+- Do not mix setup work with unrelated feature implementation in one pass.

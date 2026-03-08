@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from app import legacy
 
-load_ip_branches = legacy.load_ip_branches
-save_ip_branches = legacy.save_ip_branches
+def load_ip_branches() -> list[str]:
+    from app.services.legacy_core_helpers import load_ip_branches as _impl
+
+    return list(_impl())
+
+
+def save_ip_branches(branches: list[str]) -> None:
+    from app.services.legacy_core_helpers import save_ip_branches as _impl
+
+    _impl(branches)

@@ -1,0 +1,16 @@
+﻿        <section id="networkAddressesView" class="panel hidden">
+          <div id="networkAddressesBreadcrumb" class="breadcrumb">IP Addressing > Network Addresses > System > HO > VM Servers</div>
+          <h1 class="title">Network Addresses</h1>
+          {% include "ip_addressing/panels/na_servers_panel.html" %}
+          <div id="naNetworkPanel" class="hidden">
+            {% include "ip_addressing/panels/na_network_devices_panel.html" %}
+            {% include "ip_addressing/panels/isp_branches_panel.html" %}
+            {% include "ip_addressing/panels/isp_atms_panel.html" %}
+            {% include "ip_addressing/panels/na_isp_internet_panel.html" %}
+            {% include "ip_addressing/panels/na_dmvpn_branches_panel.html" %}
+            {% include "ip_addressing/panels/na_dmvpn_atms_panel.html" %}
+            {% include "ip_addressing/panels/na_sim_cards_panel.html" %}
+            {% include "ip_addressing/panels/na_site_to_site_panel.html" %}
+            {% include "ip_addressing/panels/na_nat_panel.html" %}
+          </div>
+        </section>

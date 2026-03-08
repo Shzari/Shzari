@@ -1,0 +1,63 @@
+<aside class="side">
+  <ul class="nav">
+    <li id="navIpRoot">
+      <button class="item active" data-section="ip-addressing" type="button" onclick="toggleIpAddressingTree(); showBranches()"><span>I</span><span class="lbl">IP Addressing</span></button>
+      <ul id="ipAddressingNav" class="tree show">
+        <li id="navIpBranches"><button class="tree-item ip-tree-item active" data-section="branches" type="button" onclick="showBranches()">Branches</button></li>
+        <li id="navIpHq"><button class="tree-item ip-tree-item" data-section="hq" type="button" onclick="showIpHq()">HQ</button></li>
+      </ul>
+    </li>
+    <li id="navNetworkAddressesRoot">
+      <button class="item" data-section="network-addresses" type="button" onclick="toggleNetworkAddressTree(); showNetworkAddresses('servers','ho-vm');"><span>A</span><span class="lbl">Network Addresses</span></button>
+      <ul id="networkAddressNav" class="tree show">
+        <li id="navNaServers">
+          <button class="tree-item na-tree-item" data-section="servers" type="button" onclick="handleSystemMenuClick()">System</button>
+          <ul id="systemSubNav" class="tree">
+            <li id="navNaSystemHo">
+              <button class="tree-item na-system-group" data-group="ho" type="button" onclick="handleSystemHoClick()">HO</button>
+              <ul id="systemHoSubNav" class="tree">
+                <li><button class="tree-item na-sub-item" data-section="servers" data-sub="ho-vm" type="button" onclick="showNetworkAddresses('servers','ho-vm')">VM Servers</button></li>
+                <li><button class="tree-item na-sub-item" data-section="servers" data-sub="ho-physical" type="button" onclick="showNetworkAddresses('servers','ho-physical')">Physical Servers</button></li>
+                <li><button class="tree-item na-sub-item" data-section="servers" data-sub="ho-storage" type="button" onclick="showNetworkAddresses('servers','ho-storage')">Storage</button></li>
+              </ul>
+            </li>
+            <li id="navNaSystemDrs">
+              <button class="tree-item na-system-group" data-group="drs" type="button" onclick="handleSystemDrsClick()">DRS</button>
+              <ul id="systemDrsSubNav" class="tree">
+                <li><button class="tree-item na-sub-item" data-section="servers" data-sub="drs-vm" type="button" onclick="showNetworkAddresses('servers','drs-vm')">VM Servers</button></li>
+                <li><button class="tree-item na-sub-item" data-section="servers" data-sub="drs-physical" type="button" onclick="showNetworkAddresses('servers','drs-physical')">Physical Servers</button></li>
+                <li><button class="tree-item na-sub-item" data-section="servers" data-sub="drs-storage" type="button" onclick="showNetworkAddresses('servers','drs-storage')">Storage</button></li>
+              </ul>
+            </li>
+          </ul>
+        </li>
+        <li id="navNaNetwork">
+          <button class="tree-item na-tree-item" data-section="network" type="button" onclick="handleNetworkMenuClick()">Network</button>
+          <ul id="networkSubNav" class="tree">
+            <li id="navNaNetworkDevices"><button class="tree-item na-sub-item" data-section="network" data-sub="network-devices" type="button" onclick="showNetworkAddresses('network','network-devices')">Network Devices</button></li>
+            <li id="navNaIsp">
+              <button class="tree-item na-network-group" data-group="isp" type="button" onclick="handleIspMenuClick()">ISP</button>
+              <ul id="networkIspSubNav" class="tree">
+                <li><button class="tree-item na-sub-item" data-section="network" data-sub="isp-branches" type="button" onclick="showNetworkAddresses('network','isp-branches')">Branches</button></li>
+                <li><button class="tree-item na-sub-item" data-section="network" data-sub="isp-atms" type="button" onclick="showNetworkAddresses('network','isp-atms')">ATM-s</button></li>
+                <li><button class="tree-item na-sub-item" data-section="network" data-sub="isp-internet" type="button" onclick="showNetworkAddresses('network','isp-internet')">Internet</button></li>
+              </ul>
+            </li>
+            <li id="navNaDmvpn">
+              <button class="tree-item na-network-group" data-group="dmvpn" type="button" onclick="handleDmvpnMenuClick()">DMVPN</button>
+              <ul id="networkDmvpnSubNav" class="tree">
+                <li><button class="tree-item na-sub-item" data-section="network" data-sub="dmvpn-branches" type="button" onclick="showNetworkAddresses('network','dmvpn-branches')">Branches</button></li>
+                <li><button class="tree-item na-sub-item" data-section="network" data-sub="dmvpn-atms" type="button" onclick="showNetworkAddresses('network','dmvpn-atms')">ATM-s</button></li>
+              </ul>
+            </li>
+            <li id="navNaSimCards"><button class="tree-item na-sub-item" data-section="network" data-sub="sim-cards" type="button" onclick="showNetworkAddresses('network','sim-cards')">SIM Cards</button></li>
+            <li id="navNaSiteToSite"><button class="tree-item na-sub-item" data-section="network" data-sub="site-to-site" type="button" onclick="showNetworkAddresses('network','site-to-site')">Site to Site</button></li>
+            <li id="navNaNat"><button class="tree-item na-sub-item" data-section="network" data-sub="nat" type="button" onclick="showNetworkAddresses('network','nat')">NAT</button></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+    <li id="navNetDevicesRoot"><button class="item" data-section="net-devices" type="button" onclick="handleNetDevicesMenuClick()"><span>N</span><span class="lbl">Net Devices</span></button><ul id="deviceCategoryNav" class="tree show"></ul></li>
+    <li id="navMonitoringRoot"><button class="item" data-section="monitoring" type="button" onclick="showNetMonitoring()"><span>M</span><span class="lbl">Monitoring</span></button></li>
+  </ul>
+</aside>
