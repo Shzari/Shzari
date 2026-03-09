@@ -398,6 +398,11 @@ const RAW_USERS = {{ users|tojson }};
 
     function openUserEditModal() {
       const modal = document.getElementById('userEditModal');
+      if (modal) {
+        modal.querySelectorAll('.permission-submenu-group').forEach((group) => {
+          group.open = false;
+        });
+      }
       if (modal && modal.showModal) modal.showModal();
     }
 
@@ -409,9 +414,13 @@ const RAW_USERS = {{ users|tojson }};
     function updateEditActionLabel() {
       const action = document.getElementById('userEditAction').value;
       const note = document.getElementById('userEditActionNote');
+      const username = document.getElementById('userEditUsername')?.value || '';
+      const source = String(USER_AUTH_SOURCE_MAP[username] || 'ldap').toLowerCase();
       if (!note) return;
       if (!action) {
-        note.textContent = 'Select an action first.';
+        note.textContent = source === 'local'
+          ? 'Select an action first.'
+          : 'LDAP users cannot use local password reset actions.';
       } else if (action === 'delete') {
         note.textContent = 'Delete selected user permanently.';
       } else if (action === 'reset_password') {
@@ -423,6 +432,23 @@ const RAW_USERS = {{ users|tojson }};
       } else if (action === 'set_user_rights') {
         note.textContent = 'Set user rights from the collapsible permission tree (No Access / Read / R/W).';
       }
+    }
+
+    function syncUserEditActionsByAuth() {
+      const username = document.getElementById('userEditUsername')?.value || '';
+      const actionSelect = document.getElementById('userEditAction');
+      if (!actionSelect) return;
+      const source = String(USER_AUTH_SOURCE_MAP[username] || 'ldap').toLowerCase();
+      const localOnlyActions = ['reset_password', 'force_change'];
+      localOnlyActions.forEach((actionValue) => {
+        const option = actionSelect.querySelector(`option[value="${actionValue}"]`);
+        if (!option) return;
+        option.disabled = source !== 'local';
+      });
+      if (source !== 'local' && localOnlyActions.includes(String(actionSelect.value || '').trim().toLowerCase())) {
+        actionSelect.value = '';
+      }
+      updateEditActionLabel();
     }
 
     function setPermissionSelectValue(selectElement, value) {
@@ -639,6 +665,7 @@ const RAW_USERS = {{ users|tojson }};
       syncUserRoleSelection();
       syncUserAuthSourceLabel();
       syncUserPermissionSelection();
+      syncUserEditActionsByAuth();
       updatePermissionModeButtons();
       syncWebListenerFields();
       const roleSelect = document.getElementById('userRoleValue');

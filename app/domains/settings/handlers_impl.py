@@ -115,6 +115,8 @@ def ise_settings_page() -> Any:
             error = f"Failed to save settings: {exc}"
 
     devices = load_devices()
+    from app.services.legacy_core_helpers import all_known_device_categories
+
     return render_template(
         "ise_settings.html",
         ise=settings,
@@ -125,7 +127,7 @@ def ise_settings_page() -> Any:
         info=info,
         error=error,
         users=load_users(),
-        available_categories=all_categories(devices),
+        available_categories=all_known_device_categories(devices),
         selected_modal=request.args.get("modal", ""),
         ntp=load_ntp_settings(),
         session_settings=load_session_settings(),

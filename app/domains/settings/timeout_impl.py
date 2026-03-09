@@ -82,6 +82,13 @@ def enforce_dashboard_session_timeout() -> Any:
     if endpoint in {"static", "login", "logout", "setup_super_admin", "change_password"}:
         return None
     passive_endpoints = {"ip_addressing_live_data_api"}
+    wants_json_response = bool(
+        request.path.startswith("/api/")
+        or str(endpoint).endswith("_api")
+        or request.is_json
+        or "application/json" in str(request.headers.get("Accept", "")).lower()
+        or str(request.content_type or "").lower().startswith("application/json")
+    )
 
     role = current_user_role()
     if role == "audit":
@@ -104,7 +111,7 @@ def enforce_dashboard_session_timeout() -> Any:
     if now - last_activity > timeout_seconds:
         session.clear()
         session["login_info"] = "Session expired due to inactivity. Please log in again."
-        if endpoint in passive_endpoints:
+        if endpoint in passive_endpoints or wants_json_response:
             return jsonify({"ok": False, "error": "Session expired due to inactivity.", "expired": True}), 401
         return redirect(url_for("login", expired=1))
 

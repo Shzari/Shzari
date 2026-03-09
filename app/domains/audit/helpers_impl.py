@@ -13,6 +13,8 @@ for _name, _value in _legacy.__dict__.items():
 # Fallback for partial legacy initialization paths.
 if "db_conn" not in globals():
     from app.services.db_service import db_conn
+if "normalize_role" not in globals():
+    from app.services.auth_service import normalize_role
 
 
 def default_sql_server_settings() -> dict[str, Any]:
@@ -418,10 +420,11 @@ def write_action_log(
     client_ip = _resolve_client_ip()
     user_agent = str(request.headers.get("User-Agent", "")).strip()
     created_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    normalized_role = normalize_role(str(role or "unknown"))
     payload = details if isinstance(details, dict) else {}
     payload.update(
         {
-            "role": normalize_role(str(role or "unknown")),
+            "role": normalized_role,
             "interface_name": str(interface_name or "").strip(),
             "status": str(status or "").strip() or "unknown",
             "client_ip": client_ip,
@@ -432,7 +435,7 @@ def write_action_log(
     _submit_background_log_write(
         _write_primary_action_log_sync,
         str(username or "").strip(),
-        normalize_role(str(role or "unknown")),
+        normalized_role,
         action_name,
         str(device_name or "").strip(),
         str(interface_name or "").strip(),
@@ -463,7 +466,7 @@ def write_action_log(
         "action_event action=%s username=%s role=%s device=%s interface=%s status=%s ip=%s",
         str(action or "").strip() or "action",
         str(username or "").strip() or "-",
-        normalize_role(str(role or "unknown")),
+        normalized_role,
         str(device_name or "").strip() or "-",
         str(interface_name or "").strip() or "-",
         str(status or "").strip() or "unknown",

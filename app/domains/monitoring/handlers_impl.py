@@ -13,9 +13,21 @@ for _name, _value in _legacy.__dict__.items():
 # Fallback for partial legacy initialization paths.
 if "db_conn" not in globals():
     from app.services.db_service import db_conn
+if "user_has_panel_access" not in globals() or "user_can_write_panel" not in globals():
+    from app.services.legacy_core_helpers import user_can_write_panel, user_has_panel_access
+
+
+def _ensure_legacy_bindings() -> None:
+    # Legacy runtime may be partially initialized during import cycles.
+    # Refresh missing names lazily before handler execution.
+    for _name, _value in _legacy.__dict__.items():
+        if _name.startswith("__"):
+            continue
+        globals().setdefault(_name, _value)
 
 
 def monitoring_node_add_page() -> Any:
+    _ensure_legacy_bindings()
     if "creds" not in session:
         return redirect(url_for("login"))
 
@@ -23,6 +35,9 @@ def monitoring_node_add_page() -> Any:
     auth_mode = str(session.get("auth_mode", "local"))
     if not user_has_panel_access(current_username, auth_mode, "monitoring"):
         session["dashboard_error"] = "You do not have access to Monitoring."
+        return redirect(url_for("ip_addressing_dashboard"))
+    if not user_can_write_panel(current_username, auth_mode, "monitoring"):
+        session["dashboard_error"] = "Monitoring is read-only for your account."
         return redirect(url_for("ip_addressing_dashboard"))
     role = current_user_role()
     if not can_manage_monitoring_nodes(role):
@@ -178,6 +193,7 @@ def monitoring_node_add_page() -> Any:
 
 
 def monitoring_node_delete_page() -> Any:
+    _ensure_legacy_bindings()
     if "creds" not in session:
         return redirect(url_for("login"))
 
@@ -186,6 +202,9 @@ def monitoring_node_delete_page() -> Any:
     role = current_user_role()
     if not user_has_panel_access(current_username, auth_mode, "monitoring"):
         session["dashboard_error"] = "You do not have access to Monitoring."
+        return redirect(url_for("ip_addressing_dashboard"))
+    if not user_can_write_panel(current_username, auth_mode, "monitoring"):
+        session["dashboard_error"] = "Monitoring is read-only for your account."
         return redirect(url_for("ip_addressing_dashboard"))
     if not can_manage_monitoring_nodes(role):
         session["dashboard_error"] = "Only senior/sysadmin users can manage monitoring devices."
@@ -219,8 +238,17 @@ def monitoring_node_delete_page() -> Any:
 
 
 def monitoring_category_add_page() -> Any:
+    _ensure_legacy_bindings()
     if "creds" not in session:
         return redirect(url_for("login"))
+    current_username = str(session.get("creds", {}).get("username", "")).strip()
+    auth_mode = str(session.get("auth_mode", "local"))
+    if not user_has_panel_access(current_username, auth_mode, "monitoring"):
+        session["dashboard_error"] = "You do not have access to Monitoring."
+        return redirect(url_for("ip_addressing_dashboard"))
+    if not user_can_write_panel(current_username, auth_mode, "monitoring"):
+        session["dashboard_error"] = "Monitoring is read-only for your account."
+        return redirect(url_for("ip_addressing_dashboard"))
     if normalize_role(current_user_role()) != "senior":
         session["dashboard_error"] = "Only Senior users can manage monitoring categories."
         return redirect(url_for("ip_addressing_dashboard"))
@@ -242,8 +270,17 @@ def monitoring_category_add_page() -> Any:
 
 
 def monitoring_category_delete_page() -> Any:
+    _ensure_legacy_bindings()
     if "creds" not in session:
         return redirect(url_for("login"))
+    current_username = str(session.get("creds", {}).get("username", "")).strip()
+    auth_mode = str(session.get("auth_mode", "local"))
+    if not user_has_panel_access(current_username, auth_mode, "monitoring"):
+        session["dashboard_error"] = "You do not have access to Monitoring."
+        return redirect(url_for("ip_addressing_dashboard"))
+    if not user_can_write_panel(current_username, auth_mode, "monitoring"):
+        session["dashboard_error"] = "Monitoring is read-only for your account."
+        return redirect(url_for("ip_addressing_dashboard"))
     if normalize_role(current_user_role()) != "senior":
         session["dashboard_error"] = "Only Senior users can manage monitoring categories."
         return redirect(url_for("ip_addressing_dashboard"))
@@ -285,8 +322,17 @@ def monitoring_category_delete_page() -> Any:
 
 
 def monitoring_category_rename_page() -> Any:
+    _ensure_legacy_bindings()
     if "creds" not in session:
         return redirect(url_for("login"))
+    current_username = str(session.get("creds", {}).get("username", "")).strip()
+    auth_mode = str(session.get("auth_mode", "local"))
+    if not user_has_panel_access(current_username, auth_mode, "monitoring"):
+        session["dashboard_error"] = "You do not have access to Monitoring."
+        return redirect(url_for("ip_addressing_dashboard"))
+    if not user_can_write_panel(current_username, auth_mode, "monitoring"):
+        session["dashboard_error"] = "Monitoring is read-only for your account."
+        return redirect(url_for("ip_addressing_dashboard"))
     if normalize_role(current_user_role()) != "senior":
         session["dashboard_error"] = "Only Senior users can manage monitoring categories."
         return redirect(url_for("ip_addressing_dashboard"))
@@ -337,6 +383,7 @@ def monitoring_category_rename_page() -> Any:
 
 
 def monitoring_node_test_snmp_api() -> Any:
+    _ensure_legacy_bindings()
     if "creds" not in session:
         return jsonify({"ok": False, "error": "Authentication required."}), 401
 
@@ -345,6 +392,8 @@ def monitoring_node_test_snmp_api() -> Any:
     role = current_user_role()
     if not user_has_panel_access(current_username, auth_mode, "monitoring"):
         return jsonify({"ok": False, "error": "Access denied."}), 403
+    if not user_can_write_panel(current_username, auth_mode, "monitoring"):
+        return jsonify({"ok": False, "error": "Monitoring is read-only for your account."}), 403
     if not can_manage_monitoring_nodes(role):
         return jsonify({"ok": False, "error": "Only Senior/SysAdmin can test SNMP settings."}), 403
 
@@ -439,6 +488,7 @@ def monitoring_node_test_snmp_api() -> Any:
 
 
 def monitoring_node_resources_pull_api() -> Any:
+    _ensure_legacy_bindings()
     if "creds" not in session:
         return jsonify({"ok": False, "error": "Authentication required."}), 401
 
@@ -447,6 +497,8 @@ def monitoring_node_resources_pull_api() -> Any:
     role = current_user_role()
     if not user_has_panel_access(current_username, auth_mode, "monitoring"):
         return jsonify({"ok": False, "error": "Access denied."}), 403
+    if not user_can_write_panel(current_username, auth_mode, "monitoring"):
+        return jsonify({"ok": False, "error": "Monitoring is read-only for your account."}), 403
     if not can_manage_monitoring_nodes(role):
         return jsonify({"ok": False, "error": "Only Senior/SysAdmin can manage monitoring resources."}), 403
 
@@ -603,6 +655,7 @@ def monitoring_node_resources_pull_api() -> Any:
 
 
 def monitoring_node_resources_save_api() -> Any:
+    _ensure_legacy_bindings()
     if "creds" not in session:
         return jsonify({"ok": False, "error": "Authentication required."}), 401
 
@@ -611,6 +664,8 @@ def monitoring_node_resources_save_api() -> Any:
     role = current_user_role()
     if not user_has_panel_access(current_username, auth_mode, "monitoring"):
         return jsonify({"ok": False, "error": "Access denied."}), 403
+    if not user_can_write_panel(current_username, auth_mode, "monitoring"):
+        return jsonify({"ok": False, "error": "Monitoring is read-only for your account."}), 403
     if not can_manage_monitoring_nodes(role):
         return jsonify({"ok": False, "error": "Only Senior/SysAdmin can save monitoring resources."}), 403
 
@@ -675,6 +730,7 @@ def monitoring_node_resources_save_api() -> Any:
 
 
 def monitoring_alert_ack_api() -> Any:
+    _ensure_legacy_bindings()
     if "creds" not in session:
         return jsonify({"ok": False, "error": "Authentication required."}), 401
 
@@ -683,6 +739,8 @@ def monitoring_alert_ack_api() -> Any:
     role = current_user_role()
     if not user_has_panel_access(current_username, auth_mode, "monitoring"):
         return jsonify({"ok": False, "error": "Access denied."}), 403
+    if not user_can_write_panel(current_username, auth_mode, "monitoring"):
+        return jsonify({"ok": False, "error": "Monitoring is read-only for your account."}), 403
     if not can_manage_monitoring_nodes(role):
         return jsonify({"ok": False, "error": "Only Senior/SysAdmin can acknowledge alerts."}), 403
 
@@ -723,6 +781,7 @@ def monitoring_alert_ack_api() -> Any:
 
 
 def monitoring_node_dashboard_data_api() -> Any:
+    _ensure_legacy_bindings()
     if "creds" not in session:
         return jsonify({"ok": False, "error": "Authentication required."}), 401
 
@@ -1313,6 +1372,7 @@ def monitoring_node_dashboard_data_api() -> Any:
 
 
 def monitoring_node_live_gauges_api() -> Any:
+    _ensure_legacy_bindings()
     if "creds" not in session:
         return jsonify({"ok": False, "error": "Authentication required."}), 401
 

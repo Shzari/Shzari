@@ -155,6 +155,19 @@
       white-space: normal;
       word-break: break-word;
     }
+    #usersManageModal .created-users-row {
+      align-items: center;
+    }
+    #usersManageModal .created-users-row h4 {
+      margin: 0;
+    }
+    #usersManageModal .created-users-row .edit-user-btn {
+      margin: 4px 4px 4px 0;
+      padding: 9px 12px;
+      min-height: 36px;
+      min-width: 86px;
+      font-weight: 700;
+    }
     #userEditModal .category-access-list {
       max-height: 220px;
     }

@@ -24,7 +24,10 @@
         <button class="btn" type="submit">Add User</button>
       </form>
 
-      <h4>Created Users</h4>
+      <div class="action-row created-users-row">
+        <h4>Created Users</h4>
+        <button class="btn edit-user-btn" type="button" onclick="openUserEditModal()">Edit User</button>
+      </div>
       <div class="device-list">
         {% if users %}
           {% for user in users %}
@@ -116,7 +119,6 @@
       </div>
 
       <div class="action-row">
-        <button class="btn" type="button" onclick="openUserEditModal()">Edit User</button>
         <button class="btn ghost" type="button" onclick="closeUsersModal()">Close</button>
       </div>
     </div>

@@ -15,6 +15,31 @@ if "db_conn" not in globals():
     from app.services.db_service import db_conn
 if "user_can_write_panel" not in globals() or "user_can_write_menu" not in globals():
     from app.services.legacy_core_helpers import user_can_write_menu, user_can_write_panel
+if "all_known_device_categories" not in globals() or "user_allowed_categories_by_panel" not in globals():
+    from app.services.legacy_core_helpers import all_known_device_categories, user_allowed_categories_by_panel
+
+
+def _device_categories_for_user(
+    all_devices: list[dict[str, Any]],
+    current_username: str,
+    auth_mode: str,
+    can_access_devices_panel: bool,
+) -> list[str]:
+    if not can_access_devices_panel:
+        return []
+    categories = all_known_device_categories(all_devices)
+    super_admin_username = str(load_super_admin().get("username", "")).strip().lower()
+    if current_username.strip().lower() == super_admin_username:
+        return categories
+    user = find_user(load_users(), current_username)
+    role_name = normalize_role(str((user or {}).get("role", "")))
+    if role_name in {"senior", "sysadmin"}:
+        return categories
+    allowed = user_allowed_categories_by_panel(current_username, auth_mode, "net_devices")
+    if allowed is None:
+        return categories
+    allowed_keys = {str(item or "").strip().lower() for item in allowed if str(item or "").strip()}
+    return [category for category in categories if str(category or "").strip().lower() in allowed_keys]
 
 
 def pending_requests_action() -> Any:
@@ -395,6 +420,8 @@ def ip_addressing_dashboard() -> Any:
 
     can_access_devices_panel = user_has_panel_access(current_username, auth_mode, "net_devices")
     can_access_monitoring_panel = user_has_panel_access(current_username, auth_mode, "monitoring")
+    can_write_monitoring_panel = user_can_write_panel(current_username, auth_mode, "monitoring")
+    can_manage_monitoring_panel = can_write_monitoring_panel and can_manage_monitoring_nodes(role)
     can_access_ip_panel = user_has_panel_access(current_username, auth_mode, "ip_addressing")
     can_access_network_addressing_panel = user_has_panel_access(current_username, auth_mode, "network_addressing")
     can_write_network_addressing_panel = user_can_write_panel(current_username, auth_mode, "network_addressing")
@@ -496,7 +523,7 @@ def ip_addressing_dashboard() -> Any:
             monitoring_profiles[name] = profile
     fixed_monitoring_categories = load_monitoring_category_options()
     monitoring_editable_device_names: list[str] = []
-    if can_manage_monitoring_nodes(role):
+    if can_manage_monitoring_panel:
         if normalize_role(role) == "sysadmin":
             for node in monitoring_visible_devices:
                 groups = node.get("groups", []) if isinstance(node, dict) else []
@@ -515,7 +542,7 @@ def ip_addressing_dashboard() -> Any:
         if label and label not in monitoring_category_options:
             monitoring_category_options.append(label)
     visible_groups = grouped_devices(visible_devices) if can_access_devices_panel else {}
-    visible_categories = all_categories(visible_devices) if can_access_devices_panel else []
+    visible_categories = _device_categories_for_user(all_devices, current_username, auth_mode, can_access_devices_panel)
     menu_access = user_menu_access(current_username, auth_mode)
     if not can_access_ip_panel:
         menu_access["ip_branches"] = False
@@ -598,9 +625,9 @@ def ip_addressing_dashboard() -> Any:
         monitoring_category_options=monitoring_category_options,
         monitoring_profiles=monitoring_profiles,
         monitoring_editable_device_names=monitoring_editable_device_names,
-        monitoring_can_manage=can_manage_monitoring_nodes(role),
+        monitoring_can_manage=can_manage_monitoring_panel,
         monitoring_servers_only=sysadmin_monitoring_servers_only(role),
-        monitoring_category_manage_senior=(normalize_role(role) == "senior"),
+        monitoring_category_manage_senior=(normalize_role(role) == "senior" and can_manage_monitoring_panel),
         unread_notifications=unread_notifications,
         selected_modal=request.args.get("modal", ""),
         info=session.pop("dashboard_info", ""),
@@ -619,6 +646,8 @@ def ip_addressing_live_data_api() -> Any:
 
     can_access_devices_panel = user_has_panel_access(current_username, auth_mode, "net_devices")
     can_access_monitoring_panel = user_has_panel_access(current_username, auth_mode, "monitoring")
+    can_write_monitoring_panel = user_can_write_panel(current_username, auth_mode, "monitoring")
+    can_manage_monitoring_panel = can_write_monitoring_panel and can_manage_monitoring_nodes(role)
     can_access_ip_panel = user_has_panel_access(current_username, auth_mode, "ip_addressing")
     can_access_network_addressing_panel = user_has_panel_access(current_username, auth_mode, "network_addressing")
     if (
@@ -710,7 +739,7 @@ def ip_addressing_live_data_api() -> Any:
 
     fixed_monitoring_categories = load_monitoring_category_options()
     monitoring_editable_device_names: list[str] = []
-    if can_manage_monitoring_nodes(role):
+    if can_manage_monitoring_panel:
         if normalize_role(role) == "sysadmin":
             for node in monitoring_visible_devices:
                 groups = node.get("groups", []) if isinstance(node, dict) else []
@@ -730,12 +759,13 @@ def ip_addressing_live_data_api() -> Any:
         if label and label not in monitoring_category_options:
             monitoring_category_options.append(label)
 
+    visible_categories = _device_categories_for_user(all_devices, current_username, auth_mode, can_access_devices_panel)
     unread_count = len(load_unread_notifications(current_username))
     return jsonify(
         {
             "ok": True,
             "devices": visible_devices,
-            "categories": all_categories(visible_devices) if can_access_devices_panel else [],
+            "categories": visible_categories,
             "monitoring_devices": monitoring_visible_devices,
             "monitoring_profiles": monitoring_profiles,
             "monitored_device_names": monitored_device_names,
@@ -758,6 +788,22 @@ def manage_devices() -> Any:
     )
     current_username = str(session.get("creds", {}).get("username", "")).strip()
     auth_mode = str(session.get("auth_mode", "local"))
+    current_role = normalize_role(current_user_role())
+
+    if current_role == "sysadmin" and action in {"add", "edit", "import_csv"}:
+        target_name = ""
+        if action == "add":
+            target_name = str(request.form.get("hostname", "")).strip()
+        elif action == "edit":
+            target_name = str(request.form.get("original_device_name", "")).strip()
+        write_audit_log_safe(
+            "device_modify_denied",
+            target_name,
+            {"reason": "sysadmin_readonly_for_net_devices", "action": action},
+            requester=current_username,
+        )
+        session["dashboard_error"] = "SysAdmin cannot add or edit Net Devices."
+        return redirect(dashboard_modal_url)
 
     if action == "add":
         hostname = request.form.get("hostname", "").strip()
@@ -1197,6 +1243,12 @@ def manage_categories() -> Any:
     if "creds" not in session:
         return redirect(url_for("login"))
 
+    from app.services.legacy_core_helpers import (
+        ensure_device_category_in_catalog,
+        remove_device_category_from_catalog,
+        remove_device_category_from_user_rights,
+    )
+
     action = request.form.get("action", "").strip()
     devices = load_devices()
     current_username = str(session.get("creds", {}).get("username", "")).strip()
@@ -1217,14 +1269,16 @@ def manage_categories() -> Any:
 
         category_name = request.form.get("category_name", "").strip()
         if category_name:
-            found = any(category_name in d.get("groups", []) for d in devices)
-            if not found and devices:
-                devices[0].setdefault("groups", []).append(category_name)
-            save_devices(devices)
+            catalog_added = ensure_device_category_in_catalog(category_name)
+            found = any(
+                str(group or "").strip().lower() == category_name.lower()
+                for device in devices
+                for group in (device.get("groups", []) if isinstance(device.get("groups", []), list) else [])
+            )
             write_audit_log_safe(
                 "category_created",
                 category_name,
-                {"already_present": found},
+                {"already_present": found, "catalog_added": catalog_added},
                 requester=current_username,
             )
 
@@ -1299,10 +1353,12 @@ def manage_categories() -> Any:
                 groups = device.setdefault("groups", [])
                 device["groups"] = [g for g in groups if g != category_name]
             save_devices(devices)
+            removed_from_catalog = remove_device_category_from_catalog(category_name)
+            cleaned_users = remove_device_category_from_user_rights(category_name)
             write_audit_log_safe(
                 "category_deleted",
                 category_name,
-                {},
+                {"removed_from_catalog": removed_from_catalog, "cleaned_users": cleaned_users},
                 requester=current_username,
             )
     else:

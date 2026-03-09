@@ -13,6 +13,8 @@ for _name, _value in _legacy.__dict__.items():
 # Fallback for partial legacy initialization paths.
 if "db_conn" not in globals():
     from app.services.db_service import db_conn
+if "DEFAULT_CATEGORY" not in globals():
+    DEFAULT_CATEGORY = "Uncategorized"
 if "normalize_config_command_text" not in globals():
     def normalize_config_command_text(command: str) -> str:
         text = str(command or "").replace("\r", "\n")
@@ -843,6 +845,100 @@ def all_categories(devices: list[dict[str, Any]]) -> list[str]:
             if group_name:
                 categories.add(group_name)
     return sorted(categories)
+
+
+def _normalize_device_category_catalog(raw: Any) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for item in raw:
+        name = str(item or "").strip()
+        if not name:
+            continue
+        key = name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(name)
+    return normalized
+
+
+def load_device_category_catalog() -> list[str]:
+    payload = _load_app_setting_json("device_category_catalog", [], None)
+    return _normalize_device_category_catalog(payload)
+
+
+def save_device_category_catalog(categories: list[str]) -> None:
+    _save_app_setting_json("device_category_catalog", _normalize_device_category_catalog(categories))
+
+
+def ensure_device_category_in_catalog(category_name: str) -> bool:
+    name = str(category_name or "").strip()
+    if not name:
+        return False
+    categories = load_device_category_catalog()
+    if any(str(item).strip().lower() == name.lower() for item in categories):
+        return False
+    categories.append(name)
+    save_device_category_catalog(categories)
+    return True
+
+
+def remove_device_category_from_catalog(category_name: str) -> bool:
+    name = str(category_name or "").strip()
+    if not name:
+        return False
+    categories = load_device_category_catalog()
+    filtered = [item for item in categories if str(item).strip().lower() != name.lower()]
+    if len(filtered) == len(categories):
+        return False
+    save_device_category_catalog(filtered)
+    return True
+
+
+def all_known_device_categories(devices: list[dict[str, Any]]) -> list[str]:
+    combined = load_device_category_catalog() + all_categories(devices)
+    return sorted(_normalize_device_category_catalog(combined))
+
+
+def remove_device_category_from_user_rights(category_name: str) -> int:
+    name = str(category_name or "").strip()
+    if not name:
+        return 0
+    users = load_users()
+    touched = 0
+    for user in users:
+        user_changed = False
+
+        allowed = user.get("allowed_categories")
+        if isinstance(allowed, list):
+            filtered_allowed = [item for item in allowed if str(item or "").strip().lower() != name.lower()]
+            if len(filtered_allowed) != len(allowed):
+                user["allowed_categories"] = filtered_allowed
+                user_changed = True
+
+        category_panel_access = user.get("category_panel_access")
+        if isinstance(category_panel_access, dict):
+            raw_map = category_panel_access.get("device_category_permissions")
+            if isinstance(raw_map, dict):
+                filtered_map = {
+                    str(key): value
+                    for key, value in raw_map.items()
+                    if str(key or "").strip().lower() != name.lower()
+                }
+                if len(filtered_map) != len(raw_map):
+                    updated_access = dict(category_panel_access)
+                    updated_access["device_category_permissions"] = filtered_map
+                    user["category_panel_access"] = updated_access
+                    user_changed = True
+
+        if user_changed:
+            touched += 1
+
+    if touched:
+        save_users(users)
+    return touched
 
 
 def user_allowed_categories(username: str, auth_mode: str) -> list[str] | None:

@@ -504,6 +504,46 @@ def _load_helpdesk_interfaces_for_device(device: dict[str, Any], creds: dict[str
     }
 
 
+def _is_errdisable_status(value: Any) -> bool:
+    text = str(value or "").strip().lower()
+    compact = re.sub(r"[\s\-_]+", "", text)
+    return compact == "errdisable"
+
+
+def _parse_vlan_ids_from_show_vlan_brief(output: str) -> set[int]:
+    vlan_ids: set[int] = set()
+    for raw_line in str(output or "").splitlines():
+        line = str(raw_line or "").strip()
+        if not line:
+            continue
+        match = re.match(r"^(\d+)\s+", line)
+        if not match:
+            continue
+        try:
+            vlan_id = int(match.group(1))
+        except Exception:
+            continue
+        if 1 <= vlan_id <= 4094:
+            vlan_ids.add(vlan_id)
+    return vlan_ids
+
+
+def _load_vlan_ids_for_device(device: dict[str, Any], creds: dict[str, Any]) -> tuple[str, set[int], str]:
+    state, output = run_ssh_command(
+        host=str(device.get("host", "")),
+        port=int(device.get("port", 22)),
+        username=str(creds.get("username", "")),
+        password=str(creds.get("password", "")),
+        command="show vlan brief",
+        timeout=int(creds.get("timeout", 8) or 8),
+        command_mode="show",
+        enable_password=str(creds.get("enable_password", "")),
+    )
+    if state != "PASS":
+        return state, set(), str(output or "")
+    return state, _parse_vlan_ids_from_show_vlan_brief(str(output or "")), str(output or "")
+
+
 def helpdesk_interfaces_api() -> Any:
     if "creds" not in session:
         return jsonify({"ok": False, "error": "Please login first."}), 401
@@ -511,10 +551,12 @@ def helpdesk_interfaces_api() -> Any:
     current_username = str(session.get("creds", {}).get("username", "")).strip()
     auth_mode = str(session.get("auth_mode", "local"))
     role = current_user_role()
-    if not is_helpdesk_action_user(role):
+    payload = request.get_json(silent=True) or {}
+    action = str(payload.get("action", "show")).strip().lower() or "show"
+    if action in {"set_description", "set_vlan", "shut", "no_shut"} and not is_helpdesk_action_user(role):
         write_audit_log_safe(
             "helpdesk_interface_denied",
-            details={"reason": "role_not_allowed", "role": role},
+            details={"reason": "role_not_allowed", "role": role, "action": action},
             requester=current_username,
         )
         return jsonify({"ok": False, "error": "This endpoint is available for Helpdesk Action roles only."}), 403
@@ -526,8 +568,6 @@ def helpdesk_interfaces_api() -> Any:
         )
         return jsonify({"ok": False, "error": "You do not have access to the Devices panel."}), 403
 
-    payload = request.get_json(silent=True) or {}
-    action = str(payload.get("action", "show")).strip().lower() or "show"
     selected_names = payload.get("selected_devices", [])
     if not isinstance(selected_names, list):
         selected_names = []
@@ -593,25 +633,76 @@ def helpdesk_interfaces_api() -> Any:
         return jsonify({"ok": False, "error": "Set device SSH credentials first from settings."}), 400
 
     selected_interfaces_by_device, descriptions_by_device, vlans_by_device = _collect_helpdesk_targets(payload)
+    if action == "remove_errdisable":
+        selected_count = sum(len(items) for items in selected_interfaces_by_device.values())
+        if selected_count <= 0:
+            write_audit_log_safe(
+                "helpdesk_interface_denied",
+                details={"reason": "remove_errdisable_requires_selection", "action": action},
+                requester=current_username,
+            )
+            return jsonify({"ok": False, "error": "Select at least one interface row in Err-disable status."}), 400
+
+        non_errdisable_selected: list[dict[str, Any]] = []
+        for device in selected_devices:
+            device_name = str(device.get("name", "")).strip()
+            selected_for_device = selected_interfaces_by_device.get(device_name, [])
+            if not selected_for_device:
+                continue
+            live_table = _load_helpdesk_interfaces_for_device(device, creds)
+            interfaces_live = live_table.get("interfaces", [])
+            errdisable_set = {
+                str(row.get("interface", "")).strip()
+                for row in (interfaces_live if isinstance(interfaces_live, list) else [])
+                if _is_errdisable_status(row.get("status", ""))
+            }
+            blocked = [iface for iface in selected_for_device if iface not in errdisable_set]
+            if blocked:
+                non_errdisable_selected.append({"device": device_name, "interfaces": blocked})
+
+        if non_errdisable_selected:
+            write_audit_log_safe(
+                "helpdesk_interface_denied",
+                details={
+                    "reason": "remove_errdisable_requires_errdisable_status",
+                    "action": action,
+                    "invalid_interfaces": non_errdisable_selected,
+                },
+                requester=current_username,
+            )
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "error": "Remove Err-disable is allowed only for interfaces currently in Err-disable status.",
+                    }
+                ),
+                400,
+            )
+
     action_results: list[dict[str, Any]] = []
 
-    if action in {"remove_errdisable", "set_description", "set_vlan", "shut", "no_shut"}:
-        if action in {"shut", "no_shut", "set_vlan"} and not is_privileged_role(role):
-            write_action_log(
-                current_username,
-                role,
-                action,
-                "",
-                "",
-                "denied",
-                {"reason": "privileged_role_required"},
-            )
+    if action in {"remove_errdisable", "set_description", "set_vlan", "shut", "no_shut", "show_vlan_brief"}:
+        role_normalized = normalize_role(str(role or ""))
+        if action in {"shut", "no_shut", "set_vlan"} and role_normalized not in {"senior", "sysadmin", "junior"}:
+            try:
+                write_action_log(
+                    current_username,
+                    role,
+                    action,
+                    "",
+                    "",
+                    "denied",
+                    {"reason": "privileged_role_required"},
+                )
+            except Exception:
+                app.logger.exception("Failed to write helpdesk denied action log for action '%s'.", action)
             write_audit_log_safe(
                 "helpdesk_interface_denied",
                 details={"reason": "privileged_role_required_for_toggle", "action": action},
                 requester=current_username,
             )
-            return jsonify({"ok": False, "error": "Only Senior/SysAdmin users can run this HelpDesk Action."}), 403
+            return jsonify({"ok": False, "error": "Only Senior/Junior/SysAdmin users can run this HelpDesk Action."}), 403
         for device in selected_devices:
             device_name = str(device.get("name", "")).strip()
             interfaces = selected_interfaces_by_device.get(device_name, [])
@@ -659,22 +750,40 @@ def helpdesk_interfaces_api() -> Any:
                 vlan_map = vlans_by_device.get(device_name, {})
                 if not vlan_map:
                     continue
-                lines = ["configure terminal"]
-                for interface_name, vlan_id in vlan_map.items():
-                    lines.append(f"interface {interface_name}")
-                    lines.append("switchport mode access")
-                    lines.append(f"switchport access vlan {int(vlan_id)}")
-                lines.append("end")
-                state, output = run_ssh_command(
-                    host=str(device.get("host", "")),
-                    port=int(device.get("port", 22)),
-                    username=str(creds.get("username", "")),
-                    password=str(creds.get("password", "")),
-                    command="\n".join(lines),
-                    timeout=int(creds.get("timeout", 8) or 8),
-                    command_mode="config",
-                    enable_password=str(creds.get("enable_password", "")),
-                )
+                vlan_check_state, configured_vlans, vlan_check_output = _load_vlan_ids_for_device(device, creds)
+                requested_vlans = sorted({int(vlan_id) for vlan_id in vlan_map.values()})
+                if vlan_check_state != "PASS" or not configured_vlans:
+                    state = "FAIL"
+                    output = (
+                        "Could not validate configured VLANs on the switch. "
+                        "Run 'show vlan brief' and retry.\n\n"
+                        f"{vlan_check_output}"
+                    )
+                else:
+                    missing_vlans = [vlan_id for vlan_id in requested_vlans if vlan_id not in configured_vlans]
+                    if missing_vlans:
+                        state = "FAIL"
+                        output = (
+                            "Requested VLAN is not configured on the switch. "
+                            f"Missing VLAN(s): {', '.join(str(v) for v in missing_vlans)}."
+                        )
+                    else:
+                        lines = ["configure terminal"]
+                        for interface_name, vlan_id in vlan_map.items():
+                            lines.append(f"interface {interface_name}")
+                            lines.append("switchport mode access")
+                            lines.append(f"switchport access vlan {int(vlan_id)}")
+                        lines.append("end")
+                        state, output = run_ssh_command(
+                            host=str(device.get("host", "")),
+                            port=int(device.get("port", 22)),
+                            username=str(creds.get("username", "")),
+                            password=str(creds.get("password", "")),
+                            command="\n".join(lines),
+                            timeout=int(creds.get("timeout", 8) or 8),
+                            command_mode="config",
+                            enable_password=str(creds.get("enable_password", "")),
+                        )
                 if state == "PASS":
                     save_state, save_output = run_ssh_command(
                         host=str(device.get("host", "")),
@@ -690,6 +799,17 @@ def helpdesk_interfaces_api() -> Any:
                         output = f"{output}\n\n[CONFIG SAVE FAILED]\n{save_output}"
                     else:
                         output = f"{output}\n\n[CONFIG SAVED]\n{save_output}"
+            elif action == "show_vlan_brief":
+                state, output = run_ssh_command(
+                    host=str(device.get("host", "")),
+                    port=int(device.get("port", 22)),
+                    username=str(creds.get("username", "")),
+                    password=str(creds.get("password", "")),
+                    command="show vlan brief",
+                    timeout=int(creds.get("timeout", 8) or 8),
+                    command_mode="show",
+                    enable_password=str(creds.get("enable_password", "")),
+                )
             else:
                 if not interfaces:
                     continue
@@ -722,18 +842,20 @@ def helpdesk_interfaces_api() -> Any:
                         command_mode="config",
                         enable_password=str(creds.get("enable_password", "")),
                     )
-            action_results.append(
-                {
-                    "device": device_name,
-                    "status": state,
-                    "output_preview": str(output or "")[:700],
-                }
-            )
+            action_entry = {
+                "device": device_name,
+                "status": state,
+                "output_preview": str(output or "")[:700],
+            }
+            if action == "show_vlan_brief":
+                action_entry["output"] = str(output or "")[:20000]
+            action_results.append(action_entry)
 
     interface_tables = [_load_helpdesk_interfaces_for_device(device, creds) for device in selected_devices]
     success_count = sum(1 for item in action_results if str(item.get("status", "")).upper() == "PASS")
     action_name = {
         "show": "helpdesk_interfaces_viewed",
+        "show_vlan_brief": "helpdesk_show_vlan_executed",
         "remove_errdisable": "helpdesk_errdisable_recovery_executed",
         "set_description": "helpdesk_interface_description_updated",
         "set_vlan": "helpdesk_interface_vlan_updated",
@@ -769,20 +891,27 @@ def helpdesk_interfaces_api() -> Any:
                 selected_ifaces = list(descriptions_by_device.get(device_name, {}).keys())
             if action == "set_vlan":
                 selected_ifaces = list(vlans_by_device.get(device_name, {}).keys())
-            write_action_log(
-                current_username,
-                role,
-                action,
-                device_name,
-                ",".join(selected_ifaces),
-                "success" if str(result.get("status", "")).upper() == "PASS" else "failed",
-                {
-                    "output_preview": str(result.get("output_preview", "")),
-                    "selected_interfaces": selected_ifaces,
-                    "description_changes": descriptions_by_device.get(device_name, {}),
-                    "vlan_changes": vlans_by_device.get(device_name, {}),
-                },
-            )
+            try:
+                write_action_log(
+                    current_username,
+                    role,
+                    action,
+                    device_name,
+                    ",".join(selected_ifaces),
+                    "success" if str(result.get("status", "")).upper() == "PASS" else "failed",
+                    {
+                        "output_preview": str(result.get("output_preview", "")),
+                        "selected_interfaces": selected_ifaces,
+                        "description_changes": descriptions_by_device.get(device_name, {}),
+                        "vlan_changes": vlans_by_device.get(device_name, {}),
+                    },
+                )
+            except Exception:
+                app.logger.exception(
+                    "Failed to write helpdesk action log for action '%s' on device '%s'.",
+                    action,
+                    device_name,
+                )
 
     if action == "show":
         session["helpdesk_last_show_devices"] = selected_device_names

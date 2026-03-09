@@ -61,4 +61,16 @@ def inject_common_context() -> dict[str, Any]:
         "auth_mode": auth_mode,
         "is_super_admin_session": is_current_session_super_admin(),
         "can_access_devices_panel": can_access_devices,
+        # Defensive defaults so templates remain render-safe during partial
+        # rollouts or legacy context paths.
+        "can_access_monitoring_panel": False,
+        "menu_access": {},
+        "can_write_na_isp_branches": False,
+        "can_write_na_isp_atm": False,
+        "can_write_na_isp_internet": False,
+        "monitored_device_names": [],
+        "monitoring_profiles": {},
+        "monitoring_editable_device_names": [],
+        "monitoring_can_manage": False,
+        "monitoring_servers_only": False,
     }

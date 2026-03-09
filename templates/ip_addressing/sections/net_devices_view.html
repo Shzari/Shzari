@@ -46,9 +46,12 @@
                   <div id="helpdeskModeActions" class="hidden">
                     <div class="left">
                       <button class="btn" type="button" onclick="loadHelpdeskInterfaces()">Show Err-disable</button>
+                      {% if current_user_role in ['senior', 'junior'] %}
+                      <button class="btn" type="button" onclick="runHelpdeskShowVlan()">Show VLAN</button>
+                      {% endif %}
                       <button class="btn" type="button" onclick="runHelpdeskInterfaceAction('remove_errdisable')">Remove Err-disable</button>
                       <button class="btn" type="button" onclick="runHelpdeskInterfaceAction('set_description')">Apply Description</button>
-                      {% if current_user_role in ['senior', 'sysadmin'] %}
+                      {% if current_user_role in ['senior', 'junior', 'sysadmin'] %}
                       <button class="btn" type="button" onclick="runHelpdeskInterfaceAction('set_vlan')">Apply VLAN</button>
                       {% endif %}
                     </div>
