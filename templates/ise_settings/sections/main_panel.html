@@ -1,0 +1,21 @@
+﻿<div class="user-strip">
+    <a class="logout-link" href="{{ url_for('verify_super_admin_route', exit=1) }}">Back to Dashboard</a>
+  </div>
+  <div class="card glass super-settings-shell">
+    <h1>Super Admin Settings</h1>
+    <p>Choose which settings window to open.</p>
+    {% if info %}<div class="info">{{ info }}</div>{% endif %}
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+    <div class="super-settings-grid">
+      <button class="btn run" type="button" onclick="openUsersModal()">Users</button>
+      <button class="btn" type="button" onclick="openIseModal()">ISE</button>
+      <button class="btn" type="button" onclick="openLdapModal()">LDAP</button>
+      <button class="btn" type="button" onclick="openNtpModal()">NTP</button>
+      <button class="btn" type="button" onclick="openSqlModal()">SQL Log</button>
+      <button class="btn" type="button" onclick="openSessionModal()">Settings</button>
+      <button class="btn" type="button" onclick="openExternalLoggingModal()">External Logging</button>
+      <button class="btn" type="button" onclick="openMonitoringModal()">Monitoring</button>
+    </div>
+  </div>
+

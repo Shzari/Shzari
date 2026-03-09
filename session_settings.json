@@ -1,0 +1,11 @@
+{
+  "idle_timeout_minutes": 15,
+  "http_enabled": true,
+  "https_enabled": true,
+  "http_port": 80,
+  "https_port": 443,
+  "web_acl_enabled": true,
+  "web_acl_entries": [
+    "127.0.0.1"
+  ]
+}

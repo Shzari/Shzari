@@ -1,0 +1,48 @@
+<div id="naIspAtmsPanel" class="subpanel hidden">
+  <div class="subhead"><span>Network - ISP - ATM-s</span></div>
+  <div class="toolbar">
+    <div class="left small">Input data manually</div>
+    {% if can_write_na_isp_atm %}
+    <div class="right"><button class="btn pri" type="button" onclick="addIspAtmRow()">Add</button><button class="btn" type="button" onclick="editIspAtmRow()">Edit</button><button class="btn" type="button" onclick="saveIspAtmRowsNow()">Save</button><button class="btn" type="button" onclick="deleteIspAtmRow()">Delete</button></div>
+    {% endif %}
+  </div>
+  <div class="table-wrap na-isp-wrap">
+    <table class="na-isp-table">
+      <colgroup>
+        <col style="width:3%">
+        <col style="width:3%">
+        <col style="width:8%">
+        <col style="width:9%">
+        <col style="width:9%">
+        <col style="width:8%">
+        <col style="width:8%">
+        <col style="width:5%">
+        <col style="width:5%">
+        <col style="width:9%">
+        <col style="width:8%">
+        <col style="width:8%">
+        <col style="width:5%">
+        <col style="width:5%">
+      </colgroup>
+      <thead>
+        <tr>
+          <th>Select</th>
+          <th>Nr.r</th>
+          <th>ATM</th>
+          <th>Location</th>
+          <th>Primary</th>
+          <th>P-WAN</th>
+          <th>P-Gateway</th>
+          <th>P-CIDR</th>
+          <th>P-Bandwith</th>
+          <th>Secondary</th>
+          <th>S-WAN</th>
+          <th>S-Gateway</th>
+          <th>S-CIDR</th>
+          <th>S-Bandwith</th>
+        </tr>
+      </thead>
+      <tbody id="naIspAtmsBody"></tbody>
+    </table>
+  </div>
+</div>

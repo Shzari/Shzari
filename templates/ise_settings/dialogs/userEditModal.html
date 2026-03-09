@@ -1,0 +1,377 @@
+<dialog id="userEditModal" class="device-modal user-edit-modal">
+    <form method="post" action="{{ url_for('manage_users') }}">
+      <h3>Edit User</h3>
+      <label>Select User</label>
+      <select id="userEditUsername" name="selected_username" onchange="syncUserRoleSelection(); syncUserAuthSourceLabel(); syncUserPermissionSelection(); syncUserEditActionsByAuth();" required>
+        <option value="" selected>-- Select User --</option>
+        {% for user in users %}
+          <option value="{{ user.username }}">{{ user.username }}</option>
+        {% endfor %}
+      </select>
+      <div class="info">Auth Source (locked): <b id="userAuthSourceValue">LDAP</b></div>
+
+      <label>Action</label>
+      <select id="userEditAction" name="action" onchange="updateEditActionLabel()" required>
+        <option value="" selected disabled>-- Select Action --</option>
+        <option value="reset_password">Reset Local Password</option>
+        <option value="force_change">Force Local Password Change</option>
+        <option value="delete">Delete User</option>
+        <option value="set_role">Set Role</option>
+        <option value="set_user_rights">User Rights</option>
+      </select>
+
+      <div id="userRoleSection" class="submenu-form">
+        <label>User Role</label>
+        <select name="role_value" id="userRoleValue">
+          <option value="helpdesk">Helpdesk</option>
+          <option value="junior" selected>Junior</option>
+          <option value="manager">Manager (Read-Only)</option>
+          <option value="sysadmin">SysAdmin</option>
+          <option value="senior">Senior</option>
+          <option value="audit">Audit</option>
+        </select>
+      </div>
+
+      <label>User Rights Tree (Collapse + Toggle: No Access / Read / R/W)</label>
+      <div class="permission-submenu-wrap">
+        <details class="permission-submenu-group">
+          <summary>IP Addressing</summary>
+          <div class="permission-grid">
+            <div class="permission-row">
+              <span>IP Addressing Panel</span>
+              <select name="panel_permission__ip_addressing" class="permission-select panel-permission-select permission-hidden-select" data-panel-permission="ip_addressing">
+                <option value="none">No Access</option>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="both" selected>Read + Write</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="panel_permission__ip_addressing" onclick="togglePermissionMode(this)">R/W</button>
+            </div>
+            <div class="permission-row permission-row-sub">
+              <span>Branches</span>
+              <select name="menu_permission__ip_branches" class="permission-select menu-permission-select permission-hidden-select" data-menu-permission="ip_branches">
+                <option value="none">No Access</option>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="both" selected>Read + Write</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="menu_permission__ip_branches" onclick="togglePermissionMode(this)">R/W</button>
+            </div>
+            <div class="permission-row permission-row-sub">
+              <span>HQ</span>
+              <select name="menu_permission__ip_hq" class="permission-select menu-permission-select permission-hidden-select" data-menu-permission="ip_hq">
+                <option value="none">No Access</option>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="both" selected>Read + Write</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="menu_permission__ip_hq" onclick="togglePermissionMode(this)">R/W</button>
+            </div>
+          </div>
+        </details>
+        <details class="permission-submenu-group">
+          <summary>Network Addresses</summary>
+          <div class="permission-grid">
+            <div class="permission-row">
+              <span>Network Addresses Panel</span>
+              <select name="panel_permission__network_addressing" class="permission-select panel-permission-select permission-hidden-select" data-panel-permission="network_addressing">
+                <option value="none">No Access</option>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="both" selected>Read + Write</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="panel_permission__network_addressing" onclick="togglePermissionMode(this)">R/W</button>
+            </div>
+            <div class="permission-row permission-row-sub">
+              <span>System</span>
+              <select name="menu_permission__na_system" class="permission-select menu-permission-select permission-hidden-select" data-menu-permission="na_system">
+                <option value="none">No Access</option>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="both" selected>Read + Write</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="menu_permission__na_system" onclick="togglePermissionMode(this)">R/W</button>
+            </div>
+            <div class="permission-row permission-row-sub">
+              <span>System / HO</span>
+              <select name="menu_permission__na_system_ho" class="permission-select menu-permission-select permission-hidden-select" data-menu-permission="na_system_ho">
+                <option value="none">No Access</option>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="both" selected>Read + Write</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="menu_permission__na_system_ho" onclick="togglePermissionMode(this)">R/W</button>
+            </div>
+            <div class="permission-row permission-row-sub">
+              <span>System / HO / VM Servers</span>
+              <select name="menu_permission__na_system_ho_vm" class="permission-select menu-permission-select permission-hidden-select" data-menu-permission="na_system_ho_vm">
+                <option value="none">No Access</option>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="both" selected>Read + Write</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="menu_permission__na_system_ho_vm" onclick="togglePermissionMode(this)">R/W</button>
+            </div>
+            <div class="permission-row permission-row-sub">
+              <span>System / HO / Physical Servers</span>
+              <select name="menu_permission__na_system_ho_physical" class="permission-select menu-permission-select permission-hidden-select" data-menu-permission="na_system_ho_physical">
+                <option value="none">No Access</option>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="both" selected>Read + Write</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="menu_permission__na_system_ho_physical" onclick="togglePermissionMode(this)">R/W</button>
+            </div>
+            <div class="permission-row permission-row-sub">
+              <span>System / HO / Storage</span>
+              <select name="menu_permission__na_system_ho_storage" class="permission-select menu-permission-select permission-hidden-select" data-menu-permission="na_system_ho_storage">
+                <option value="none">No Access</option>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="both" selected>Read + Write</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="menu_permission__na_system_ho_storage" onclick="togglePermissionMode(this)">R/W</button>
+            </div>
+            <div class="permission-row permission-row-sub">
+              <span>System / DRS</span>
+              <select name="menu_permission__na_system_drs" class="permission-select menu-permission-select permission-hidden-select" data-menu-permission="na_system_drs">
+                <option value="none">No Access</option>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="both" selected>Read + Write</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="menu_permission__na_system_drs" onclick="togglePermissionMode(this)">R/W</button>
+            </div>
+            <div class="permission-row permission-row-sub">
+              <span>System / DRS / VM Servers</span>
+              <select name="menu_permission__na_system_drs_vm" class="permission-select menu-permission-select permission-hidden-select" data-menu-permission="na_system_drs_vm">
+                <option value="none">No Access</option>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="both" selected>Read + Write</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="menu_permission__na_system_drs_vm" onclick="togglePermissionMode(this)">R/W</button>
+            </div>
+            <div class="permission-row permission-row-sub">
+              <span>System / DRS / Physical Servers</span>
+              <select name="menu_permission__na_system_drs_physical" class="permission-select menu-permission-select permission-hidden-select" data-menu-permission="na_system_drs_physical">
+                <option value="none">No Access</option>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="both" selected>Read + Write</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="menu_permission__na_system_drs_physical" onclick="togglePermissionMode(this)">R/W</button>
+            </div>
+            <div class="permission-row permission-row-sub">
+              <span>System / DRS / Storage</span>
+              <select name="menu_permission__na_system_drs_storage" class="permission-select menu-permission-select permission-hidden-select" data-menu-permission="na_system_drs_storage">
+                <option value="none">No Access</option>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="both" selected>Read + Write</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="menu_permission__na_system_drs_storage" onclick="togglePermissionMode(this)">R/W</button>
+            </div>
+            <div class="permission-row permission-row-sub">
+              <span>Network</span>
+              <select name="menu_permission__na_network" class="permission-select menu-permission-select permission-hidden-select" data-menu-permission="na_network">
+                <option value="none">No Access</option>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="both" selected>Read + Write</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="menu_permission__na_network" onclick="togglePermissionMode(this)">R/W</button>
+            </div>
+            <div class="permission-row permission-row-sub">
+              <span>Network / Network Devices</span>
+              <select name="menu_permission__na_network_devices" class="permission-select menu-permission-select permission-hidden-select" data-menu-permission="na_network_devices">
+                <option value="none">No Access</option>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="both" selected>Read + Write</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="menu_permission__na_network_devices" onclick="togglePermissionMode(this)">R/W</button>
+            </div>
+            <div class="permission-row permission-row-sub">
+              <span>Network / ISP</span>
+              <select name="menu_permission__na_isp" class="permission-select menu-permission-select permission-hidden-select" data-menu-permission="na_isp">
+                <option value="none">No Access</option>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="both" selected>Read + Write</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="menu_permission__na_isp" onclick="togglePermissionMode(this)">R/W</button>
+            </div>
+            <div class="permission-row permission-row-sub">
+              <span>Network / ISP / Branches</span>
+              <select name="menu_permission__na_isp_branches" class="permission-select menu-permission-select permission-hidden-select" data-menu-permission="na_isp_branches">
+                <option value="none">No Access</option>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="both" selected>Read + Write</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="menu_permission__na_isp_branches" onclick="togglePermissionMode(this)">R/W</button>
+            </div>
+            <div class="permission-row permission-row-sub">
+              <span>Network / ISP / ATM</span>
+              <select name="menu_permission__na_isp_atm" class="permission-select menu-permission-select permission-hidden-select" data-menu-permission="na_isp_atm">
+                <option value="none">No Access</option>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="both" selected>Read + Write</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="menu_permission__na_isp_atm" onclick="togglePermissionMode(this)">R/W</button>
+            </div>
+            <div class="permission-row permission-row-sub">
+              <span>Network / ISP / Internet</span>
+              <select name="menu_permission__na_isp_internet" class="permission-select menu-permission-select permission-hidden-select" data-menu-permission="na_isp_internet">
+                <option value="none">No Access</option>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="both" selected>Read + Write</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="menu_permission__na_isp_internet" onclick="togglePermissionMode(this)">R/W</button>
+            </div>
+            <div class="permission-row permission-row-sub">
+              <span>Network / DMVPN</span>
+              <select name="menu_permission__na_dmvpn" class="permission-select menu-permission-select permission-hidden-select" data-menu-permission="na_dmvpn">
+                <option value="none">No Access</option>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="both" selected>Read + Write</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="menu_permission__na_dmvpn" onclick="togglePermissionMode(this)">R/W</button>
+            </div>
+            <div class="permission-row permission-row-sub">
+              <span>Network / DMVPN / Branches</span>
+              <select name="menu_permission__na_dmvpn_branches" class="permission-select menu-permission-select permission-hidden-select" data-menu-permission="na_dmvpn_branches">
+                <option value="none">No Access</option>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="both" selected>Read + Write</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="menu_permission__na_dmvpn_branches" onclick="togglePermissionMode(this)">R/W</button>
+            </div>
+            <div class="permission-row permission-row-sub">
+              <span>Network / DMVPN / ATM</span>
+              <select name="menu_permission__na_dmvpn_atms" class="permission-select menu-permission-select permission-hidden-select" data-menu-permission="na_dmvpn_atms">
+                <option value="none">No Access</option>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="both" selected>Read + Write</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="menu_permission__na_dmvpn_atms" onclick="togglePermissionMode(this)">R/W</button>
+            </div>
+            <div class="permission-row permission-row-sub">
+              <span>Network / SIM Cards</span>
+              <select name="menu_permission__na_sim_cards" class="permission-select menu-permission-select permission-hidden-select" data-menu-permission="na_sim_cards">
+                <option value="none">No Access</option>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="both" selected>Read + Write</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="menu_permission__na_sim_cards" onclick="togglePermissionMode(this)">R/W</button>
+            </div>
+            <div class="permission-row permission-row-sub">
+              <span>Network / Site to Site</span>
+              <select name="menu_permission__na_site_to_site" class="permission-select menu-permission-select permission-hidden-select" data-menu-permission="na_site_to_site">
+                <option value="none">No Access</option>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="both" selected>Read + Write</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="menu_permission__na_site_to_site" onclick="togglePermissionMode(this)">R/W</button>
+            </div>
+            <div class="permission-row permission-row-sub">
+              <span>Network / NAT</span>
+              <select name="menu_permission__na_nat" class="permission-select menu-permission-select permission-hidden-select" data-menu-permission="na_nat">
+                <option value="none">No Access</option>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="both" selected>Read + Write</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="menu_permission__na_nat" onclick="togglePermissionMode(this)">R/W</button>
+            </div>
+          </div>
+        </details>
+        <details class="permission-submenu-group">
+          <summary>Network Devices</summary>
+          <div class="permission-grid">
+            <div class="permission-row">
+              <span>Net Devices Panel</span>
+              <select name="panel_permission__net_devices" class="permission-select panel-permission-select permission-hidden-select" data-panel-permission="net_devices" data-permission-binary="1">
+                <option value="none">No Access</option>
+                <option value="both" selected>Access</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="panel_permission__net_devices" onclick="togglePermissionMode(this)">Access</button>
+            </div>
+            <div class="permission-row permission-row-sub">
+              <span>Net Devices / All Devices</span>
+              <select name="menu_permission__nd_all_devices" class="permission-select menu-permission-select permission-hidden-select" data-menu-permission="nd_all_devices" data-permission-binary="1">
+                <option value="none">No Access</option>
+                <option value="both" selected>Access</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="menu_permission__nd_all_devices" onclick="togglePermissionMode(this)">Access</button>
+            </div>
+            <div class="permission-row permission-row-sub">
+              <span>Net Devices / Categories</span>
+              <select name="menu_permission__nd_categories" class="permission-select menu-permission-select permission-hidden-select" data-menu-permission="nd_categories" data-permission-binary="1">
+                <option value="none">No Access</option>
+                <option value="both" selected>Access</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="menu_permission__nd_categories" onclick="togglePermissionMode(this)">Access</button>
+            </div>
+            {% set ns = namespace(has_visible_categories=false) %}
+            {% for category in available_categories %}
+            {% if category|lower != 'windows servers' %}
+            {% set ns.has_visible_categories = true %}
+            {% set category_key = "cat_" ~ loop.index0 %}
+            {% set category_id = "deviceCategoryPermission_" ~ loop.index0 %}
+            <div class="permission-row permission-row-sub">
+              <span>Net Devices / Categories / {{ category }}</span>
+              <input type="hidden" name="device_category_key__{{ category_key }}" value="{{ category }}">
+              <select
+                id="{{ category_id }}"
+                name="device_category_permission__{{ category_key }}"
+                class="permission-select device-category-permission-select permission-hidden-select"
+                data-device-category="{{ category }}"
+                data-permission-binary="1"
+              >
+                <option value="none">No Access</option>
+                <option value="both" selected>Access</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select-id="{{ category_id }}" onclick="togglePermissionMode(this)">Access</button>
+            </div>
+            {% endif %}
+            {% endfor %}
+            {% if not ns.has_visible_categories %}
+            <div class="permission-row permission-row-sub">
+              <span>Net Devices / Categories / (No categories found)</span>
+              <button type="button" class="btn ghost permission-mode-btn" disabled>No Access</button>
+            </div>
+            {% endif %}
+          </div>
+        </details>
+        <details class="permission-submenu-group">
+          <summary>Monitoring</summary>
+          <div class="permission-grid">
+            <div class="permission-row">
+              <span>Monitoring Panel</span>
+              <select name="panel_permission__monitoring" class="permission-select panel-permission-select permission-hidden-select" data-panel-permission="monitoring">
+                <option value="none">No Access</option>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+                <option value="both" selected>Read + Write</option>
+              </select>
+              <button type="button" class="btn ghost permission-mode-btn" data-select="panel_permission__monitoring" onclick="togglePermissionMode(this)">R/W</button>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <div class="action-row">
+        <button class="btn" type="submit">Apply</button>
+        <button class="btn ghost" type="button" onclick="closeUserEditModal()">Cancel</button>
+      </div>
+    </form>
+  </dialog>

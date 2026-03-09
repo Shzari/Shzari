@@ -1,0 +1,28 @@
+﻿<dialog id="externalLoggingModal" class="device-modal">
+    <form method="post" action="{{ url_for('external_logging_settings_page') }}">
+      <h3>External Logging</h3>
+      <p>Prepare external log server settings for future use.</p>
+      <label><input type="checkbox" name="enabled" {% if external_logging.enabled %}checked{% endif %}> Enable external logging profile</label>
+
+      <label>Server (IP or Hostname)</label>
+      <input name="server" type="text" value="{{ external_logging.server }}" placeholder="e.g., 10.20.30.40">
+      <label>Port</label>
+      <input name="port" type="number" min="1" max="65535" value="{{ external_logging.port }}">
+      <label>Protocol</label>
+      <select name="protocol">
+        <option value="udp" {% if external_logging.protocol == 'udp' %}selected{% endif %}>UDP</option>
+        <option value="tcp" {% if external_logging.protocol == 'tcp' %}selected{% endif %}>TCP</option>
+        <option value="tls" {% if external_logging.protocol == 'tls' %}selected{% endif %}>TLS</option>
+      </select>
+      <label>Source/App Name</label>
+      <input name="source_name" type="text" value="{{ external_logging.source_name }}" placeholder="ndmc-app">
+      <label>Notes</label>
+      <textarea name="notes" rows="3" placeholder="Optional notes for future logging integration">{{ external_logging.notes }}</textarea>
+
+      <div class="action-row">
+        <button class="btn run" type="submit">Save External Logging</button>
+        <button class="btn ghost" type="button" onclick="closeExternalLoggingModal()">Close</button>
+      </div>
+    </form>
+  </dialog>
+

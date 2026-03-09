@@ -1,0 +1,126 @@
+﻿<dialog id="usersManageModal" class="device-modal">
+    <div>
+      <h3>Local User Management (Super Admin Only)</h3>
+      <p>Create and manage the allowed login list. Only users added here can log in. LDAP mode checks passwords in AD.</p>
+
+      <form method="post" action="{{ url_for('manage_users') }}" class="submenu-form">
+        <input type="hidden" name="action" value="create">
+        <label>New Username</label>
+        <input name="new_username" type="text" placeholder="e.g., noc-operator-1">
+        <label>Authentication</label>
+        <select name="create_auth_source">
+          <option value="ldap" selected>LDAP</option>
+          <option value="local">Local</option>
+        </select>
+        <label>Role</label>
+        <select name="create_role">
+          <option value="helpdesk">Helpdesk</option>
+          <option value="junior" selected>Junior</option>
+          <option value="manager">Manager (Read-Only)</option>
+          <option value="sysadmin">SysAdmin</option>
+          <option value="senior">Senior</option>
+          <option value="audit">Audit</option>
+        </select>
+        <button class="btn" type="submit">Add User</button>
+      </form>
+
+      <div class="action-row created-users-row">
+        <h4>Created Users</h4>
+        <button class="btn edit-user-btn" type="button" onclick="openUserEditModal()">Edit User</button>
+      </div>
+      <div class="device-list">
+        {% if users %}
+          {% for user in users %}
+            <div class="device-item">
+              {% set ns = namespace(privs=[], labels=[]) %}
+              {% if user.account_privileges is iterable and user.account_privileges is not string %}
+                {% for raw_priv in user.account_privileges %}
+                  {% set p = (raw_priv|string)|trim|lower %}
+                  {% if p == 'devices' %}
+                    {% set p = 'net_devices' %}
+                  {% endif %}
+                  {% if p in ['ip_addressing', 'network_addressing', 'net_devices', 'monitoring'] and p not in ns.privs %}
+                    {% set ns.privs = ns.privs + [p] %}
+                  {% endif %}
+                {% endfor %}
+              {% endif %}
+
+              {% set menu_access = {} %}
+              {% if user.category_panel_access is mapping %}
+                {% if user.category_panel_access.menu_access is defined and user.category_panel_access.menu_access is mapping %}
+                  {% set menu_access = user.category_panel_access.menu_access %}
+                {% else %}
+                  {% set menu_access = user.category_panel_access %}
+                {% endif %}
+              {% endif %}
+
+              {% if 'ip_addressing' in ns.privs %}
+                {% set ip_labels = [] %}
+                {% if menu_access.get('ip_branches', True) %}{% set ip_labels = ip_labels + ['Branches'] %}{% endif %}
+                {% if menu_access.get('ip_hq', True) %}{% set ip_labels = ip_labels + ['HQ'] %}{% endif %}
+                {% if ip_labels|length == 2 %}
+                  {% set ns.labels = ns.labels + ['IP Addressing'] %}
+                {% else %}
+                  {% set ns.labels = ns.labels + ['IP Addressing (' ~ (ip_labels|join(', ') if ip_labels else 'none') ~ ')'] %}
+                {% endif %}
+              {% endif %}
+
+              {% if 'network_addressing' in ns.privs %}
+                {% set na_labels = [] %}
+                {% if menu_access.get('na_system', True) and (menu_access.get('na_system_ho', True) or menu_access.get('na_system_drs', True) or menu_access.get('na_system_ho_vm', True) or menu_access.get('na_system_ho_physical', True) or menu_access.get('na_system_ho_storage', True) or menu_access.get('na_system_drs_vm', True) or menu_access.get('na_system_drs_physical', True) or menu_access.get('na_system_drs_storage', True)) %}
+                  {% set na_labels = na_labels + ['System'] %}
+                {% endif %}
+                {% if menu_access.get('na_network', True) and menu_access.get('na_network_devices', True) %}{% set na_labels = na_labels + ['Network Devices'] %}{% endif %}
+                {% if menu_access.get('na_network', True) and menu_access.get('na_isp', True) and (menu_access.get('na_isp_branches', True) or menu_access.get('na_isp_atm', True) or menu_access.get('na_isp_internet', True)) %}{% set na_labels = na_labels + ['ISP'] %}{% endif %}
+                {% if menu_access.get('na_network', True) and menu_access.get('na_dmvpn', True) and (menu_access.get('na_dmvpn_branches', True) or menu_access.get('na_dmvpn_atms', True)) %}{% set na_labels = na_labels + ['DMVPN'] %}{% endif %}
+                {% if menu_access.get('na_network', True) and menu_access.get('na_sim_cards', True) %}{% set na_labels = na_labels + ['SIM Cards'] %}{% endif %}
+                {% if menu_access.get('na_network', True) and menu_access.get('na_site_to_site', True) %}{% set na_labels = na_labels + ['Site to Site'] %}{% endif %}
+                {% if menu_access.get('na_network', True) and menu_access.get('na_nat', True) %}{% set na_labels = na_labels + ['NAT'] %}{% endif %}
+                {% if na_labels|length >= 7 %}
+                  {% set ns.labels = ns.labels + ['Network Addressing'] %}
+                {% else %}
+                  {% set ns.labels = ns.labels + ['Network Addressing (' ~ (na_labels|join(', ') if na_labels else 'none') ~ ')'] %}
+                {% endif %}
+              {% endif %}
+
+              {% if 'net_devices' in ns.privs %}
+                {% set nd_labels = [] %}
+                {% if menu_access.get('nd_all_devices', True) %}{% set nd_labels = nd_labels + ['All Devices'] %}{% endif %}
+                {% if menu_access.get('nd_categories', True) %}{% set nd_labels = nd_labels + ['Categories'] %}{% endif %}
+                {% if user.allowed_categories is iterable and user.allowed_categories is not string and user.allowed_categories %}
+                  {% set ns.labels = ns.labels + ['Net Devices (' ~ (user.allowed_categories|join(', ')) ~ ')'] %}
+                {% elif nd_labels|length == 2 %}
+                  {% set ns.labels = ns.labels + ['Net Devices'] %}
+                {% else %}
+                  {% set ns.labels = ns.labels + ['Net Devices (' ~ (nd_labels|join(', ') if nd_labels else 'none') ~ ')'] %}
+                {% endif %}
+              {% endif %}
+
+              {% if 'monitoring' in ns.privs %}
+                {% set ns.labels = ns.labels + ['Monitoring'] %}
+              {% endif %}
+
+              <span>{{ user.username }}</span>
+              <small>
+                Role: {{ user.role|upper }}{% if (user.role|string)|lower == 'manager' %} (READ-ONLY){% endif %} |
+                Auth: {{ (user.auth_source or 'ldap')|upper }} |
+                Access:
+                {% if ns.labels %}
+                  {{ ns.labels|join(' | ') }}
+                {% else %}
+                  none
+                {% endif %}
+              </small>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="device-item"><span>No users created yet.</span></div>
+        {% endif %}
+      </div>
+
+      <div class="action-row">
+        <button class="btn ghost" type="button" onclick="closeUsersModal()">Close</button>
+      </div>
+    </div>
+  </dialog>
+

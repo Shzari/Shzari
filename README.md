@@ -1,30 +1,34 @@
 # Network Web SSH Automation App
 
-A web-based network engineering app to authenticate users, select routers/switches, run troubleshooting commands over SSH, and manage Cisco ISE auth settings with super-admin protection.
+A web-based network engineering app to authenticate users, select routers/switches, run troubleshooting commands over SSH, and manage LDAP auth settings with super-admin protection.
 
 ## Key Features
 - Login supports:
-  - Local login
-  - Cisco ISE (RADIUS) login
+  - AD/LDAP password authentication for provisioned app users
   - remembers the last logged-in username in browser storage (username only; never password), even after logout
 - Super Admin security workflow:
   - First run requires creating a super admin account
   - Settings page requires super admin verification
-- Super Admin Settings page provides popup windows for Users, ISE, NTP, and Idle Logout
+- Super Admin Settings page provides popup windows for Users, ISE, LDAP, NTP, and Idle Logout
 - ISE settings page supports:
   - Primary ISE server/port/shared-secret
   - Secondary ISE server/port/shared-secret
   - Timeout and NAS-IP
+- LDAP settings page supports:
+  - LDAP server/port and SSL/StartTLS mode
+  - user DN template or search-based DN lookup (base DN + filter)
+  - optional bind DN/password for search
+  - timeout control
 - Super Admin local-user controls:
-  - create local users with username only (no initial password)
-  - list all created users with password-set and force-change status
-  - edit popup default action is blank (must choose action), supports reset password, force-change next login, delete user, and User Rights
+  - create app users with username only (password is never stored locally)
+  - list all created users and their role/rights
+  - edit popup default action is blank (must choose action), supports delete user and User Rights
   - User Rights combines category access (all categories / selected categories / no categories) and operation access checkboxes for create category, edit device, move device between categories, delete device, delete category (users without access are prompted for super-admin password)
   - users with blank/reset password are forced to set password at next login
 - NTP workflow:
   - dashboard top row shows centered live numeric clock
   - NTP configuration is available only in Super Admin settings (choose NTP server sync or set manual time)
-  - super admin settings launcher layout: first row Users + ISE, second row NTP + Idle Logout
+  - super admin settings launcher layout: first row Users + ISE, second row LDAP + NTP, third row Idle Logout
 - Idle Logout workflow:
   - super admin can set global idle timeout (minutes) for all users
   - any dashboard inactivity auto-logout is enforced by frontend and backend
@@ -56,7 +60,7 @@ A web-based network engineering app to authenticate users, select routers/switch
   - set ISE login/SSH username + password + enable password used by RUN device connections
   - device credentials are stored per logged-in account (each user must set their own)
 - Data/security storage:
-  - local users, super-admin credential, ISE settings/keys, devices, categories, and per-user device credentials are stored in SQLite (`app_data.db`)
+  - app users (without local password hashes), super-admin credential, LDAP settings, devices, categories, and per-user device credentials are stored in SQLite (`app_data.db`)
   - legacy `users.json` / `super_admin.json` / `ise_settings.json` / `devices_web.json` / `device_credentials.json` are auto-migrated to DB on startup
   - sensitive saved secrets (ISE shared secrets and stored device passwords) are encrypted before writing to disk
 - Command workflow:
@@ -80,12 +84,137 @@ A web-based network engineering app to authenticate users, select routers/switch
 5. Verify Super Admin and configure primary/secondary ISE.
 
 ## Run
+
+### Linux / macOS
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
-python3 app.py
+python3 -m pip install -r requirements.txt
+python3 run.py
 ```
+
+### Windows (PowerShell)
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python run.py
+```
+
+## Run With HTTPS
+
+You can now run the app directly with TLS from `run.py`/`app.py` using environment variables.
+
+### Windows PowerShell (real cert/key files)
+```powershell
+$env:APP_HTTPS="1"
+$env:APP_SSL_CERT="C:\certs\server.crt"
+$env:APP_SSL_KEY="C:\certs\server.key"
+$env:APP_HOST="0.0.0.0"
+$env:APP_PORT="8443"
+python run.py
+```
+
+### Windows PowerShell (quick dev HTTPS, self-generated cert)
+```powershell
+$env:APP_HTTPS="1"
+$env:APP_SSL_ADHOC="1"
+$env:APP_HOST="0.0.0.0"
+$env:APP_PORT="8443"
+python run.py
+```
+
+Optional hardening flags:
+- `APP_FORCE_HTTPS=1` to redirect all HTTP requests to HTTPS
+- `APP_TRUST_PROXY=1` when running behind reverse proxy (IIS/Nginx)
+
+### Windows (Command Prompt)
+```bat
+py -m venv .venv
+.venv\Scripts\activate
+python -m pip install -r requirements.txt
+python run.py
+```
+
+If you see `ModuleNotFoundError: No module named 'flask'` on Windows even after install, you are likely mixing interpreters (for example, installing with one Python and running with `py`, which can select another). After activation, always use `python -m pip ...` and `python run.py` (or `python app.py`), and keep a single virtual environment folder (delete old `venv`/`.venv` duplicates if needed).
+
+Compatibility entrypoint is still available:
+
+```bash
+python app.py
+```
+
+## SQL Server Bootstrap (New Empty DB)
+
+The app now bootstraps schema automatically on startup:
+
+- If `APP_SQL_DATABASE` does not exist and `APP_SQL_AUTO_CREATE_DB=1` (default), app creates the database.
+- Then startup migrations from `sql/migrations/*.sql` run automatically and create all required tables.
+
+Required SQL env vars:
+
+- `APP_SQL_HOST`
+- `APP_SQL_PORT`
+- `APP_SQL_DATABASE`
+- `APP_SQL_USER`
+- `APP_SQL_PASSWORD`
+- Optional: `APP_SQL_DRIVER`, `APP_SQL_CLIENT` (`auto|pymssql|pyodbc`), `APP_SQL_AUTO_CREATE_DB` (`1|0`)
+
+Example (PowerShell):
+
+```powershell
+$env:APP_SQL_HOST="KS_EVE-NG\\EVENG"
+$env:APP_SQL_PORT="1433"
+$env:APP_SQL_DATABASE="NDMC_NEW"
+$env:APP_SQL_USER="sa"
+$env:APP_SQL_PASSWORD="your_password"
+$env:APP_SQL_AUTO_CREATE_DB="1"
+python app.py
+```
+
+## Monitoring Collector (Separate Worker)
+
+Monitoring collection can run as a separate process (recommended), independent from web login/session/browser.
+
+### Start web UI
+```bash
+python run.py
+```
+
+### Start monitoring worker (separate terminal)
+```bash
+python monitoring_worker.py
+```
+
+Windows shortcut:
+```bat
+start_monitoring_worker.bat
+```
+
+Notes:
+- Worker polls continuously based on configured interval (default 30s) and writes to SQL DB.
+- Node Dashboard reads stored DB history; it does not require browser to stay open.
+- Embedded Flask poller is disabled by default. Enable only if needed with:
+  - `MONITORING_EMBEDDED_POLLER=1`
+
+## Refactor Layout
+
+The project now uses a package layout for incremental modularization:
+
+- `app/` package (config, models, utils, services, routes)
+- `app/legacy.py` holds current stable monolith behavior
+- `run.py` is the primary entrypoint
+- `app.py` remains a compatibility wrapper
+
+
+### Windows notes
+- `rg` (ripgrep) is optional. If `rg` is not installed on Windows, use `findstr` instead:
+
+```bat
+findstr /spin /c:"update pr" /c:"make_pr" /c:"pull request" /c:"PR" README.md app.py templates\ip_addressing.html
+```
+
+- If `git status --short` shows only local runtime files (like `.venv/`, `venv/`, `app_data.db`, or `super_admin.json`), these are ignored by `.gitignore` in this repo and should not be committed.
 
 ## Security Notes
 - Set `APP_SECRET_KEY`.

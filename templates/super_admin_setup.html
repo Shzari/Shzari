@@ -1,12 +1,7 @@
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Setup Super Admin</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-  <div class="page-bg"></div>
+{% extends "layouts/base.html" %}
+{% block page_title %}Setup Super Admin{% endblock %}
+{% block body %}
+  {% include "components/back_to_login_strip.html" %}
   <div class="card narrow glass">
     <h1>First-Time Setup: Super Admin</h1>
     <p>Create super admin account (required before using settings page).</p>
@@ -24,5 +19,4 @@
       <button class="btn run" type="submit">Create Super Admin</button>
     </form>
   </div>
-</body>
-</html>
+{% endblock %}

@@ -1,0 +1,57 @@
+{% extends "layouts/base.html" %}
+{% block page_title %}Audit Dashboard{% endblock %}
+{% block head_extra %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/audit_dashboard/page.css') }}">
+{% endblock %}
+{% block body %}
+  <div class="user-strip">
+    <div class="chip center-chip">Audit Dashboard</div>
+    <div class="chip">{{ current_user or 'Unknown' }}/{{ current_user_role|upper }}</div>
+    <div class="chip">{{ auth_mode|upper }}</div>
+    <a class="btn-top" href="{{ url_for('logout') }}">Logout</a>
+  </div>
+
+  <div class="topbar glass">
+    <h2>Audit Logs</h2>
+    <p>Read-only activity trail. Audit role has access only to this view.</p>
+  </div>
+
+  {% include "components/messages.html" %}
+
+  <div class="audit-wrap">
+    <div
+      id="auditTableContainer"
+      class="audit-table-wrap"
+      data-api-url="{{ url_for('audit_dashboard_logs_api') }}"
+      data-page-size="{{ logs_page_size|default(100)|int }}"
+      data-has-more="{{ 'true' if logs_has_more else 'false' }}"
+      data-initial-count="{{ logs|length }}"
+    >
+      <table class="audit-table">
+        <thead>
+          <tr>
+            <th>ID</th><th>Timestamp</th><th>Action</th><th>Requester</th><th>Approver</th><th>Target</th><th>Log Summary</th>
+          </tr>
+        </thead>
+        <tbody id="auditTableBody">
+          {% for item in logs %}
+          <tr>
+            <td>{{ item.id }}</td>
+            <td>{{ item.created_at }}</td>
+            <td>{{ item.action }}</td>
+            <td>{{ item.requester }}</td>
+            <td>{{ item.approver }}</td>
+            <td>{{ item.device_name }}</td>
+            <td>{{ item.summary }}</td>
+          </tr>
+          {% endfor %}
+          {% if not logs %}<tr id="noAuditLogsRow"><td colspan="7">No audit logs found.</td></tr>{% endif %}
+        </tbody>
+      </table>
+    </div>
+    <div id="auditLoadState" class="audit-load-state"></div>
+  </div>
+{% endblock %}
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/audit_dashboard/page.js') }}"></script>
+{% endblock %}

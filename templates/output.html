@@ -1,16 +1,7 @@
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Command Output</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-  <div class="page-bg"></div>
-  <div class="user-strip">
-    <div class="chip">👤 User: <b>{{ current_user or 'Unknown' }}</b></div>
-    <div class="chip">🔐 Mode: <b>{{ auth_mode|upper }}</b></div>
-  </div>
+{% extends "layouts/base.html" %}
+{% block page_title %}Command Output{% endblock %}
+{% block body %}
+  {% include "components/user_auth_strip.html" %}
 
   <div class="card glass">
     <h2>Command Output</h2>
@@ -37,5 +28,4 @@
       <p>No output yet. Run a command from dashboard.</p>
     {% endif %}
   </div>
-</body>
-</html>
+{% endblock %}

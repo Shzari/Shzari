@@ -1,0 +1,35 @@
+<div id="naIspInternetPanel" class="subpanel hidden">
+  <div class="subhead"><span>Network - ISP - Internet</span></div>
+  <div class="toolbar">
+    {% if can_write_na_isp_internet %}
+    <div class="right"><button class="btn pri" type="button" onclick="addIspInternetRow()">Add</button><button class="btn" type="button" onclick="editIspInternetRow()">Edit</button><button class="btn" type="button" onclick="saveIspInternetRowsNow()">Save</button><button class="btn" type="button" onclick="deleteIspInternetRow()">Delete</button></div>
+    {% endif %}
+  </div>
+  <div class="table-wrap na-isp-wrap">
+    <table class="na-isp-table">
+      <colgroup>
+        <col style="width:2%">
+        <col style="width:2%">
+        <col style="width:2%">
+        <col style="width:6%">
+        <col style="width:6%">
+        <col style="width:6%">
+        <col style="width:2%">
+        <col style="width:3%">
+      </colgroup>
+      <thead>
+        <tr>
+          <th>Select</th>
+          <th>Nr.r</th>
+          <th>Site</th>
+          <th>ISP</th>
+          <th>Public IP</th>
+          <th>Gateway</th>
+          <th>Subnet</th>
+          <th>Bandwith</th>
+        </tr>
+      </thead>
+      <tbody id="naIspInternetBody"></tbody>
+    </table>
+  </div>
+</div>

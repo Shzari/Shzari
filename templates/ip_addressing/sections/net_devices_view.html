@@ -1,0 +1,78 @@
+﻿        <section id="netDevicesView" class="panel hidden">
+          <div id="netBreadcrumb" class="breadcrumb">IP Addressing > Net Devices</div>
+          <div class="panel-head">
+            <h1 class="title">Net Devices</h1>
+            {% if current_user_role in ['senior', 'sysadmin'] %}
+            <button class="icon-btn" type="button" title="Management Settings" aria-label="Management Settings" onclick="openSettingsPopup('managementModal')">&#9881;</button>
+            {% endif %}
+          </div>
+          {% if not can_access_devices_panel %}
+            <div class="err">You do not have access to Devices panel permissions.</div>
+          {% else %}
+            <div class="device-layout">
+              <div class="subpanel">
+                <div class="subhead"><span>Devices</span><span class="small">Category</span></div>
+                <div class="left"><input id="deviceSearch" class="input" placeholder="Search hostname, IP, category"></div>
+                <div class="left"><button class="btn" type="button" onclick="selectAllNetDevices()">Select All</button><button class="btn" type="button" onclick="clearNetDevices()">Clear</button><button class="btn" type="button" onclick="pingNetDevices()">Ping</button></div>
+                <div id="netDevicesBody" class="device-list"></div>
+              </div>
+              {% if current_user_role == 'helpdesk' %}
+                <div class="subpanel">
+                  <div class="subhead"><span>Helpdesk Actions</span><span class="small">Err-disable / Interface tools</span></div>
+                  <div class="left">
+                    <button class="btn" type="button" onclick="loadHelpdeskInterfaces()">Show Err-disable</button>
+                    <button class="btn" type="button" onclick="runHelpdeskInterfaceAction('remove_errdisable')">Remove Err-disable</button>
+                  </div>
+                  <div class="left">
+                    <button class="btn" type="button" onclick="runHelpdeskInterfaceAction('set_description')">Apply Description</button>
+                  </div>
+                  <div id="helpdeskStatus" class="hidden"></div>
+                  <div class="small">Select devices first, then load interfaces. Use row checkboxes for Remove Err-disable and Apply Description.</div>
+                </div>
+              {% else %}
+                <div class="subpanel">
+                  <div class="subhead"><span>Commands</span><span class="small">Show/Config/HelpDesk Action</span></div>
+                  <div class="command-list"><select id="deviceCommandMode" class="select"><option value="show">Show Commands</option><option value="config">Config Commands</option><option value="helpdesk_action">HelpDesk Action</option></select><select id="deviceCommandSelect" class="select"></select></div>
+                  <div id="standardCommandActions">
+                    {% if current_user_role in ['senior', 'sysadmin'] %}
+                    <textarea id="manualDeviceCommand" class="cmd-box" placeholder="Type one or multiple commands"></textarea>
+                    {% else %}
+                    <textarea id="manualDeviceCommand" class="cmd-box hidden" placeholder="Type one or multiple commands"></textarea>
+                    <div class="small">You can run only pre-configured commands created by Senior/SysAdmin.</div>
+                    {% endif %}
+                    <div class="left"><button class="btn pri" type="button" onclick="runNetCommands()">Run Command</button></div>
+                    <div id="netRunStatus" class="hidden"></div>
+                  </div>
+                  <div id="helpdeskModeActions" class="hidden">
+                    <div class="left">
+                      <button class="btn" type="button" onclick="loadHelpdeskInterfaces()">Show Err-disable</button>
+                      {% if current_user_role in ['senior', 'junior'] %}
+                      <button class="btn" type="button" onclick="runHelpdeskShowVlan()">Show VLAN</button>
+                      {% endif %}
+                      <button class="btn" type="button" onclick="runHelpdeskInterfaceAction('remove_errdisable')">Remove Err-disable</button>
+                      <button class="btn" type="button" onclick="runHelpdeskInterfaceAction('set_description')">Apply Description</button>
+                      {% if current_user_role in ['senior', 'junior', 'sysadmin'] %}
+                      <button class="btn" type="button" onclick="runHelpdeskInterfaceAction('set_vlan')">Apply VLAN</button>
+                      {% endif %}
+                    </div>
+                    <div id="helpdeskStatusAlt" class="hidden"></div>
+                    <div class="small">HelpDesk Action mode: interface tools are enabled and shown below.</div>
+                  </div>
+                </div>
+              {% endif %}
+              <div class="subpanel">
+                <div class="subhead"><span>Output</span><span class="small">Live Result</span></div>
+                <pre id="netOutputText" class="output-screen">No output yet.</pre>
+              </div>
+            </div>
+            {% if current_user_role == 'helpdesk' %}
+              <div id="helpdeskInterfaceTables" class="subpanel">
+                <div class="small">Interface data will appear here after clicking "Show Err-disable".</div>
+              </div>
+            {% else %}
+              <div id="helpdeskInterfaceTables" class="subpanel hidden">
+                <div class="small">Interface data will appear here when HelpDesk Action mode is selected.</div>
+              </div>
+            {% endif %}
+          {% endif %}
+        </section>

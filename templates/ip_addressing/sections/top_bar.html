@@ -1,0 +1,13 @@
+<header class="top">
+  <div><b style="font-size:18px; letter-spacing:.2px;">IP Addressing</b></div>
+  <div id="clockPill" class="pill">--</div>
+  <div class="actions">
+    {% if can_access_devices_panel %}
+      <button class="btn-top" type="button" onclick="openSettingsPopup('credSettingsModal')">Device Credentials</button>
+    {% endif %}
+    <button id="notificationsBtn" class="btn-top" type="button" onclick="openSettingsPopup('notificationsModal')">Notifications ({{ unread_notifications_count }})</button>
+    <a class="btn-top" href="{{ url_for('logout') }}">Logout</a>
+    <span class="chip">{{ current_user or 'Unknown' }}/{{ current_user_role|upper }}</span>
+    <span class="chip">{{ auth_mode|upper }}</span>
+  </div>
+</header>

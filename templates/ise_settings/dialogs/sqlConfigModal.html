@@ -1,0 +1,37 @@
+﻿<dialog id="sqlConfigModal" class="device-modal">
+    <form id="sqlSettingsForm" method="post" action="{{ url_for('sql_server_settings_page') }}">
+      <h3>SQL Server Logging</h3>
+      <label><input type="checkbox" name="enabled" {% if sql_server.enabled %}checked{% endif %}> Enable SQL logging mirror</label>
+
+      <label>ODBC Driver</label>
+      <input name="driver" type="text" value="{{ sql_server.driver }}" placeholder="ODBC Driver 18 for SQL Server">
+      <label>Server</label>
+      <input name="server" type="text" value="{{ sql_server.server }}" placeholder="192.168.1.20">
+      <label>Port</label>
+      <input name="port" type="number" value="{{ sql_server.port }}" min="1" max="65535">
+      <label>Database</label>
+      <input name="database_name" type="text" value="{{ sql_server.database_name }}" placeholder="network_logs">
+      <label>Username</label>
+      <input name="username" type="text" value="{{ sql_server.username }}" placeholder="sa or app user">
+      <label>Password</label>
+      <input name="password" type="password" value="{{ sql_server.password }}">
+
+      <div class="action-row">
+        <label><input name="encrypt" type="checkbox" {% if sql_server.encrypt %}checked{% endif %}> Encrypt</label>
+        <label><input name="trust_server_certificate" type="checkbox" {% if sql_server.trust_server_certificate %}checked{% endif %}> Trust Server Cert</label>
+      </div>
+
+      <label>Timeout (seconds)</label>
+      <input name="timeout" type="number" value="{{ sql_server.timeout }}" min="1" max="30">
+      <label>Log Table Name</label>
+      <input name="table_name" type="text" value="{{ sql_server.table_name }}" placeholder="audit_logs">
+      <div id="sqlTestResultMessage" class="info" style="display:none;">Ready to test SQL Server connection.</div>
+
+      <div class="action-row">
+        <button id="sqlTestButton" class="btn" type="button" onclick="testSqlConnection()">Test Connection</button>
+        <button class="btn run" type="submit" name="action" value="save">Save SQL Settings</button>
+        <button class="btn ghost" type="button" onclick="closeSqlModal()">Close</button>
+      </div>
+    </form>
+  </dialog>
+
