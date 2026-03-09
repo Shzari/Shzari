@@ -1,0 +1,22 @@
+{% extends "layouts/base.html" %}
+{% block page_title %}Setup Super Admin{% endblock %}
+{% block body %}
+  {% include "components/back_to_login_strip.html" %}
+  <div class="card narrow glass">
+    <h1>First-Time Setup: Super Admin</h1>
+    <p>Create super admin account (required before using settings page).</p>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <form method="post">
+      <label>Super Admin Username</label>
+      <input name="username" type="text" required>
+
+      <label>Password</label>
+      <input name="password" type="password" required>
+
+      <label>Confirm Password</label>
+      <input name="confirm_password" type="password" required>
+
+      <button class="btn run" type="submit">Create Super Admin</button>
+    </form>
+  </div>
+{% endblock %}

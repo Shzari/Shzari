@@ -1,0 +1,29 @@
+{% extends "layouts/base.html" %}
+{% block page_title %}Network Tool - Login{% endblock %}
+{% block body %}
+  <div class="card narrow glass">
+    <h1>Network Automation Login</h1>
+    <p>Only users added in Super Admin Users can log in. Each user uses their assigned auth source.</p>
+
+    <div class="action-row">
+      <a class="btn" href="{{ url_for('verify_super_admin_route') }}">Super Admin</a>
+    </div>
+    {% include "components/messages.html" %}
+
+    <form method="post" id="loginForm">
+      <label>Username</label>
+      <input id="loginUsername" name="username" type="text" required>
+
+      <label>Password</label>
+      <input name="password" type="password" required>
+
+      <label>SSH Timeout (seconds)</label>
+      <input name="timeout" type="number" value="8" min="3" max="30">
+
+      <button class="btn run" type="submit">Login</button>
+    </form>
+  </div>
+{% endblock %}
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/login/page.js') }}"></script>
+{% endblock %}

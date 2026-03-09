@@ -1,0 +1,22 @@
+﻿{% extends "layouts/base.html" %}
+{% block page_title %}ISE Settings{% endblock %}
+{% block head_extra %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ise_settings/page.css') }}">
+  
+{% endblock %}
+{% block body %}
+  {% include "ise_settings/sections/main_panel.html" %}
+  {% include "ise_settings/dialogs/iseConfigModal.html" %}
+  {% include "ise_settings/dialogs/ldapConfigModal.html" %}
+  {% include "ise_settings/dialogs/ntpConfigModal.html" %}
+  {% include "ise_settings/dialogs/sqlConfigModal.html" %}
+  {% include "ise_settings/dialogs/ntpTestResultModal.html" %}
+  {% include "ise_settings/dialogs/sessionConfigModal.html" %}
+  {% include "ise_settings/dialogs/externalLoggingModal.html" %}
+  {% include "ise_settings/dialogs/monitoringModal.html" %}
+  {% include "ise_settings/dialogs/usersManageModal.html" %}
+  {% include "ise_settings/dialogs/userEditModal.html" %}
+{% endblock %}
+{% block scripts %}
+  {% include "ise_settings/scripts/page_script.html" %}
+{% endblock %}

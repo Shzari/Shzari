@@ -1,0 +1,6 @@
+.audit-wrap { margin-top: 14px; }
+.audit-table-wrap { background: rgba(255,255,255,.92); border-radius: 14px; border: 1px solid #d7e0f5; overflow: auto; max-height: 72vh; }
+.audit-table { width: 100%; border-collapse: collapse; min-width: 980px; }
+.audit-table th, .audit-table td { padding: 10px 12px; border-bottom: 1px solid #e5ecfb; vertical-align: top; }
+.audit-table th { background: #eef3ff; text-align: left; }
+.audit-load-state { margin-top: 8px; font-size: 12px; color: #5a6f8d; font-weight: 600; }

@@ -1,0 +1,709 @@
+﻿<script>
+const RAW_USERS = {{ users|tojson }};
+    const DEFAULT_PANEL_PERMISSIONS = {
+      ip_addressing: 'both',
+      network_addressing: 'both',
+      net_devices: 'both',
+      monitoring: 'both'
+    };
+    const DEFAULT_MENU_PERMISSIONS = {
+      ip_branches: 'both',
+      ip_hq: 'both',
+      na_system: 'both',
+      na_system_ho: 'both',
+      na_system_ho_vm: 'both',
+      na_system_ho_physical: 'both',
+      na_system_ho_storage: 'both',
+      na_system_drs: 'both',
+      na_system_drs_vm: 'both',
+      na_system_drs_physical: 'both',
+      na_system_drs_storage: 'both',
+      na_network: 'both',
+      na_network_devices: 'both',
+      na_isp: 'both',
+      na_isp_branches: 'both',
+      na_isp_atm: 'both',
+      na_isp_internet: 'both',
+      na_dmvpn: 'both',
+      na_dmvpn_branches: 'both',
+      na_dmvpn_atms: 'both',
+      na_sim_cards: 'both',
+      na_site_to_site: 'both',
+      na_nat: 'both',
+      nd_all_devices: 'both',
+      nd_categories: 'both'
+    };
+    const MENU_PERMISSION_ALIASES = {
+      na_servers: ['na_system', 'na_system_ho', 'na_system_ho_vm', 'na_system_ho_physical', 'na_system_ho_storage', 'na_system_drs', 'na_system_drs_vm', 'na_system_drs_physical', 'na_system_drs_storage'],
+      na_branches_isp: ['na_isp', 'na_isp_branches', 'na_isp_atm', 'na_isp_internet'],
+      na_dmvpn: ['na_dmvpn', 'na_dmvpn_branches', 'na_dmvpn_atms']
+    };
+    const NET_DEVICES_MENU_KEYS = new Set(['nd_all_devices', 'nd_categories']);
+    function normalizePermissionValue(value, fallback = 'both') {
+      const text = String(value || '').trim().toLowerCase();
+      if (['none', 'no', 'off', 'deny', 'disabled'].includes(text)) return 'none';
+      if (['read', 'r', 'view', 'readonly', 'read_only'].includes(text)) return 'read';
+      if (['write', 'w', 'edit', 'modify'].includes(text)) return 'write';
+      if (['both', 'all', 'rw', 'readwrite', 'read_write'].includes(text)) return 'both';
+      if (typeof value === 'boolean') return value ? 'both' : 'none';
+      return normalizePermissionValue(fallback, 'both');
+    }
+    function hasReadAccess(level) {
+      return ['read', 'write', 'both'].includes(normalizePermissionValue(level, 'none'));
+    }
+    function isNetDevicesPanelKey(key) {
+      return String(key || '').trim() === 'net_devices';
+    }
+    function isNetDevicesMenuKey(key) {
+      return NET_DEVICES_MENU_KEYS.has(String(key || '').trim());
+    }
+    function asBinaryPermission(value, fallback = 'both') {
+      return normalizePermissionValue(value, fallback) === 'none' ? 'none' : 'both';
+    }
+    function isBinaryPermissionSelect(selectElement) {
+      if (!selectElement) return false;
+      if (String(selectElement.getAttribute('data-permission-binary') || '') === '1') return true;
+      const panelKey = selectElement.getAttribute('data-panel-permission');
+      if (isNetDevicesPanelKey(panelKey)) return true;
+      const menuKey = selectElement.getAttribute('data-menu-permission');
+      if (isNetDevicesMenuKey(menuKey)) return true;
+      return selectElement.classList.contains('device-category-permission-select');
+    }
+    function normalizePermissionForSelect(selectElement, value, fallback = 'both') {
+      const normalized = normalizePermissionValue(value, fallback);
+      return isBinaryPermissionSelect(selectElement) ? asBinaryPermission(normalized, fallback) : normalized;
+    }
+    function applyMenuPermissionDependencies(menuPermissions) {
+      const resolved = { ...(menuPermissions || {}) };
+      const disableChildren = (parent, children) => {
+        if (!hasReadAccess(resolved[parent])) {
+          (children || []).forEach((key) => {
+            if (Object.prototype.hasOwnProperty.call(resolved, key)) {
+              resolved[key] = 'none';
+            }
+          });
+        }
+      };
+      disableChildren('na_system', ['na_system_ho', 'na_system_ho_vm', 'na_system_ho_physical', 'na_system_ho_storage', 'na_system_drs', 'na_system_drs_vm', 'na_system_drs_physical', 'na_system_drs_storage']);
+      disableChildren('na_system_ho', ['na_system_ho_vm', 'na_system_ho_physical', 'na_system_ho_storage']);
+      disableChildren('na_system_drs', ['na_system_drs_vm', 'na_system_drs_physical', 'na_system_drs_storage']);
+      disableChildren('na_network', ['na_network_devices', 'na_isp', 'na_isp_branches', 'na_isp_atm', 'na_isp_internet', 'na_dmvpn', 'na_dmvpn_branches', 'na_dmvpn_atms', 'na_sim_cards', 'na_site_to_site', 'na_nat']);
+      disableChildren('na_isp', ['na_isp_branches', 'na_isp_atm', 'na_isp_internet']);
+      disableChildren('na_dmvpn', ['na_dmvpn_branches', 'na_dmvpn_atms']);
+      return resolved;
+    }
+    function panelPermissionsFromPrivileges(user) {
+      const privileges = Array.isArray(user?.account_privileges)
+        ? user.account_privileges
+        : ['ip_addressing', 'network_addressing', 'net_devices', 'monitoring'];
+      const selected = new Set(
+        privileges
+          .map((item) => String(item || '').trim().toLowerCase())
+          .filter(Boolean)
+          .map((item) => (item === 'devices' ? 'net_devices' : item))
+      );
+      return {
+        ip_addressing: selected.has('ip_addressing') ? 'both' : 'none',
+        network_addressing: selected.has('network_addressing') || selected.has('ip_addressing') ? 'both' : 'none',
+        net_devices: selected.has('net_devices') ? 'both' : 'none',
+        monitoring: selected.has('monitoring') ? 'both' : 'none'
+      };
+    }
+    function resolvePanelPermissions(user) {
+      const role = String(user?.role || 'junior').toLowerCase();
+      if (role === 'manager') {
+        return Object.fromEntries(Object.keys(DEFAULT_PANEL_PERMISSIONS).map((key) => [key, 'read']));
+      }
+      const panelAccess = (user && typeof user.category_panel_access === 'object' && user.category_panel_access) ? user.category_panel_access : {};
+      const raw = (panelAccess && typeof panelAccess.panel_permissions === 'object' && panelAccess.panel_permissions)
+        ? panelAccess.panel_permissions
+        : panelPermissionsFromPrivileges(user);
+      const hasExplicitKeys = Object.keys(raw || {}).some((key) => Object.prototype.hasOwnProperty.call(DEFAULT_PANEL_PERMISSIONS, key));
+      const resolved = {};
+      Object.keys(DEFAULT_PANEL_PERMISSIONS).forEach((key) => {
+        const fallback = hasExplicitKeys ? 'none' : DEFAULT_PANEL_PERMISSIONS[key];
+        resolved[key] = isNetDevicesPanelKey(key)
+          ? asBinaryPermission(raw[key], fallback)
+          : normalizePermissionValue(raw[key], fallback);
+      });
+      return resolved;
+    }
+    function resolveMenuPermissions(user, panelPermissions) {
+      const role = String(user?.role || 'junior').toLowerCase();
+      if (role === 'manager') {
+        return Object.fromEntries(Object.keys(DEFAULT_MENU_PERMISSIONS).map((key) => [key, 'read']));
+      }
+      const panelAccess = (user && typeof user.category_panel_access === 'object' && user.category_panel_access) ? user.category_panel_access : {};
+      let raw = {};
+      if (panelAccess && typeof panelAccess.menu_permissions === 'object' && panelAccess.menu_permissions) {
+        raw = panelAccess.menu_permissions;
+      } else if (panelAccess && typeof panelAccess.menu_access === 'object' && panelAccess.menu_access) {
+        raw = panelAccess.menu_access;
+      } else if (panelAccess && !Array.isArray(panelAccess)) {
+        raw = panelAccess;
+      }
+      const hasExplicitKeys = Object.keys(raw || {}).some((key) => (
+        Object.prototype.hasOwnProperty.call(DEFAULT_MENU_PERMISSIONS, key)
+        || Object.prototype.hasOwnProperty.call(MENU_PERMISSION_ALIASES, key)
+      ));
+      const resolved = {};
+      Object.keys(DEFAULT_MENU_PERMISSIONS).forEach((key) => {
+        let source = raw[key];
+        if (source === undefined) {
+          Object.entries(MENU_PERMISSION_ALIASES).forEach(([legacyKey, targets]) => {
+            if (source !== undefined) return;
+            if (Array.isArray(targets) && targets.includes(key) && raw[legacyKey] !== undefined) {
+              source = raw[legacyKey];
+            }
+          });
+        }
+        const fallback = hasExplicitKeys ? 'none' : DEFAULT_MENU_PERMISSIONS[key];
+        resolved[key] = isNetDevicesMenuKey(key)
+          ? asBinaryPermission(source, fallback)
+          : normalizePermissionValue(source, fallback);
+      });
+      if (!hasReadAccess(panelPermissions.ip_addressing)) {
+        resolved.ip_branches = 'none';
+        resolved.ip_hq = 'none';
+      }
+      if (!hasReadAccess(panelPermissions.network_addressing)) {
+        Object.keys(resolved).forEach((key) => {
+          if (String(key).startsWith('na_')) {
+            resolved[key] = 'none';
+          }
+        });
+      }
+      if (!hasReadAccess(panelPermissions.net_devices)) {
+        Object.keys(resolved).forEach((key) => {
+          if (String(key).startsWith('nd_')) {
+            resolved[key] = 'none';
+          }
+        });
+      }
+      return applyMenuPermissionDependencies(resolved);
+    }
+    const USER_PANEL_PERMISSIONS_MAP = RAW_USERS.reduce((acc, user) => {
+      acc[user.username] = resolvePanelPermissions(user);
+      return acc;
+    }, {});
+    const USER_MENU_PERMISSIONS_MAP = RAW_USERS.reduce((acc, user) => {
+      const panelPermissions = USER_PANEL_PERMISSIONS_MAP[user.username] || { ...DEFAULT_PANEL_PERMISSIONS };
+      acc[user.username] = resolveMenuPermissions(user, panelPermissions);
+      return acc;
+    }, {});
+    const USER_CATEGORY_MAP = RAW_USERS.reduce((acc, user) => {
+      acc[user.username] = Array.isArray(user.allowed_categories) ? user.allowed_categories : null;
+      return acc;
+    }, {});
+    const USER_ROLE_MAP = RAW_USERS.reduce((acc, user) => {
+      acc[user.username] = String(user.role || 'junior').toLowerCase();
+      return acc;
+    }, {});
+    const USER_AUTH_SOURCE_MAP = RAW_USERS.reduce((acc, user) => {
+      acc[user.username] = String(user.auth_source || 'ldap').toLowerCase();
+      return acc;
+    }, {});
+
+    function openIseModal() {
+      const modal = document.getElementById('iseConfigModal');
+      if (modal && modal.showModal) modal.showModal();
+    }
+
+    function closeIseModal() {
+      const modal = document.getElementById('iseConfigModal');
+      if (modal && modal.close) modal.close();
+    }
+
+    function openLdapModal() {
+      const modal = document.getElementById('ldapConfigModal');
+      if (modal && modal.showModal) modal.showModal();
+    }
+
+    function closeLdapModal() {
+      const modal = document.getElementById('ldapConfigModal');
+      if (modal && modal.close) modal.close();
+    }
+
+    function openSqlModal() {
+      const modal = document.getElementById('sqlConfigModal');
+      if (modal && modal.showModal) modal.showModal();
+    }
+
+    function closeSqlModal() {
+      const modal = document.getElementById('sqlConfigModal');
+      if (modal && modal.close) modal.close();
+    }
+
+    function openUsersModal() {
+      const modal = document.getElementById('usersManageModal');
+      if (modal && modal.showModal) modal.showModal();
+    }
+
+    function openNtpModal() {
+      const modal = document.getElementById('ntpConfigModal');
+      if (modal && modal.showModal) modal.showModal();
+    }
+
+    function closeNtpModal() {
+      const modal = document.getElementById('ntpConfigModal');
+      if (modal && modal.close) modal.close();
+    }
+
+    function closeNtpTestResultModal() {
+      const modal = document.getElementById('ntpTestResultModal');
+      if (modal && modal.close) modal.close();
+    }
+
+    function showNtpTestResult(ok, message) {
+      const modal = document.getElementById('ntpTestResultModal');
+      const box = document.getElementById('ntpTestResultMessage');
+      if (!modal || !box) return;
+      box.className = ok ? 'info' : 'error';
+      box.textContent = message;
+      if (modal.showModal) {
+        modal.showModal();
+      }
+    }
+
+    async function testNtpConnection() {
+      const form = document.getElementById('ntpSettingsForm');
+      if (!form) return;
+
+      const testButton = document.getElementById('ntpTestButton');
+      if (testButton) {
+        testButton.disabled = true;
+        testButton.textContent = 'Testing...';
+      }
+
+      try {
+        const formData = new FormData(form);
+        const response = await fetch("{{ url_for('ntp_test_page') }}", {
+          method: 'POST',
+          body: formData,
+        });
+        const payload = await response.json();
+        showNtpTestResult(Boolean(payload.ok), payload.message || 'NTP test finished.');
+      } catch (error) {
+        showNtpTestResult(false, `NTP test failed: ${error}`);
+      } finally {
+        if (testButton) {
+          testButton.disabled = false;
+          testButton.textContent = 'Test Connection';
+        }
+      }
+    }
+
+    function showSqlTestResult(ok, message) {
+      const box = document.getElementById('sqlTestResultMessage');
+      if (!box) return;
+      box.className = ok ? 'info' : 'error';
+      box.textContent = message || (ok ? 'SQL Server test succeeded.' : 'SQL Server test failed.');
+      box.style.display = 'block';
+    }
+
+    async function testSqlConnection() {
+      const form = document.getElementById('sqlSettingsForm');
+      if (!form) return;
+
+      const testButton = document.getElementById('sqlTestButton');
+      if (testButton) {
+        testButton.disabled = true;
+        testButton.textContent = 'Testing...';
+      }
+
+      try {
+        const formData = new FormData(form);
+        const response = await fetch("{{ url_for('sql_server_test_page') }}", {
+          method: 'POST',
+          body: formData,
+        });
+        const payload = await response.json();
+        showSqlTestResult(Boolean(payload.ok), payload.message || 'SQL test finished.');
+      } catch (error) {
+        showSqlTestResult(false, `SQL test failed: ${error}`);
+      } finally {
+        if (testButton) {
+          testButton.disabled = false;
+          testButton.textContent = 'Test Connection';
+        }
+      }
+    }
+
+    function openSessionModal() {
+      const modal = document.getElementById('sessionConfigModal');
+      if (modal && modal.showModal) modal.showModal();
+      syncWebListenerFields();
+    }
+
+    function openExternalLoggingModal() {
+      const modal = document.getElementById('externalLoggingModal');
+      if (modal && modal.showModal) modal.showModal();
+    }
+
+    function closeExternalLoggingModal() {
+      const modal = document.getElementById('externalLoggingModal');
+      if (modal && modal.close) modal.close();
+    }
+
+    function openMonitoringModal() {
+      const modal = document.getElementById('monitoringModal');
+      if (modal && modal.showModal) modal.showModal();
+    }
+
+    function closeMonitoringModal() {
+      const modal = document.getElementById('monitoringModal');
+      if (modal && modal.close) modal.close();
+    }
+
+    function closeSessionModal() {
+      const modal = document.getElementById('sessionConfigModal');
+      if (modal && modal.close) modal.close();
+    }
+
+    function syncWebListenerFields() {
+      const httpEnabled = document.getElementById('httpEnabledCheckbox');
+      const httpsEnabled = document.getElementById('httpsEnabledCheckbox');
+      const aclEnabled = document.getElementById('webAclEnabledCheckbox');
+      const httpPort = document.getElementById('httpPortInput');
+      const httpsPort = document.getElementById('httpsPortInput');
+      const aclInput = document.getElementById('webAclEntriesInput');
+      const bindState = (enabledBox, portInput, fallback) => {
+        if (!enabledBox || !portInput) return;
+        const enabled = Boolean(enabledBox.checked);
+        if (enabled) {
+          portInput.disabled = false;
+          portInput.placeholder = String(fallback);
+        } else {
+          portInput.value = '';
+          portInput.disabled = true;
+          portInput.placeholder = 'Disabled';
+        }
+      };
+      bindState(httpEnabled, httpPort, 8080);
+      bindState(httpsEnabled, httpsPort, 8443);
+      if (aclEnabled && aclInput) {
+        aclInput.disabled = !aclEnabled.checked;
+        if (!aclEnabled.checked) {
+          aclInput.placeholder = 'Disabled';
+        } else {
+          aclInput.placeholder = 'One IP/CIDR per line';
+        }
+      }
+    }
+
+    function closeUsersModal() {
+      const modal = document.getElementById('usersManageModal');
+      if (modal && modal.close) modal.close();
+    }
+
+    function openUserEditModal() {
+      const modal = document.getElementById('userEditModal');
+      if (modal) {
+        modal.querySelectorAll('.permission-submenu-group').forEach((group) => {
+          group.open = false;
+        });
+      }
+      if (modal && modal.showModal) modal.showModal();
+    }
+
+    function closeUserEditModal() {
+      const modal = document.getElementById('userEditModal');
+      if (modal && modal.close) modal.close();
+    }
+
+    function updateEditActionLabel() {
+      const action = document.getElementById('userEditAction').value;
+      const note = document.getElementById('userEditActionNote');
+      const username = document.getElementById('userEditUsername')?.value || '';
+      const source = String(USER_AUTH_SOURCE_MAP[username] || 'ldap').toLowerCase();
+      if (!note) return;
+      if (!action) {
+        note.textContent = source === 'local'
+          ? 'Select an action first.'
+          : 'LDAP users cannot use local password reset actions.';
+      } else if (action === 'delete') {
+        note.textContent = 'Delete selected user permanently.';
+      } else if (action === 'reset_password') {
+        note.textContent = 'Reset selected user local password for Local (testing) login.';
+      } else if (action === 'force_change') {
+        note.textContent = 'Force local password change at next Local (testing) login.';
+      } else if (action === 'set_role') {
+        note.textContent = 'Set role group for this user (Helpdesk / Junior / Manager / SysAdmin / Senior / Audit).';
+      } else if (action === 'set_user_rights') {
+        note.textContent = 'Set user rights from the collapsible permission tree (No Access / Read / R/W).';
+      }
+    }
+
+    function syncUserEditActionsByAuth() {
+      const username = document.getElementById('userEditUsername')?.value || '';
+      const actionSelect = document.getElementById('userEditAction');
+      if (!actionSelect) return;
+      const source = String(USER_AUTH_SOURCE_MAP[username] || 'ldap').toLowerCase();
+      const localOnlyActions = ['reset_password', 'force_change'];
+      localOnlyActions.forEach((actionValue) => {
+        const option = actionSelect.querySelector(`option[value="${actionValue}"]`);
+        if (!option) return;
+        option.disabled = source !== 'local';
+      });
+      if (source !== 'local' && localOnlyActions.includes(String(actionSelect.value || '').trim().toLowerCase())) {
+        actionSelect.value = '';
+      }
+      updateEditActionLabel();
+    }
+
+    function setPermissionSelectValue(selectElement, value) {
+      if (!selectElement) return;
+      const normalized = normalizePermissionForSelect(selectElement, value, 'both');
+      const optionExists = Array.from(selectElement.options || []).some((option) => option.value === normalized);
+      selectElement.value = optionExists ? normalized : (isBinaryPermissionSelect(selectElement) ? 'none' : 'both');
+    }
+    function permissionModeLabel(value, binary = false) {
+      const normalized = binary ? asBinaryPermission(value, 'both') : normalizePermissionValue(value, 'both');
+      if (normalized === 'none') return 'No Access';
+      if (binary) return 'Access';
+      if (normalized === 'read') return 'Read';
+      if (normalized === 'both') return 'R/W';
+      if (normalized === 'write') return 'Write';
+      return 'R/W';
+    }
+    function getSelectForPermissionButton(button) {
+      if (!button) return null;
+      const selectId = button.getAttribute('data-select-id');
+      if (selectId) return document.getElementById(selectId);
+      const selectName = button.getAttribute('data-select');
+      if (selectName) return document.querySelector(`select[name="${selectName}"]`);
+      return null;
+    }
+    function updatePermissionModeButtons() {
+      document.querySelectorAll('.permission-mode-btn').forEach((button) => {
+        const select = getSelectForPermissionButton(button);
+        if (!select) return;
+        button.textContent = permissionModeLabel(select.value, isBinaryPermissionSelect(select));
+      });
+    }
+    function applyPermissionDependenciesToForm() {
+      const readSelect = (name) => {
+        const element = document.querySelector(`select[name="${name}"]`);
+        return element ? normalizePermissionValue(element.value, 'both') : 'both';
+      };
+      const forceNone = (name) => {
+        const element = document.querySelector(`select[name="${name}"]`);
+        if (element && normalizePermissionValue(element.value, 'both') !== 'none') {
+          setPermissionSelectValue(element, 'none');
+        }
+      };
+      const disableChildren = (parentName, childNames) => {
+        if (readSelect(parentName) === 'none') {
+          (childNames || []).forEach((name) => forceNone(name));
+        }
+      };
+      disableChildren('panel_permission__ip_addressing', ['menu_permission__ip_branches', 'menu_permission__ip_hq']);
+      disableChildren('panel_permission__network_addressing', [
+        'menu_permission__na_system',
+        'menu_permission__na_system_ho',
+        'menu_permission__na_system_ho_vm',
+        'menu_permission__na_system_ho_physical',
+        'menu_permission__na_system_ho_storage',
+        'menu_permission__na_system_drs',
+        'menu_permission__na_system_drs_vm',
+        'menu_permission__na_system_drs_physical',
+        'menu_permission__na_system_drs_storage',
+        'menu_permission__na_network',
+        'menu_permission__na_network_devices',
+        'menu_permission__na_isp',
+        'menu_permission__na_isp_branches',
+        'menu_permission__na_isp_atm',
+        'menu_permission__na_isp_internet',
+        'menu_permission__na_dmvpn',
+        'menu_permission__na_dmvpn_branches',
+        'menu_permission__na_dmvpn_atms',
+        'menu_permission__na_sim_cards',
+        'menu_permission__na_site_to_site',
+        'menu_permission__na_nat'
+      ]);
+      disableChildren('panel_permission__net_devices', ['menu_permission__nd_all_devices', 'menu_permission__nd_categories']);
+      disableChildren('menu_permission__na_system', [
+        'menu_permission__na_system_ho',
+        'menu_permission__na_system_ho_vm',
+        'menu_permission__na_system_ho_physical',
+        'menu_permission__na_system_ho_storage',
+        'menu_permission__na_system_drs',
+        'menu_permission__na_system_drs_vm',
+        'menu_permission__na_system_drs_physical',
+        'menu_permission__na_system_drs_storage'
+      ]);
+      disableChildren('menu_permission__na_system_ho', [
+        'menu_permission__na_system_ho_vm',
+        'menu_permission__na_system_ho_physical',
+        'menu_permission__na_system_ho_storage'
+      ]);
+      disableChildren('menu_permission__na_system_drs', [
+        'menu_permission__na_system_drs_vm',
+        'menu_permission__na_system_drs_physical',
+        'menu_permission__na_system_drs_storage'
+      ]);
+      disableChildren('menu_permission__na_network', [
+        'menu_permission__na_network_devices',
+        'menu_permission__na_isp',
+        'menu_permission__na_isp_branches',
+        'menu_permission__na_isp_atm',
+        'menu_permission__na_isp_internet',
+        'menu_permission__na_dmvpn',
+        'menu_permission__na_dmvpn_branches',
+        'menu_permission__na_dmvpn_atms',
+        'menu_permission__na_sim_cards',
+        'menu_permission__na_site_to_site',
+        'menu_permission__na_nat'
+      ]);
+      disableChildren('menu_permission__na_isp', [
+        'menu_permission__na_isp_branches',
+        'menu_permission__na_isp_atm',
+        'menu_permission__na_isp_internet'
+      ]);
+      disableChildren('menu_permission__na_dmvpn', [
+        'menu_permission__na_dmvpn_branches',
+        'menu_permission__na_dmvpn_atms'
+      ]);
+      if (readSelect('panel_permission__net_devices') === 'none' || readSelect('menu_permission__nd_categories') === 'none') {
+        document.querySelectorAll('.device-category-permission-select').forEach((item) => {
+          setPermissionSelectValue(item, 'none');
+        });
+      }
+    }
+    function togglePermissionMode(button) {
+      if (!button || button.disabled) return;
+      const select = getSelectForPermissionButton(button);
+      if (!select || select.disabled) return;
+      const isBinary = isBinaryPermissionSelect(select);
+      if (isBinary) {
+        const currentBinary = asBinaryPermission(select.value, 'none');
+        const nextBinary = currentBinary === 'none' ? 'both' : 'none';
+        setPermissionSelectValue(select, nextBinary);
+        applyPermissionDependenciesToForm();
+        updatePermissionModeButtons();
+        return;
+      }
+      const current = normalizePermissionValue(select.value, 'read');
+      let next = 'read';
+      if (current === 'none') {
+        next = 'read';
+      } else if (current === 'read') {
+        next = 'both';
+      } else if (current === 'both' || current === 'write') {
+        next = 'none';
+      }
+      setPermissionSelectValue(select, next);
+      applyPermissionDependenciesToForm();
+      updatePermissionModeButtons();
+    }
+
+    function syncUserRoleSelection() {
+      const username = document.getElementById('userEditUsername').value;
+      const roleSelect = document.getElementById('userRoleValue');
+      if (!roleSelect) return;
+      roleSelect.value = USER_ROLE_MAP[username] || 'junior';
+    }
+
+    function syncUserAuthSourceLabel() {
+      const username = document.getElementById('userEditUsername').value;
+      const label = document.getElementById('userAuthSourceValue');
+      if (!label) return;
+      const source = USER_AUTH_SOURCE_MAP[username] || 'ldap';
+      label.textContent = source.toUpperCase();
+    }
+
+    function syncUserPermissionSelection() {
+      const userSelect = document.getElementById('userEditUsername');
+      if (!userSelect) return;
+      const username = userSelect.value;
+      const roleSelect = document.getElementById('userRoleValue');
+      const role = String((roleSelect && roleSelect.value) || USER_ROLE_MAP[username] || 'junior').toLowerCase();
+      const managerMode = role === 'manager';
+      const panelPermissions = { ...DEFAULT_PANEL_PERMISSIONS, ...(USER_PANEL_PERMISSIONS_MAP[username] || {}) };
+      const menuPermissions = { ...DEFAULT_MENU_PERMISSIONS, ...(USER_MENU_PERMISSIONS_MAP[username] || {}) };
+      const allowedCategoriesRaw = USER_CATEGORY_MAP[username];
+      const allowedCategories = Array.isArray(allowedCategoriesRaw) ? new Set(allowedCategoriesRaw.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean)) : null;
+
+      document.querySelectorAll('.panel-permission-select').forEach((item) => {
+        const key = item.getAttribute('data-panel-permission');
+        const value = managerMode ? 'read' : panelPermissions[key] || DEFAULT_PANEL_PERMISSIONS[key];
+        setPermissionSelectValue(item, value);
+        item.disabled = managerMode;
+      });
+      document.querySelectorAll('.menu-permission-select').forEach((item) => {
+        const key = item.getAttribute('data-menu-permission');
+        const value = managerMode ? 'read' : menuPermissions[key] || DEFAULT_MENU_PERMISSIONS[key];
+        setPermissionSelectValue(item, value);
+        item.disabled = managerMode;
+      });
+      document.querySelectorAll('.device-category-permission-select').forEach((item) => {
+        const categoryName = String(item.getAttribute('data-device-category') || '').trim().toLowerCase();
+        let value = 'both';
+        if (!managerMode) {
+          if (allowedCategories === null) {
+            value = 'both';
+          } else {
+            value = allowedCategories.has(categoryName) ? 'both' : 'none';
+          }
+        } else {
+          value = 'read';
+        }
+        setPermissionSelectValue(item, value);
+        item.disabled = managerMode;
+      });
+      document.querySelectorAll('.permission-mode-btn').forEach((item) => {
+        item.disabled = managerMode;
+      });
+      const hint = document.getElementById('userPermissionHint');
+      if (hint) hint.classList.toggle('hidden', !managerMode);
+      applyPermissionDependenciesToForm();
+      updatePermissionModeButtons();
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      updateEditActionLabel();
+      syncUserRoleSelection();
+      syncUserAuthSourceLabel();
+      syncUserPermissionSelection();
+      syncUserEditActionsByAuth();
+      updatePermissionModeButtons();
+      syncWebListenerFields();
+      const roleSelect = document.getElementById('userRoleValue');
+      if (roleSelect) roleSelect.addEventListener('change', syncUserPermissionSelection);
+      const httpEnabled = document.getElementById('httpEnabledCheckbox');
+      const httpsEnabled = document.getElementById('httpsEnabledCheckbox');
+      const aclEnabled = document.getElementById('webAclEnabledCheckbox');
+      if (httpEnabled) httpEnabled.addEventListener('change', syncWebListenerFields);
+      if (httpsEnabled) httpsEnabled.addEventListener('change', syncWebListenerFields);
+      if (aclEnabled) aclEnabled.addEventListener('change', syncWebListenerFields);
+
+      const selectedModal = {{ selected_modal|tojson }};
+      if (selectedModal === 'users') {
+        openUsersModal();
+      } else if (selectedModal === 'ise') {
+        openIseModal();
+      } else if (selectedModal === 'ldap') {
+        openLdapModal();
+      } else if (selectedModal === 'sql') {
+        openSqlModal();
+      } else if (selectedModal === 'ntp') {
+        openNtpModal();
+      } else if (selectedModal === 'session') {
+        openSessionModal();
+      } else if (selectedModal === 'external_logging') {
+        openExternalLoggingModal();
+      } else if (selectedModal === 'monitoring') {
+        openMonitoringModal();
+      }
+    });
+
+    // If browser restores this page from back/forward cache, force a fresh auth check.
+    window.addEventListener('pageshow', (event) => {
+      const nav = performance.getEntriesByType ? performance.getEntriesByType('navigation')[0] : null;
+      const isBackForward = Boolean(event.persisted) || (nav && nav.type === 'back_forward');
+      if (isBackForward) {
+        window.location.replace('{{ url_for("verify_super_admin_route") }}');
+      }
+    });
+</script>
+

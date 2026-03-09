@@ -1,0 +1,32 @@
+﻿<dialog id="iseConfigModal" class="device-modal">
+    <form method="post" action="{{ url_for('ise_settings_page', modal='ise') }}">
+      <h3>ISE Configuration</h3>
+      <h4>Primary ISE</h4>
+      <label>Primary Server</label>
+      <input name="primary_server" type="text" value="{{ ise.primary_server }}" placeholder="10.1.1.20">
+      <label>Primary Port</label>
+      <input name="primary_port" type="number" value="{{ ise.primary_port }}" min="1" max="65535">
+      <label>Primary Shared Secret</label>
+      <input name="primary_shared_secret" type="password" value="{{ ise.primary_shared_secret }}">
+
+      <h4>Secondary ISE</h4>
+      <label>Secondary Server</label>
+      <input name="secondary_server" type="text" value="{{ ise.secondary_server }}" placeholder="10.1.1.21">
+      <label>Secondary Port</label>
+      <input name="secondary_port" type="number" value="{{ ise.secondary_port }}" min="1" max="65535">
+      <label>Secondary Shared Secret</label>
+      <input name="secondary_shared_secret" type="password" value="{{ ise.secondary_shared_secret }}">
+
+      <h4>General</h4>
+      <label>Timeout (seconds)</label>
+      <input name="timeout" type="number" value="{{ ise.timeout }}" min="1" max="20">
+      <label>NAS-IP-Address</label>
+      <input name="nas_ip" type="text" value="{{ ise.nas_ip }}" placeholder="127.0.0.1">
+
+      <div class="action-row">
+        <button class="btn run" type="submit">Save ISE Settings</button>
+        <button class="btn ghost" type="button" onclick="closeIseModal()">Close</button>
+      </div>
+    </form>
+  </dialog>
+

@@ -1,0 +1,9 @@
+{
+  "mode": "ntp",
+  "server": "",
+  "port": 123,
+  "sync_timeout": 3,
+  "manual_time": "",
+  "last_sync": "",
+  "last_status": "Not synchronized yet."
+}

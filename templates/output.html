@@ -1,0 +1,31 @@
+{% extends "layouts/base.html" %}
+{% block page_title %}Command Output{% endblock %}
+{% block body %}
+  {% include "components/user_auth_strip.html" %}
+
+  <div class="card glass">
+    <h2>Command Output</h2>
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
+
+    {% if run_history %}
+      {% for run in run_history %}
+        <section class="run-block">
+          <div class="run-head">
+            <strong>{{ loop.index }}. {{ run.command }}</strong>
+            <span>{{ run.timestamp }}</span>
+          </div>
+          {% for r in run.results %}
+            <div class="result {{ 'pass' if r.status == 'PASS' else 'fail' }}">
+              <h3>{{ r.device }} ({{ r.host }}) - {{ r.status }}</h3>
+              <pre>{{ r.output }}</pre>
+            </div>
+          {% endfor %}
+        </section>
+      {% endfor %}
+    {% else %}
+      <p>No output yet. Run a command from dashboard.</p>
+    {% endif %}
+  </div>
+{% endblock %}

@@ -1,0 +1,48 @@
+<div id="naIspBranchesPanel" class="subpanel hidden">
+  <div class="subhead"><span>Network - ISP - Branches</span></div>
+  <div class="toolbar">
+    <div class="left small">Input data manually</div>
+    {% if can_write_na_isp_branches %}
+    <div class="right"><button class="btn pri" type="button" onclick="addIspBranchRow()">Add</button><button class="btn" type="button" onclick="editIspBranchRow()">Edit</button><button class="btn" type="button" onclick="saveIspBranchRowsNow()">Save</button><button class="btn" type="button" onclick="deleteIspBranchRow()">Delete</button></div>
+    {% endif %}
+  </div>
+  <div class="table-wrap na-isp-wrap">
+    <table class="na-isp-table">
+      <colgroup>
+        <col style="width:3%">
+        <col style="width:3%">
+        <col style="width:7%">
+        <col style="width:7%">
+        <col style="width:7%">
+        <col style="width:8%">
+        <col style="width:8%">
+        <col style="width:5%">
+        <col style="width:5%">
+        <col style="width:9%">
+        <col style="width:8%">
+        <col style="width:8%">
+        <col style="width:5%">
+        <col style="width:5%">
+      </colgroup>
+      <thead>
+        <tr>
+          <th>Select</th>
+          <th>Nr.r</th>
+          <th>Branch Code</th>
+          <th>City</th>
+          <th>Primary</th>
+          <th>P-WAN</th>
+          <th>P-Gateway</th>
+          <th>P-CIDR</th>
+          <th>P-Bandwith</th>
+          <th>Secondary</th>
+          <th>S-WAN</th>
+          <th>S-Gateway</th>
+          <th>S-CIDR</th>
+          <th>S-Bandwith</th>
+        </tr>
+      </thead>
+      <tbody id="naIspBranchesBody"></tbody>
+    </table>
+  </div>
+</div>

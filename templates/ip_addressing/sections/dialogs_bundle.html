@@ -1,0 +1,465 @@
+﻿        {% if current_user_role in ['senior', 'sysadmin'] %}
+        <dialog id="managementModal" class="settings-dialog">
+          <div class="settings-dialog-body">
+            <h3>Management</h3>
+            <div class="settings-buttons">
+              <button class="btn" type="button" onclick="openManagementChildPopup('credSettingsModal')">Credentials Settings</button>
+              <button class="btn" type="button" onclick="openManagementChildPopup('deviceSettingsModal')">Device Settings</button>
+              <button class="btn" type="button" onclick="openManagementChildPopup('categorySettingsModal')">Category Settings</button>
+              {% if current_user_role == 'senior' %}
+              <button class="btn" type="button" onclick="openManagementChildPopup('commandSettingsModal')">Command Button Settings</button>
+              {% endif %}
+            </div>
+            <div class="right"><button class="btn" type="button" onclick="closeSettingsPopup('managementModal')">Close</button></div>
+          </div>
+        </dialog>
+        {% endif %}
+
+        <dialog id="credSettingsModal" class="settings-dialog">
+          <div class="settings-dialog-body">
+            <h3>Device Credentials</h3>
+            <form method="post" action="{{ url_for('update_device_credentials') }}">
+              <input type="hidden" name="next" value="ip_addressing">
+              <input class="input" name="device_ssh_username" placeholder="SSH Username" value="{{ device_creds.username if device_creds else '' }}" required>
+              <input class="input" type="password" name="device_ssh_password" placeholder="SSH Password" value="{{ device_creds.password if device_creds else '' }}" required>
+              <input class="input" type="password" name="device_enable_password" placeholder="Enable Password (optional)" value="{{ device_creds.enable_password if device_creds else '' }}">
+              <div class="right"><button class="btn" type="submit">Save</button><button class="btn" type="button" onclick="closeSettingsPopup('credSettingsModal')">Close</button></div>
+            </form>
+          </div>
+        </dialog>
+
+        <dialog id="deviceSettingsModal" class="settings-dialog">
+          <div class="settings-dialog-body">
+            <h3>Device Settings</h3>
+            <form method="post" action="{{ url_for('manage_devices') }}">
+              <input type="hidden" name="next" value="ip_addressing">
+              <input type="hidden" name="action" value="add">
+              <b>Add Device</b>
+              <input class="input" name="hostname" placeholder="Hostname">
+              <input class="input" name="ip_address" placeholder="IPv4">
+              <select class="select" name="new_device_categories" multiple size="4">{% for c in categories %}<option value="{{ c }}">{{ c }}</option>{% endfor %}</select>
+              <button class="btn" type="submit">Add Device</button>
+            </form>
+            <form method="post" action="{{ url_for('manage_devices') }}" enctype="multipart/form-data">
+              <input type="hidden" name="next" value="ip_addressing">
+              <input type="hidden" name="action" value="import_csv">
+              <b>Import Devices (CSV)</b>
+              <input class="input" name="devices_csv" type="file" accept=".csv,text/csv" required>
+              <button class="btn" type="submit">Import CSV</button>
+            </form>
+            <form method="post" action="{{ url_for('manage_devices') }}">
+              <input type="hidden" name="next" value="ip_addressing">
+              <input type="hidden" name="action" value="edit">
+              <b>Edit Device</b>
+              <select id="editDeviceSelect" class="select" name="original_device_name"><option value="">Select device</option>{% for d in devices %}<option value="{{ d.name }}">{{ d.name }}</option>{% endfor %}</select>
+              <input id="editHostnameInput" class="input" name="edit_hostname" placeholder="New hostname (optional)">
+              <input id="editIpInput" class="input" name="edit_ip_address" placeholder="New IPv4 (optional)">
+              <select id="editCategorySelect" class="select" name="edit_device_categories" multiple size="4">{% for c in categories %}<option value="{{ c }}">{{ c }}</option>{% endfor %}</select>
+              <button class="btn" type="submit">Save Device</button>
+            </form>
+            <div class="right"><button class="btn" type="button" onclick="closeSettingsPopup('deviceSettingsModal')">Close</button></div>
+          </div>
+        </dialog>
+
+        <dialog id="categorySettingsModal" class="settings-dialog">
+          <div class="settings-dialog-body">
+            <h3>Category Settings</h3>
+            <form method="post" action="{{ url_for('manage_categories') }}">
+              <input type="hidden" name="next" value="ip_addressing">
+              <input type="hidden" name="action" value="create_category">
+              <input class="input" name="category_name" placeholder="New category">
+              <button class="btn" type="submit">Create Category</button>
+            </form>
+            <form method="post" action="{{ url_for('manage_categories') }}">
+              <input type="hidden" name="next" value="ip_addressing">
+              <input type="hidden" name="action" value="delete_category">
+              <select class="select" name="delete_category_name"><option value="">Delete category</option>{% for c in categories %}<option value="{{ c }}">{{ c }}</option>{% endfor %}</select>
+              <button class="btn" type="submit">Delete Category</button>
+            </form>
+            <div class="right"><button class="btn" type="button" onclick="closeSettingsPopup('categorySettingsModal')">Close</button></div>
+          </div>
+        </dialog>
+
+        <dialog id="commandSettingsModal" class="settings-dialog">
+          <div class="settings-dialog-body">
+            <h3>Command Button Settings</h3>
+            <form method="post" action="{{ url_for('buttons_menu') }}">
+              <input type="hidden" name="next" value="ip_addressing">
+              <input type="hidden" name="action" value="add">
+              <b>Add Command Button</b>
+              <input class="input" name="new_label" placeholder="Button label">
+              <textarea class="cmd-box" name="new_command" placeholder="Command text"></textarea>
+              <select class="select" name="new_mode"><option value="show">show</option><option value="config">config</option></select>
+              <select class="select" name="new_audience"><option value="senior">Senior Buttons</option><option value="junior">Junior Buttons</option><option value="both">Both (Junior + Senior)</option></select>
+              <button class="btn" type="submit">Add Button</button>
+            </form>
+            <form method="post" action="{{ url_for('buttons_menu') }}">
+              <input type="hidden" name="next" value="ip_addressing">
+              <input type="hidden" name="action" value="edit_command">
+              <b>Edit Existing Command</b>
+              <select id="editCommandButtonSelect" class="select" name="button_id" onchange="syncSelectedButtonCommand()">{% for b in manage_buttons %}<option value="{{ b.id }}" data-command="{{ b.command|e }}">{{ b.label }} ({{ (b.audience or 'senior')|lower }})</option>{% endfor %}</select>
+              <textarea id="editCommandText" class="cmd-box" name="edit_command_text" placeholder="Updated command text"></textarea>
+              <select class="select" name="edit_audience">
+                <option value="">Keep current audience</option>
+                <option value="senior">Move to Senior Buttons</option>
+                <option value="junior">Move to Junior Buttons</option>
+                <option value="both">Move to Both (Junior + Senior)</option>
+              </select>
+              <button class="btn" type="submit">Save Command</button>
+            </form>
+            <form method="post" action="{{ url_for('buttons_menu') }}">
+              <input type="hidden" name="next" value="ip_addressing">
+              <input type="hidden" name="action" value="delete">
+              <b>Delete Button</b>
+              <select class="select" name="button_id">{% for b in manage_buttons %}<option value="{{ b.id }}">{{ b.label }} ({{ (b.audience or 'senior')|lower }})</option>{% endfor %}</select>
+              <button class="btn" type="submit">Delete</button>
+            </form>
+            <div class="right"><button class="btn" type="button" onclick="closeSettingsPopup('commandSettingsModal')">Close</button></div>
+          </div>
+        </dialog>
+
+        <dialog id="notificationsModal" class="settings-dialog">
+          <div class="settings-dialog-body">
+            <h3>Notifications</h3>
+            <form method="post" action="{{ url_for('mark_notifications_read_route') }}">
+              <input type="hidden" name="next" value="ip_addressing">
+              <button class="btn" type="submit">Mark All Read</button>
+            </form>
+            {% if unread_notifications %}
+              {% for item in unread_notifications %}
+                <div class="subpanel">
+                  <div><b>{{ item.created_at }}</b></div>
+                  <div>{{ item.message }}</div>
+                  <div class="settings-buttons">
+                    {% if current_user_role in ['senior', 'sysadmin'] and item.pending_request_actionable %}
+                      <form method="post" action="{{ url_for('pending_requests_action') }}">
+                        <input type="hidden" name="next" value="ip_addressing">
+                        <input type="hidden" name="action" value="approve">
+                        <input type="hidden" name="request_id" value="{{ item.pending_request_id }}">
+                        <input type="hidden" name="request_type" value="{{ item.pending_request_type or 'device' }}">
+                        <button class="btn" type="submit">Approve</button>
+                      </form>
+                      <form method="post" action="{{ url_for('pending_requests_action') }}">
+                        <input type="hidden" name="next" value="ip_addressing">
+                        <input type="hidden" name="action" value="reject">
+                        <input type="hidden" name="request_id" value="{{ item.pending_request_id }}">
+                        <input type="hidden" name="request_type" value="{{ item.pending_request_type or 'device' }}">
+                        <button class="btn" type="submit">Reject</button>
+                      </form>
+                    {% endif %}
+                    <form method="post" action="{{ url_for('delete_notification_route') }}">
+                      <input type="hidden" name="next" value="ip_addressing">
+                      <input type="hidden" name="notification_id" value="{{ item.id }}">
+                      <button class="btn" type="submit">Delete</button>
+                    </form>
+                  </div>
+                </div>
+              {% endfor %}
+            {% else %}
+              <div class="small">No unread notifications.</div>
+            {% endif %}
+            <div class="right"><button class="btn" type="button" onclick="closeSettingsPopup('notificationsModal')">Close</button></div>
+          </div>
+        </dialog>
+
+        <dialog id="monitoringNodeModal" class="settings-dialog">
+          <div class="settings-dialog-body">
+            <h3 id="monitoringNodeTitle">Monitoring Devices</h3>
+            <div class="branch-submenu">
+              <button id="mnTabAdd" class="btn active" type="button" onclick="switchMonitoringNodeSection('add')">Add Device</button>
+              <button id="mnTabEdit" class="btn" type="button" onclick="switchMonitoringNodeSection('edit')">Edit Device</button>
+              <button id="mnTabDelete" class="btn" type="button" onclick="switchMonitoringNodeSection('delete')">Delete Device</button>
+              {% if monitoring_category_manage_senior %}
+              <button id="mnTabCategories" class="btn" type="button" onclick="switchMonitoringNodeSection('categories')">Categories</button>
+              {% endif %}
+            </div>
+            <div id="mnSectionForm" class="branch-section show">
+              <div id="mnEditPicker" class="field hidden">
+                <label>Select Device</label>
+                <div class="right" style="justify-content:flex-start;">
+                  <select id="mnEditDeviceSelect" class="select" style="min-width:280px;" onchange="fillMonitoringNodeForm(this.value)"></select>
+                  <button class="btn" type="button" onclick="openMonitoringResourcesFromEdit()">Resources</button>
+                </div>
+              </div>
+              <form id="monitoringNodeForm" method="post" action="{{ url_for('monitoring_node_add_page') }}" class="monitor-node-grid">
+                <input id="mnOriginalDeviceName" type="hidden" name="original_device_name" value="">
+                <div class="field"><label>Device Name</label><input id="mnDeviceName" class="input" name="device_name" placeholder="e.g., B751-RTR-01" required></div>
+                <div class="field"><label>Polling Hostname/IP</label><input id="mnIpAddress" class="input" name="ip_address" placeholder="e.g., 10.10.10.1" required></div>
+                <div class="field"><label>Category</label><select id="mnCategory" class="select" name="category">{% if monitoring_category_options %}{% for c in monitoring_category_options %}<option>{{ c }}</option>{% endfor %}{% else %}<option>{{ 'Uncategorized' }}</option>{% endif %}</select></div>
+                <div class="field"><label>Polling Method</label><select id="mnPollingMethod" class="select" name="polling_method"><option value="status_only">Status Only (ICMP)</option><option value="snmp_v2">SNMP + ICMP (v2c)</option><option value="snmp_v3">SNMP + ICMP (v3)</option><option value="ssh">SSH</option><option value="api">API</option><option value="winrm_icmp">WinRM + ICMP</option></select></div>
+                <div id="mnSnmpBlock" class="monitor-node-span">
+                  <div class="monitor-node-grid">
+                    <div class="field"><label>SNMP Version</label><select id="mnSnmpVersion" class="select" name="snmp_version"><option value="2c">SNMPv2c</option><option value="3">SNMPv3</option></select></div>
+                    <div class="field"><label>SNMP Port</label><input id="mnSnmpPort" class="input" name="snmp_port" value="161"></div>
+                    <div id="mnSnmpV2Fields" class="field"><label>Community (RO)</label><input id="mnCommunity" class="input" name="community" placeholder="public"></div>
+                    <div id="mnSnmpV2FieldsRw" class="field"><label>Community (RW optional)</label><input id="mnRwCommunity" class="input" name="rw_community" placeholder=""></div>
+                    <div id="mnSnmpV3Fields" class="monitor-node-span hidden">
+                      <div class="monitor-node-grid">
+                        <div class="field"><label>SNMPv3 Username</label><input id="mnSnmpV3Username" class="input" name="snmpv3_username"></div>
+                        <div class="field"><label>SNMPv3 Auth Protocol</label><select id="mnSnmpV3AuthProto" class="select" name="snmpv3_auth_protocol"><option value="sha">SHA-1</option><option value="sha224">SHA-224</option><option value="sha256">SHA-256</option><option value="sha384">SHA-384</option><option value="sha512">SHA-512</option><option value="md5">MD5</option></select></div>
+                        <div class="field"><label>SNMPv3 Privacy Protocol</label><select id="mnSnmpV3PrivProto" class="select" name="snmpv3_priv_protocol"><option value="aes128">AES-128</option><option value="aes192">AES-192</option><option value="aes256">AES-256</option><option value="des">DES</option><option value="3des">3DES</option></select></div>
+                        <div class="field"><label>SNMPv3 Auth Password</label><input id="mnSnmpV3Auth" class="input" type="password" name="snmpv3_auth_password"></div>
+                        <div class="field"><label>SNMPv3 Privacy Password</label><input id="mnSnmpV3Priv" class="input" type="password" name="snmpv3_priv_password"></div>
+                      </div>
+                    </div>
+                    <div class="monitor-node-span right">
+                      <button class="btn" type="button" onclick="testMonitoringSnmp()">Test SNMP</button>
+                    </div>
+                    <div id="mnSnmpTestStatus" class="small monitor-node-span"></div>
+                  </div>
+                </div>
+                <div id="mnSshBlock" class="monitor-node-span hidden">
+                  <div class="monitor-node-grid">
+                    <div class="field"><label>SSH Username</label><input id="mnSshUsername" class="input" name="ssh_username"></div>
+                    <div class="field"><label>SSH Password</label><input id="mnSshPassword" class="input" type="password" name="ssh_password"></div>
+                  </div>
+                </div>
+                <div id="mnApiBlock" class="monitor-node-span hidden">
+                  <div class="monitor-node-grid">
+                    <div class="field"><label>API Token</label><input id="mnApiToken" class="input" name="api_token"></div>
+                  </div>
+                </div>
+                <div id="mnWinrmBlock" class="monitor-node-span hidden">
+                  <div class="monitor-node-grid">
+                    <div class="field"><label>WinRM Port</label><input id="mnWinrmPort" class="input" name="winrm_port" value="5985"></div>
+                    <div class="field"><label>Authentication</label><select id="mnWinrmAuth" class="select" name="winrm_auth"><option value="ntlm">NTLM</option><option value="kerberos">Kerberos</option><option value="basic">Basic</option><option value="credssp">CredSSP</option></select></div>
+                    <div class="field"><label>Username</label><input id="mnWinrmUsername" class="input" name="winrm_username" placeholder="DOMAIN\\user or user"></div>
+                    <div class="field"><label>Password</label><input id="mnWinrmPassword" class="input" type="password" name="winrm_password"></div>
+                  </div>
+                </div>
+                <div class="field"><label>Interval (seconds)</label><input id="mnInterval" class="input" name="interval_seconds" value="30"></div>
+                <div class="field"><label>Notes</label><input id="mnNotes" class="input" name="notes" placeholder="Optional"></div>
+                <div class="monitor-node-span right">
+                  <button id="mnSubmitBtn" class="btn pri" type="submit">Add Node</button>
+                  <button class="btn" type="button" onclick="closeSettingsPopup('monitoringNodeModal')">Close</button>
+                </div>
+              </form>
+            </div>
+            <div id="mnSectionDelete" class="branch-section">
+              <div class="field">
+                <label>Select Device to Delete</label>
+                <select id="mnDeleteDeviceSelect" class="select"></select>
+              </div>
+              <div class="right">
+                <button class="btn" type="button" onclick="submitMonitoringNodeDelete()">Delete Device</button>
+                <button class="btn" type="button" onclick="closeSettingsPopup('monitoringNodeModal')">Close</button>
+              </div>
+            </div>
+            {% if monitoring_category_manage_senior %}
+            <div id="mnSectionCategories" class="branch-section">
+              <form method="post" action="{{ url_for('monitoring_category_add_page') }}">
+                <div class="field">
+                  <label>Add Category</label>
+                  <input class="input" name="category_name" placeholder="e.g., Storage">
+                </div>
+                <div class="right"><button class="btn pri" type="submit">Add Category</button></div>
+              </form>
+              <form method="post" action="{{ url_for('monitoring_category_rename_page') }}">
+                <div class="monitor-node-grid">
+                  <div class="field">
+                    <label>Old Category</label>
+                    <select class="select" name="old_category_name">
+                      {% for c in monitoring_category_options %}<option>{{ c }}</option>{% endfor %}
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>New Category Name</label>
+                    <input class="input" name="new_category_name" placeholder="New name">
+                  </div>
+                </div>
+                <div class="right"><button class="btn" type="submit">Rename Category</button></div>
+              </form>
+              <form method="post" action="{{ url_for('monitoring_category_delete_page') }}">
+                <div class="field">
+                  <label>Delete Category</label>
+                  <select class="select" name="category_name">
+                    {% for c in monitoring_category_options %}<option>{{ c }}</option>{% endfor %}
+                  </select>
+                </div>
+                <div class="right">
+                  <button class="btn" type="submit">Delete Category</button>
+                  <button class="btn" type="button" onclick="closeSettingsPopup('monitoringNodeModal')">Close</button>
+                </div>
+              </form>
+            </div>
+            {% endif %}
+          </div>
+        </dialog>
+        <form id="monitoringNodeDeleteForm" method="post" action="{{ url_for('monitoring_node_delete_page') }}" class="hidden">
+          <input id="monitoringNodeDeleteName" type="hidden" name="device_name" value="">
+        </form>
+        <dialog id="monitoringHealthModal" class="settings-dialog">
+          <div class="settings-dialog-body">
+            <h3>Device Health</h3>
+            <div class="monitor-health-grid">
+              <div class="monitor-health-item"><b>Device</b><span id="mhName">-</span></div>
+              <div class="monitor-health-item"><b>IP</b><span id="mhIp">-</span></div>
+              <div class="monitor-health-item"><b>Status</b><span id="mhStatus">-</span></div>
+              <div class="monitor-health-item"><b>CPU %</b><span id="mhCpu">-</span></div>
+              <div class="monitor-health-item"><b>Memory %</b><span id="mhMemory">-</span></div>
+              <div class="monitor-health-item"><b>Interfaces</b><span id="mhInterfaces">-</span></div>
+              <div class="monitor-health-item"><b>SLA / Ping (ms)</b><span id="mhSla">-</span></div>
+              <div class="monitor-health-item"><b>Last Collected</b><span id="mhLast">-</span></div>
+              <div class="monitor-health-item"><b>Configured Metrics</b><span id="mhMetrics">-</span></div>
+              <div class="monitor-health-item"><b>Watched Interfaces</b><span id="mhWatchIf">-</span></div>
+            </div>
+            <div class="right"><button class="btn" type="button" onclick="closeSettingsPopup('monitoringHealthModal')">Close</button></div>
+          </div>
+        </dialog>
+        <dialog id="monitoringNodeDashboardModal" class="settings-dialog monitor-node-dashboard">
+          <div class="settings-dialog-body">
+            <h3>Node Dashboard</h3>
+            <div id="nodeDashStatus" class="small">Loading monitoring data...</div>
+            <div class="node-dash-grid">
+              <div class="node-dash-box">
+                <div class="node-dash-title">Node Details</div>
+                <div class="node-dash-kv">
+                  <b>Device</b><span id="ndName">-</span>
+                  <b>Polling IP</b><span id="ndHost">-</span>
+                  <b>Status</b><span id="ndStatus">-</span>
+                  <b>Category</b><span id="ndCategory">-</span>
+                  <b>Method</b><span id="ndMethod">-</span>
+                  <b>Interval</b><span id="ndInterval">-</span>
+                  <b>Last Collected</b><span id="ndLast">-</span>
+                  <b>Interfaces</b><span id="ndInterfaces">-</span>
+                  <b>Notes</b><span id="ndNotes">-</span>
+                </div>
+              </div>
+              <div class="node-dash-box">
+                <div class="node-dash-title">Live Gauges</div>
+                <div class="node-gauge-grid">
+                  <div class="node-gauge"><div id="ndCpuGauge" class="node-gauge-ring"><div class="node-gauge-inner">0</div></div><div class="node-gauge-label">CPU %</div></div>
+                  <div class="node-gauge"><div id="ndMemGauge" class="node-gauge-ring"><div class="node-gauge-inner">0</div></div><div class="node-gauge-label">Memory %</div></div>
+                  <div class="node-gauge"><div id="ndSlaGauge" class="node-gauge-ring"><div class="node-gauge-inner">0</div></div><div class="node-gauge-label">Response ms</div></div>
+                </div>
+                <div id="ndGaugeThroughputBox" class="node-gauge-throughput hidden">
+                  <div class="node-gauge-throughput-label">Network Throughput</div>
+                  <div class="node-gauge-throughput-grid">
+                    <div class="node-gauge-throughput-item"><b>RX</b><span id="ndGaugeRx">-</span></div>
+                    <div class="node-gauge-throughput-item"><b>TX</b><span id="ndGaugeTx">-</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="node-chart-grid">
+              <div class="node-chart">
+                <div class="node-chart-head"><div class="node-dash-title">CPU Trend (%)</div><button class="btn node-time-btn" type="button" title="Select time range" onclick="openChartRangePicker('cpu', event)">&#128339;</button></div>
+                <div id="ndCpuRangeLabel" class="node-chart-range">Last 30 minutes</div>
+                <canvas id="ndCpuChart"></canvas>
+              </div>
+              <div class="node-chart">
+                <div class="node-chart-head"><div class="node-dash-title">Memory Trend (%)</div><button class="btn node-time-btn" type="button" title="Select time range" onclick="openChartRangePicker('memory', event)">&#128339;</button></div>
+                <div id="ndMemRangeLabel" class="node-chart-range">Last 30 minutes</div>
+                <canvas id="ndMemChart"></canvas>
+              </div>
+              <div class="node-chart">
+                <div class="node-chart-head"><div class="node-dash-title">Response Time Trend (ms)</div><button class="btn node-time-btn" type="button" title="Select time range" onclick="openChartRangePicker('response', event)">&#128339;</button></div>
+                <div id="ndSlaRangeLabel" class="node-chart-range">Last 30 minutes</div>
+                <canvas id="ndSlaChart"></canvas>
+              </div>
+              <div class="node-chart">
+                <div class="node-dash-title">Device Availability</div>
+                <div class="avail-grid">
+                  <div class="avail-row"><b>Week</b><span id="ndAvailWeekValue">N/A</span><div class="avail-bar"><div id="ndAvailWeekFill" class="avail-fill" style="width:0%"></div></div></div>
+                  <div class="avail-row"><b>Month</b><span id="ndAvailMonthValue">N/A</span><div class="avail-bar"><div id="ndAvailMonthFill" class="avail-fill" style="width:0%"></div></div></div>
+                  <div class="avail-row"><b>Half Year</b><span id="ndAvailHalfYearValue">N/A</span><div class="avail-bar"><div id="ndAvailHalfYearFill" class="avail-fill" style="width:0%"></div></div></div>
+                  <div class="avail-row"><b>Year</b><span id="ndAvailYearValue">N/A</span><div class="avail-bar"><div id="ndAvailYearFill" class="avail-fill" style="width:0%"></div></div></div>
+                </div>
+              </div>
+            </div>
+            <div id="ndAlertsBox" class="node-util-box">
+              <div class="node-dash-title">Active Alerts</div>
+              <div id="ndAlertsBody" class="node-util-list">
+                <div class="node-util-empty">No active alerts.</div>
+              </div>
+            </div>
+            <div id="ndWindowsDiskBox" class="node-util-box hidden">
+              <div class="node-dash-title">Disk Usage</div>
+              <div class="node-util-header">
+                <span>Disk</span>
+                <span>Used</span>
+                <span>Usage Bar</span>
+                <span>Free Space</span>
+              </div>
+              <div id="ndWindowsDiskBody" class="node-util-list">
+                <div class="node-util-empty">No logical disks data available.</div>
+              </div>
+            </div>
+            <div id="ndWindowsBottomRow" class="win-card-grid hidden">
+              <div class="node-dash-box">
+                <div class="node-dash-title">Uptime / Boot Info</div>
+                <div class="win-kpi">
+                  <div class="win-kpi-layout">
+                    <div class="win-kpi-main">
+                      <div id="ndWinUptime" class="big">-</div>
+                      <div class="small">Last boot: <span id="ndWinLastBoot">-</span></div>
+                    </div>
+                    <div class="win-info-grid">
+                      <div class="win-info-item"><b>Win</b><span id="ndWinOs">-</span></div>
+                      <div class="win-info-item"><b>Build</b><span id="ndWinBuild">-</span></div>
+                      <div class="win-info-item"><b>Architecture</b><span id="ndWinArch">-</span></div>
+                      <div class="win-info-item"><b>Host</b><span id="ndWinHost">-</span></div>
+                      <div class="win-info-item"><b>Domain</b><span id="ndWinDomain">-</span></div>
+                      <div class="win-info-item"><b>RAM T/F</b><span id="ndWinRam">-</span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="right"><button class="btn" type="button" onclick="refreshMonitoringNodeDashboardNow()">Refresh</button><button class="btn" type="button" onclick="closeSettingsPopup('monitoringNodeDashboardModal')">Close</button></div>
+          </div>
+        </dialog>
+        <div id="chartRangePopover" class="range-pop" role="dialog" aria-modal="true" aria-label="Chart time range picker">
+          <div class="range-quick">
+            <button class="btn" type="button" onclick="applyQuickRange('hour')">Last hour</button>
+            <button class="btn" type="button" onclick="applyQuickRange('h2')">Last 2 hours</button>
+            <button class="btn" type="button" onclick="applyQuickRange('h12')">Last 12 hours</button>
+            <button class="btn" type="button" onclick="applyQuickRange('today')">Today</button>
+            <button class="btn" type="button" onclick="applyQuickRange('h24')">Last 24 hours</button>
+            <button class="btn" type="button" onclick="applyQuickRange('d7')">Last 7 days</button>
+            <button class="btn" type="button" onclick="applyQuickRange('d30')">Last 30 days</button>
+            <button class="btn" type="button" onclick="applyQuickRange('m12')">Last 12 months</button>
+            <button class="btn" type="button" onclick="applyQuickRange('y2')">Last 2 years</button>
+            <button class="btn" type="button" onclick="applyQuickRange('y5')">Last 5 years</button>
+          </div>
+          <div class="range-main">
+            <h3 style="margin:0">Time Range - <span id="rangePanelTitle">CPU Trend</span></h3>
+            <div class="range-grid">
+              <label class="field"><span class="small">Start date/time</span><input id="rangeStartInput" class="input" type="datetime-local"></label>
+              <label class="field"><span class="small">End date/time</span><input id="rangeEndInput" class="input" type="datetime-local"></label>
+            </div>
+            <div id="rangePickerStatus" class="small err"></div>
+            <div class="right">
+              <button class="btn pri" type="button" onclick="applyCustomRange()">Apply</button>
+              <button class="btn" type="button" onclick="closeChartRangePicker()">Cancel</button>
+            </div>
+          </div>
+        </div>
+        <dialog id="monitoringResourcesModal" class="settings-dialog">
+          <div class="settings-dialog-body">
+            <h3>Resource Selection</h3>
+            <div class="small">Device: <b id="mrDeviceTitle">-</b> (<span id="mrDeviceHost">-</span>)</div>
+            <div class="monitor-node-grid">
+              <div class="subpanel">
+                <div class="subhead"><span>Metrics</span></div>
+                <div id="mrMetricChecks" class="monitor-mini-list"></div>
+              </div>
+              <div class="subpanel monitor-node-span">
+                <div class="subhead">
+                  <span>Interfaces</span>
+                  <span>
+                    <button class="btn" type="button" onclick="selectAllMonitoringInterfaces()">All</button>
+                    <button class="btn" type="button" onclick="clearAllMonitoringInterfaces()">None</button>
+                  </span>
+                </div>
+                <div id="mrInterfaceChecks" class="monitor-mini-list" style="max-height:300px;"></div>
+              </div>
+            </div>
+            <div id="mrStatus" class="small"></div>
+            <div class="right">
+              <button class="btn" type="button" onclick="pullMonitoringResources()">Pull Resources</button>
+              <button class="btn pri" type="button" onclick="saveMonitoringResources()">Save Selection</button>
+              <button class="btn" type="button" onclick="closeSettingsPopup('monitoringResourcesModal')">Close</button>
+            </div>
+          </div>
+        </dialog>

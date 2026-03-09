@@ -1,0 +1,60 @@
+﻿<dialog id="sessionConfigModal" class="device-modal">
+    <form id="sessionSettingsForm" method="post" action="{{ url_for('session_settings_page') }}">
+      <h3>Settings</h3>
+      <p>Control idle logout and web listeners/ports (HTTP and/or HTTPS).</p>
+
+      <label>Idle Timeout (minutes)</label>
+      <input name="idle_timeout_minutes" type="number" value="{{ session_settings.idle_timeout_minutes }}" min="1" max="240" required>
+
+      <div class="web-listeners-grid">
+        <div class="web-listener-row">
+          <div class="web-listener-toggle">
+            <label class="switch" title="Enable HTTP">
+              <input id="httpEnabledCheckbox" name="http_enabled" type="checkbox" {% if session_settings.http_enabled %}checked{% endif %}>
+              <span class="slider"></span>
+            </label>
+            <span>HTTP Listener</span>
+          </div>
+          <div class="web-listener-port">
+            <label for="httpPortInput">HTTP Port</label>
+            <input id="httpPortInput" name="http_port" type="number" value="{{ session_settings.http_port }}" min="1" max="65535" placeholder="8080">
+          </div>
+        </div>
+
+        <div class="web-listener-row">
+          <div class="web-listener-toggle">
+            <label class="switch" title="Enable HTTPS">
+              <input id="httpsEnabledCheckbox" name="https_enabled" type="checkbox" {% if session_settings.https_enabled %}checked{% endif %}>
+              <span class="slider"></span>
+            </label>
+            <span>HTTPS Listener</span>
+          </div>
+          <div class="web-listener-port">
+            <label for="httpsPortInput">HTTPS Port</label>
+            <input id="httpsPortInput" name="https_port" type="number" value="{{ session_settings.https_port }}" min="1" max="65535" placeholder="8443">
+          </div>
+        </div>
+      </div>
+      <p class="web-listener-hint">Ports are optional in UI. If a listener is disabled, its port is not required.</p>
+      <div class="web-acl-box">
+        <div class="web-listener-toggle">
+          <label class="switch" title="Enable Web ACL">
+            <input id="webAclEnabledCheckbox" name="web_acl_enabled" type="checkbox" {% if session_settings.web_acl_enabled %}checked{% endif %}>
+            <span class="slider"></span>
+          </label>
+          <span>Web Access List (Allow only these client IPs)</span>
+        </div>
+        <label for="webAclEntriesInput">Allowed IPs / CIDRs (one per line or comma separated)</label>
+        <textarea id="webAclEntriesInput" class="web-acl-text" name="web_acl_entries" placeholder="10.10.10.5&#10;192.168.1.0/24">{{ session_settings.web_acl_text or '' }}</textarea>
+        <p class="web-listener-hint">Examples: <code>192.168.217.10</code>, <code>10.20.0.0/16</code>. Your current IP must be included before enabling.</p>
+      </div>
+
+      <div class="info">You can enable HTTP, HTTPS, or both. Listener changes apply automatically after save.</div>
+
+      <div class="action-row">
+        <button class="btn run" type="submit">Save</button>
+        <button class="btn ghost" type="button" onclick="closeSessionModal()">Close</button>
+      </div>
+    </form>
+  </dialog>
+

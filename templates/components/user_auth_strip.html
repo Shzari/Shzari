@@ -1,0 +1,7 @@
+<div class="user-strip">
+  <div class="chip">User: <b>{{ current_user or 'Unknown' }}</b></div>
+  <div class="chip">Mode: <b>{{ auth_mode|upper }}</b></div>
+  {% if logout_url %}
+  <a class="btn-top" href="{{ logout_url }}">Logout</a>
+  {% endif %}
+</div>
